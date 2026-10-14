@@ -11,6 +11,7 @@ mod stav;
 
 use serde_json::json;
 use stav::Stav;
+use std::str::FromStr;
 use std::sync::Mutex;
 use std::time::Instant;
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize};
@@ -41,8 +42,11 @@ fn esc() -> Shortcut {
     Shortcut::new(None, Code::Escape)
 }
 
-/// Prepíše globálnu skratku na novú. Pri nezmyselnom zápise sa vracia k F8,
-/// nech appka neostane bez jedinej ovládacej klávesy.
+/// Prepíše globálnu skratku na novú (Tartarus — hlavná, historicky jediná).
+/// Pri nezmyselnom zápise sa vracia k F8, nech appka neostane bez jedinej
+/// ovládacej klávesy. Zruší VŠETKY skratky vrátane canvas — volajúci preto
+/// musí po nej zavolať aj `prehlas_hotkey_canvas`, inak by canvas ostal
+/// nezaregistrovaný (pozri `uloz_nastavenia` a `main`).
 pub fn prehlas_hotkey(app: &AppHandle, novy: &str) -> Result<(), String> {
     let skratky = app.global_shortcut();
     let _ = skratky.unregister_all();
@@ -51,6 +55,23 @@ pub fn prehlas_hotkey(app: &AppHandle, novy: &str) -> Result<(), String> {
         let _ = skratky.register("F8");
         return Err(format!(
             "Skratku „{novy}“ Windows neprijal (môže ju držať iná appka). Vraciam sa k F8."
+        ));
+    }
+    Ok(())
+}
+
+/// Druhá skratka — Frozen Canvas (TLI 4b). NEruší existujúce skratky (na
+/// rozdiel od `prehlas_hotkey`), len pridáva/nahrádza svoju vlastnú — volá sa
+/// vždy AŽ PO `prehlas_hotkey`.
+pub fn prehlas_hotkey_canvas(app: &AppHandle, novy: &str) -> Result<(), String> {
+    let skratky = app.global_shortcut();
+    let _ = skratky.unregister(novy);
+
+    if skratky.register(novy).is_err() {
+        let _ = skratky.register("F9");
+        return Err(format!(
+            "Skratku pre Frozen Canvas „{novy}“ Windows neprijal (môže ju držať iná appka \
+alebo kolíduje s hlavnou skratkou). Vraciam sa k F9."
         ));
     }
     Ok(())
@@ -154,8 +175,17 @@ fn naplanuj_skrytie(app: AppHandle, znacka: Instant, sekundy: u64) {
 // Hlavný beh: hotkey → snímka → server → overlay
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// Ktorý modul sa má analyzovať — jediný rozdiel je endpoint/vision prompt na
+/// serveri a tvar odpovede, zvyšok (snímka, overlay nad oknom hry, zámok proti
+/// dvojitému stlačeniu) je spoločné (TLI 4b, `2026-10-15-0025-mcp.md`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Modul {
+    Tartarus,
+    Canvas,
+}
+
 #[cfg(windows)]
-fn spusti_analyzu(app: AppHandle) {
+fn spusti_analyzu(app: AppHandle, modul: Modul) {
     let nastavenia = {
         let stav = app.state::<Stav>();
         let mut n = stav.nastavenia.lock().unwrap();
@@ -168,7 +198,9 @@ fn spusti_analyzu(app: AppHandle) {
         return;
     }
 
-    // Dvojité stlačenie F8 nemá poslať dve požiadavky — server púšťa 30 za minútu.
+    // Dvojité stlačenie hotkey (ktoréhokoľvek z dvoch) nemá poslať dve
+    // požiadavky — server púšťa 30 za minútu a zámok je zdieľaný medzi
+    // Tartarus aj Frozen Canvas, nemajú bežať naraz nad tým istým oknom.
     {
         let stav = app.state::<Stav>();
         let mut beh = stav.beh.lock().unwrap();
@@ -228,41 +260,89 @@ V hre prepni Nastavenia → Zobrazenie → Režim okna na „Okno bez okrajov“
     // Kódovanie JPEGu aj sieť idú mimo hlavného vlákna — inak by sa na tých
     // pár sekúnd zasekla celá appka vrátane tray ikony.
     std::thread::spawn(move || {
-        let vysledok = snimka::do_jpegu(&snimok, zmensenie::MAX_DLZKA, 80)
-            .and_then(|jpeg| klient::posli_analyzu(&nastavenia, jpeg));
+        match modul {
+            Modul::Tartarus => {
+                let vysledok = snimka::do_jpegu(&snimok, zmensenie::MAX_DLZKA, 80)
+                    .and_then(|jpeg| klient::posli_analyzu(&nastavenia, jpeg));
+                match vysledok {
+                    Ok(v) => {
+                        let obdlzniky: Vec<_> = api::pouzitelne_polia(&v.analyza)
+                            .into_iter()
+                            .map(|pole| {
+                                let css = suradnice::pole_na_css(pole, &obdlznik, mierka);
+                                let (sx, sy) = suradnice::stred_css(&css);
+                                json!({
+                                    "index": pole.index,
+                                    "x": css.x, "y": css.y, "w": css.w, "h": css.h,
+                                    "stredX": sx, "stredY": sy,
+                                    "neiste": api::je_neiste(&v.analyza, pole.index),
+                                })
+                            })
+                            .collect();
 
-        match vysledok {
-            Ok(v) => {
-                let obdlzniky: Vec<_> = api::pouzitelne_polia(&v.analyza)
-                    .into_iter()
-                    .map(|pole| {
-                        let css = suradnice::pole_na_css(pole, &obdlznik, mierka);
-                        let (sx, sy) = suradnice::stred_css(&css);
-                        json!({
-                            "index": pole.index,
-                            "x": css.x, "y": css.y, "w": css.w, "h": css.h,
-                            "stredX": sx, "stredY": sy,
-                            "neiste": api::je_neiste(&v.analyza, pole.index),
-                        })
-                    })
-                    .collect();
-
-                let (sirka_log, vyska_log) = suradnice::logicka_velkost(&obdlznik, mierka);
-                let _ = app.emit(
-                    "stav",
-                    json!({
-                        "faza": "hotovo",
-                        "analyza": v.analyza,
-                        "obdlzniky": obdlzniky,
-                        "mierka": mierka,
-                        "sirka": sirka_log,
-                        "vyska": vyska_log,
-                        "trvanie_ms": v.trvanie_ms,
-                    }),
-                );
+                        let (sirka_log, vyska_log) = suradnice::logicka_velkost(&obdlznik, mierka);
+                        let _ = app.emit(
+                            "stav",
+                            json!({
+                                "faza": "hotovo",
+                                "analyza": v.analyza,
+                                "obdlzniky": obdlzniky,
+                                "mierka": mierka,
+                                "sirka": sirka_log,
+                                "vyska": vyska_log,
+                                "trvanie_ms": v.trvanie_ms,
+                            }),
+                        );
+                    }
+                    Err(e) => {
+                        let _ = app.emit("stav", json!({ "faza": "chyba", "sprava": e }));
+                    }
+                }
             }
-            Err(e) => {
-                let _ = app.emit("stav", json!({ "faza": "chyba", "sprava": e }));
+            Modul::Canvas => {
+                let vysledok = snimka::do_jpegu(&snimok, zmensenie::MAX_DLZKA, 80)
+                    .and_then(|jpeg| klient::posli_analyzu_canvas(&nastavenia, jpeg));
+                match vysledok {
+                    Ok(v) => {
+                        // Frozen Canvas (TLI 4b): KAŽDÝ krok nesie DVA páry
+                        // súradníc (zdroj v ruke + cieľ na plátne), prepočítané
+                        // tou istou funkciou ako Tartarus políčka.
+                        let kroky: Vec<_> = api::pouzitelne_kroky(&v.analyza)
+                            .into_iter()
+                            .map(|k| {
+                                let zb = k.zdroj.box_.expect("filtrované pouzitelne_kroky");
+                                let cb = k.ciel.box_.expect("filtrované pouzitelne_kroky");
+                                let zdroj_css = suradnice::box01_na_css(zb.x, zb.y, zb.w, zb.h, &obdlznik, mierka);
+                                let ciel_css = suradnice::box01_na_css(cb.x, cb.y, cb.w, cb.h, &obdlznik, mierka);
+                                json!({
+                                    "poradie": k.poradie,
+                                    "dovod": k.dovod.clone(),
+                                    "zdroj": {"x": zdroj_css.x, "y": zdroj_css.y,
+                                              "w": zdroj_css.w, "h": zdroj_css.h},
+                                    "ciel": {"x": ciel_css.x, "y": ciel_css.y,
+                                             "w": ciel_css.w, "h": ciel_css.h},
+                                })
+                            })
+                            .collect();
+
+                        let (sirka_log, vyska_log) = suradnice::logicka_velkost(&obdlznik, mierka);
+                        let _ = app.emit(
+                            "stav",
+                            json!({
+                                "faza": "hotovo_canvas",
+                                "analyza": v.analyza,
+                                "kroky": kroky,
+                                "mierka": mierka,
+                                "sirka": sirka_log,
+                                "vyska": vyska_log,
+                                "trvanie_ms": v.trvanie_ms,
+                            }),
+                        );
+                    }
+                    Err(e) => {
+                        let _ = app.emit("stav", json!({ "faza": "chyba", "sprava": e }));
+                    }
+                }
             }
         }
 
@@ -278,7 +358,7 @@ V hre prepni Nastavenia → Zobrazenie → Režim okna na „Okno bez okrajov“
 /// Mimo Windowsu appka nevie odfotiť okno hry — kompiluje sa len preto, aby sa
 /// dali spúšťať testy a `cargo check` na Linuxe v CI.
 #[cfg(not(windows))]
-fn spusti_analyzu(app: AppHandle) {
+fn spusti_analyzu(app: AppHandle, _modul: Modul) {
     ukaz_chybu(&app, None, "Appka funguje len na Windowse.");
 }
 
@@ -300,8 +380,18 @@ fn uloz_nastavenia(
     nove.normalizuj();
     stav::uloz(&nove)?;
     let hotkey = nove.hotkey.clone();
+    let hotkey_canvas = nove.hotkey_canvas.clone();
     *stav.nastavenia.lock().unwrap() = nove;
-    prehlas_hotkey(&app, &hotkey)
+    // `prehlas_hotkey` ruší VŠETKY skratky — canvas sa preto registruje až
+    // po nej, nie súbežne/pred.
+    let chyba1 = prehlas_hotkey(&app, &hotkey).err();
+    let chyba2 = prehlas_hotkey_canvas(&app, &hotkey_canvas).err();
+    match (chyba1, chyba2) {
+        (None, None) => Ok(()),
+        (Some(a), None) => Err(a),
+        (None, Some(b)) => Err(b),
+        (Some(a), Some(b)) => Err(format!("{a} {b}")),
+    }
 }
 
 #[tauri::command]
@@ -372,6 +462,7 @@ fn skontroluj_aktualizaciu() -> Result<Option<String>, String> {
 fn main() {
     let nacitane = stav::nacitaj();
     let hotkey_pri_starte = nacitane.hotkey.clone();
+    let hotkey_canvas_pri_starte = nacitane.hotkey_canvas.clone();
 
     let skratky = tauri_plugin_global_shortcut::Builder::new()
         .with_handler(|app, skratka, udalost| {
@@ -387,7 +478,17 @@ fn main() {
                 // Hotkey aj Esc robia to isté: zhasnú overlay.
                 skry(app);
             } else if skratka != &esc() {
-                spusti_analyzu(app.clone());
+                // Ktorý z dvoch hotkey práve spustil analýzu sa pozná podľa
+                // zhody s AKTUÁLNE nastaveným `hotkey_canvas` (nie podľa
+                // hodnoty pri štarte appky — nastavenia sa dajú zmeniť bez
+                // reštartu). Keď sa reťazec nedá naparsovať, nikdy sa
+                // nezhodne a padá sa na Tartarus (bezpečný predvolený stav).
+                let hotkey_canvas = app.state::<Stav>().nastavenia.lock().unwrap().hotkey_canvas.clone();
+                let modul = match Shortcut::from_str(&hotkey_canvas) {
+                    Ok(s) if &s == skratka => Modul::Canvas,
+                    _ => Modul::Tartarus,
+                };
+                spusti_analyzu(app.clone(), modul);
             }
         })
         .build();
@@ -413,7 +514,9 @@ fn main() {
 
             // Keď skratku z nastavení Windows neprijme, `prehlas_hotkey` sa sám
             // vráti k F8 — appka teda nikdy neostane bez ovládacej klávesy.
+            // Canvas sa registruje AŽ PO nej (tá ruší všetky skratky).
             let _ = prehlas_hotkey(&handle, &hotkey_pri_starte);
+            let _ = prehlas_hotkey_canvas(&handle, &hotkey_canvas_pri_starte);
 
             if let Some(overlay) = app.get_webview_window(OVERLAY) {
                 let _ = overlay.set_ignore_cursor_events(true);

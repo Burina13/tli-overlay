@@ -70,18 +70,20 @@ pub fn monitor_okna<'a>(okno: &OknoFyz, monitory: &'a [Monitor]) -> Option<&'a M
     naj_monitor
 }
 
-/// Prepočítava normalizované súradnice (0-1) zaslané serverom do CSS pixelov nášho okna.
+/// Prepočítava normalizované súradnice 0-1 (x, y, w, h) do CSS pixelov nášho okna.
 /// Ochranné orezanie zabezpečuje, že prvok nikdy nevykreslíme mimo viditeľnú plochu,
-/// čo by mohlo znefunkčniť interakciu hráča.
-pub fn pole_na_css(pole: &Pole, okno: &OknoFyz, mierka: f64) -> ObdlznikCss {
+/// čo by mohlo znefunkčniť interakciu hráča. Spoločný základ pre `pole_na_css`
+/// (Tartarus) aj pre Frozen Canvas krokov `zdroj`/`ciel` (TLI 4b, `Box01` v `api.rs`)
+/// — JEDNA implementácia prepočtu, nie dve, ktoré by sa mohli rozísť.
+pub fn box01_na_css(x: f64, y: f64, w: f64, h: f64, okno: &OknoFyz, mierka: f64) -> ObdlznikCss {
     let m = if mierka <= 0.0 { 1.0 } else { mierka };
 
-    let x = pole.x.clamp(0.0, 1.0);
-    let y = pole.y.clamp(0.0, 1.0);
-    
-    let mut w = pole.w.max(0.0);
-    let mut h = pole.h.max(0.0);
-    
+    let x = x.clamp(0.0, 1.0);
+    let y = y.clamp(0.0, 1.0);
+
+    let mut w = w.max(0.0);
+    let mut h = h.max(0.0);
+
     if x + w > 1.0 { w = 1.0 - x; }
     if y + h > 1.0 { h = 1.0 - y; }
 
@@ -94,6 +96,11 @@ pub fn pole_na_css(pole: &Pole, okno: &OknoFyz, mierka: f64) -> ObdlznikCss {
         w: w * w_log,
         h: h * h_log,
     }
+}
+
+/// Prepočítava normalizované súradnice (0-1) zaslané serverom do CSS pixelov nášho okna.
+pub fn pole_na_css(pole: &Pole, okno: &OknoFyz, mierka: f64) -> ObdlznikCss {
+    box01_na_css(pole.x, pole.y, pole.w, pole.h, okno, mierka)
 }
 
 /// Nájdenie stredu potrebujeme pre presné smerovanie navigačných vizualizácií (šípky),
@@ -198,6 +205,17 @@ mod testy {
         let monitory = vec![];
         let o = OknoFyz { x: 0, y: 0, sirka: 800, vyska: 600 };
         assert!(monitor_okna(&o, &monitory).is_none());
+    }
+
+    #[test]
+    fn box01_na_css_je_zaklad_pole_na_css() {
+        // Rovnaký vstup cez oba vstupné body musí dať identický výsledok —
+        // `pole_na_css` je len tenký obal nad `box01_na_css` (TLI 4b).
+        let okno = OknoFyz { x: 0, y: 0, sirka: 1920, vyska: 1080 };
+        let pole = Pole { index: 3, x: 0.2, y: 0.4, w: 0.15, h: 0.1 };
+        let a = pole_na_css(&pole, &okno, 1.25);
+        let b = box01_na_css(pole.x, pole.y, pole.w, pole.h, &okno, 1.25);
+        assert!(rovnake_css(a, b));
     }
 
     #[test]

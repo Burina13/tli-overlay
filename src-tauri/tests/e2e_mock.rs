@@ -10,7 +10,36 @@ use std::net::TcpListener;
 
 use tli_overlay_core::api;
 use tli_overlay_core::nastavenia::Nastavenia;
-use tli_overlay_core::suradnice::{pole_na_css, OknoFyz};
+use tli_overlay_core::suradnice::{box01_na_css, pole_na_css, OknoFyz};
+
+const ODPOVED_CANVAS: &str = r#"{
+  "ok": true,
+  "modul": "canvas",
+  "platno": {},
+  "kroky": [
+    {
+      "poradie": 1,
+      "zdroj": {"typ_slotu": "ruka", "index": 0,
+                "box": {"x": 0.10, "y": 0.90, "w": 0.08, "h": 0.08}},
+      "ciel": {"typ_bunky": "platno", "riadok": 3, "stlpec": 3,
+               "box": {"x": 0.30, "y": 0.30, "w": 0.08, "h": 0.08}},
+      "dovod": "Vezmi dwarf Lv1 zo slotu 0 v ruke a polož ho na bunku (riadok 3, stĺpec 3)."
+    },
+    {
+      "poradie": 2,
+      "zdroj": {"typ_slotu": "ruka", "index": 1,
+                "box": {"x": 0.20, "y": 0.90, "w": 0.08, "h": 0.08}},
+      "ciel": {"typ_bunky": "platno", "riadok": 4, "stlpec": 2,
+               "box": {"x": 0.20, "y": 0.40, "w": 0.08, "h": 0.08}},
+      "dovod": "Vezmi dwarf Lv1 zo slotu 1..."
+    }
+  ],
+  "istota": 0.9,
+  "istota_rozpoznania": 0.95,
+  "skontroluj": [],
+  "trvanie_ms": 4300,
+  "subor": "2026-10-16-040000-abcd1234.png"
+}"#;
 
 const ODPOVED: &str = r#"{
   "ok": true,
@@ -138,4 +167,47 @@ fn e2e_chyba_422_bez_tela_dostane_nasu_vetu() {
     let chyba = klient::posli_analyzu(&nastavenia(port), vec![0xFF, 0xD8])
         .expect_err("422 má byť chyba");
     assert!(chyba.contains("dosku Tartarus"), "neočakávaná veta: {chyba}");
+}
+
+/// E2E Frozen Canvas (TLI 4b): JPEG → HTTP `?modul=canvas` → JSON → PÁR
+/// zelených rámikov (zdroj v ruke + cieľ na plátne) na krok, prepočítaných
+/// na overlay presne tou istou funkciou ako Tartarus.
+#[test]
+fn e2e_canvas_analyza_az_po_parovane_obdlzniky() {
+    let (port, prijimac) = mock(200, ODPOVED_CANVAS);
+    let n = nastavenia(port);
+
+    let jpeg = vec![0xFF, 0xD8, 0xFF, 0xD9];
+    let v = klient::posli_analyzu_canvas(&n, jpeg.clone())
+        .expect("mock mal odpovedať 200");
+
+    // 1. Klient poslal presne to, čo kontrakt chce — na modul=canvas endpoint.
+    let (hlavicky, telo) = prijimac.recv().expect("mock nič nedostal");
+    assert!(hlavicky.starts_with("POST /api/analyza?modul=canvas "), "zlá cesta: {hlavicky}");
+    assert!(hlavicky.to_lowercase().contains("authorization: bearer tli_test_kluc"));
+    assert_eq!(telo, jpeg);
+
+    // 2. Odpoveď sa rozparsovala — DVA kroky, oba so zdrojom aj cieľom.
+    assert!(v.analyza.ok);
+    assert_eq!(v.analyza.modul, "canvas");
+    assert_eq!(v.analyza.kroky.len(), 2);
+    assert_eq!(v.analyza.kroky[0].poradie, 1);
+    assert_eq!(v.analyza.kroky[0].ciel.riadok, 3);
+
+    // 3. Oba kroky majú box na zdroji aj cieli → oba sú použiteľné.
+    let pouzitelne = api::pouzitelne_kroky(&v.analyza);
+    assert_eq!(pouzitelne.len(), 2);
+
+    // 4. Súradnice sa prepočítajú na overlay nad oknom 2560×1440 pri 125 % DPI —
+    // rovnakou funkciou (`box01_na_css`) ako políčka Tartarus (`pole_na_css`).
+    let okno = OknoFyz { x: -2560, y: 0, sirka: 2560, vyska: 1440 };
+    let krok1 = &v.analyza.kroky[0];
+    let zdroj_box = krok1.zdroj.box_.expect("zdroj box chýba");
+    let ciel_box = krok1.ciel.box_.expect("cieľ box chýba");
+    let zdroj_css = box01_na_css(zdroj_box.x, zdroj_box.y, zdroj_box.w, zdroj_box.h, &okno, 1.25);
+    let ciel_css = box01_na_css(ciel_box.x, ciel_box.y, ciel_box.w, ciel_box.h, &okno, 1.25);
+    assert!((zdroj_css.x - 0.10 * 2560.0 / 1.25).abs() < 1e-9);
+    assert!((ciel_css.x - 0.30 * 2560.0 / 1.25).abs() < 1e-9);
+    // Zdroj a cieľ sú na iných súradniciach — dôkaz, že sa nepomiešali.
+    assert!((zdroj_css.x - ciel_css.x).abs() > 1.0);
 }

@@ -1,11 +1,17 @@
 use tli_overlay_core::aktualizacia;
 use tli_overlay_core::api;
-use tli_overlay_core::api::Analyza;
+use tli_overlay_core::api::{Analyza, AnalyzaCanvas};
 use tli_overlay_core::nastavenia::Nastavenia;
 
 #[derive(Debug)]
 pub struct Vysledok {
     pub analyza: Analyza,
+    pub trvanie_ms: u128,
+}
+
+#[derive(Debug)]
+pub struct VysledokCanvas {
+    pub analyza: AnalyzaCanvas,
     pub trvanie_ms: u128,
 }
 
@@ -39,6 +45,36 @@ pub fn posli_analyzu(n: &Nastavenia, jpeg: Vec<u8>) -> Result<Vysledok, String> 
         // Zvyšok sú chyby prenosu (DNS, TLS, timeout). Zámerne catch-all, nie
         // `Transport(t)` — `ureq::Error` môže pribudnúť variant a appka sa nemá
         // prestať kompilovať pri `cargo update`.
+        Err(ina) => Err(api::sprava_siete(&ina.to_string())),
+    }
+}
+
+/// Rovnaké ako `posli_analyzu`, len pre Frozen Canvas (TLI 4b) — iný endpoint
+/// (`?modul=canvas`) a iný tvar odpovede (`kroky[]` namiesto `odporucanie`).
+pub fn posli_analyzu_canvas(n: &Nastavenia, jpeg: Vec<u8>) -> Result<VysledokCanvas, String> {
+    let zaciatok = std::time::Instant::now();
+
+    let odpoved = ureq::post(&n.adresa_analyza_canvas())
+        .set("Authorization", &format!("Bearer {}", n.kluc))
+        .set("Content-Type", "image/jpeg")
+        .timeout(std::time::Duration::from_secs(60))
+        .send_bytes(&jpeg);
+
+    match odpoved {
+        Ok(res) => {
+            let telo = res.into_string().unwrap_or_default();
+            let analyza: AnalyzaCanvas = serde_json::from_str(&telo)
+                .map_err(|_| "Server odpovedal niečím, čomu nerozumiem.".to_string())?;
+
+            Ok(VysledokCanvas {
+                analyza,
+                trvanie_ms: zaciatok.elapsed().as_millis(),
+            })
+        }
+        Err(ureq::Error::Status(kod, odpoved)) => {
+            let telo = odpoved.into_string().unwrap_or_default();
+            Err(api::sprava_chyby(kod, &telo))
+        }
         Err(ina) => Err(api::sprava_siete(&ina.to_string())),
     }
 }

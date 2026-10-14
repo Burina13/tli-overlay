@@ -41,6 +41,9 @@ listen("stav", (event) => {
     else if (payload.faza === "hotovo") {
         vykresliHotovo(payload);
     }
+    else if (payload.faza === "hotovo_canvas") {
+        vykresliHotovoCanvas(payload);
+    }
 });
 
 function vykresliHotovo(data) {
@@ -150,7 +153,7 @@ function vykresliHotovo(data) {
             const rect = elPanel.getBoundingClientRect();
             // Šípku potiahneme z pravého dolného rohu panela
             const startX = rect.right;
-            const startY = rect.bottom - (rect.height / 4); 
+            const startY = rect.bottom - (rect.height / 4);
 
             elSipkaCiara.setAttribute("x1", startX);
             elSipkaCiara.setAttribute("y1", startY);
@@ -159,4 +162,94 @@ function vykresliHotovo(data) {
             elSipka.classList.remove("skryte");
         });
     }
+}
+
+// ── Frozen Canvas (TLI 4b) — sekvencia krokov ČO (zdroj v ruke) → KAM (cieľ
+// na plátne), očíslovaná zelenými rámikmi. Žiadna šípka — pri viacerých
+// krokoch naraz by sa šípky prekrývali, číslo v rohu stačí.
+const ZELENA_KROK = "#36e05f";
+
+function vykresliHotovoCanvas(data) {
+    const kroky = data.kroky || [];
+    const analyza = data.analyza || {};
+
+    if (kroky.length === 0) {
+        pNadpis.textContent = "Frozen Canvas — žiadny krok";
+        pDovod.textContent = (analyza.skontroluj && analyza.skontroluj[0]) ||
+            "Server nenavrhol žiadny ťah (cieľ môže byť už splnený, alebo smer miešania ešte nemá overené pravidlo).";
+        pIstota.textContent = "";
+        pSkontroluj.classList.add("skryte");
+        pAlternativy.classList.add("skryte");
+        elPanel.classList.remove("skryte");
+        return;
+    }
+
+    // --- 1. Dva rámiky na krok: zdroj (ruka) + cieľ (plátno), spárované
+    // ROVNAKÝM číslom aj ROVNAKOU opacitou/hrúbkou — prvý krok plný a hrubý,
+    // ďalšie tenšie a priehľadnejšie, nech je poradie na prvý pohľad jasné.
+    kroky.forEach((krok) => {
+        const prvy = krok.poradie === 1;
+        const opacita = prvy ? 1 : Math.max(0.4, 1 - (krok.poradie - 1) * 0.2);
+        [krok.zdroj, krok.ciel].forEach((box) => {
+            if (!box || box.w <= 0 || box.h <= 0) return;
+            const div = document.createElement("div");
+            div.className = "pole krok-box" + (prvy ? " krok-prvy" : "");
+            div.style.left = box.x + "px";
+            div.style.top = box.y + "px";
+            div.style.width = box.w + "px";
+            div.style.height = box.h + "px";
+            div.style.borderColor = ZELENA_KROK;
+            div.style.opacity = String(opacita);
+            div.style.boxShadow = `inset 0 0 12px rgba(54, 224, 95, ${0.4 * opacita})`;
+
+            const cislo = document.createElement("span");
+            cislo.className = "krok-cislo";
+            cislo.textContent = String(krok.poradie);
+            div.appendChild(cislo);
+
+            elVrstva.appendChild(div);
+        });
+    });
+
+    // --- 2. Panel: prvý krok v hlavnom texte, ďalšie pod ním ako zoznam ---
+    pNadpis.textContent = kroky.length === 1
+        ? "Frozen Canvas — 1 krok"
+        : `Frozen Canvas — ${kroky.length} krokov`;
+
+    const istotaPercenta = Math.round((analyza.istota || 0) * 100);
+    pIstota.textContent = `Istota: ${istotaPercenta} %`;
+    pIstota.classList.toggle("nizka", istotaPercenta < 50);
+
+    pDovod.textContent = kroky[0].dovod || "";
+
+    pAlternativy.innerHTML = "";
+    if (kroky.length > 1) {
+        kroky.slice(1).forEach((krok) => {
+            const div = document.createElement("div");
+            div.className = "alternativa";
+            const spanNazov = document.createElement("span");
+            spanNazov.className = "alt-nazov";
+            spanNazov.textContent = `Krok ${krok.poradie}`;
+            const spanDovod = document.createElement("span");
+            spanDovod.textContent = " — " + (krok.dovod || "");
+            div.appendChild(spanNazov);
+            div.appendChild(spanDovod);
+            pAlternativy.appendChild(div);
+        });
+        pAlternativy.classList.remove("skryte");
+    } else {
+        pAlternativy.classList.add("skryte");
+    }
+
+    const sk = analyza.skontroluj || [];
+    if (sk.length > 0) {
+        const zoznam = sk.slice(0, 6);
+        pSkontroluj.textContent = "Neisté: " + zoznam.join(", ") +
+            (sk.length > 6 ? ` (+${sk.length - 6} ďalších)` : "");
+        pSkontroluj.classList.remove("skryte");
+    } else {
+        pSkontroluj.classList.add("skryte");
+    }
+
+    elPanel.classList.remove("skryte");
 }

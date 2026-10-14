@@ -107,3 +107,25 @@ jobs:
           name: overlay-nahlad
           path: overlay-nahlad.png
           if-no-files-found: warn
+      - name: Náhľad Frozen Canvas (TLI 4b) ako obrázok (artefakt behu)
+        shell: pwsh
+        run: |
+          # Rovnaký mechanizmus ako vyššie, len `nahlad-canvas.html`/.js podsunie
+          # mock odpoveď `faza: "hotovo_canvas"` — očíslované zelené rámiky
+          # zdroj (ruka) + cieľ (plátno) na syntetickom boarde zo
+          # `stacks/games/tli/engine/testy-canvas-solver.py`.
+          $edge = @(
+            "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+            "C:\Program Files\Microsoft\Edge\Application\msedge.exe"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $edge) { Write-Warning "Edge sa nenašiel, náhľad preskakujem."; exit 0 }
+          $cesta = (Resolve-Path "ui/nahlad-canvas.html").Path
+          & $edge --headless=new --disable-gpu --screenshot="$PWD\overlay-nahlad-canvas.png" `
+                  --window-size=1600,900 --virtual-time-budget=4000 "file:///$($cesta -replace '\\','/')"
+          if (-not (Test-Path "overlay-nahlad-canvas.png")) { Write-Warning "Edge obrázok nevytvoril." }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: overlay-nahlad-canvas
+          path: overlay-nahlad-canvas.png
+          if-no-files-found: warn

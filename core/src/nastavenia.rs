@@ -6,6 +6,11 @@ pub struct Nastavenia {
     pub url_servera: String,
     pub kluc: String,
     pub hotkey: String,
+    /// Druhá skratka pre Frozen Canvas (TLI 4b) — iná obrazovka hry, iný
+    /// modul API (`?modul=canvas`), preto samostatný hotkey namiesto
+    /// prepínača v nastaveniach (hráč je uprostred hrania, nemá čas
+    /// prekliknúť si režim).
+    pub hotkey_canvas: String,
     pub autoskrytie_s: u64,
     pub proces_hry: String,
     pub zvuk: bool,
@@ -17,6 +22,7 @@ impl Default for Nastavenia {
             url_servera: "https://tli.tvojtatko.sk".to_string(),
             kluc: "".to_string(),
             hotkey: "F8".to_string(),
+            hotkey_canvas: "F9".to_string(),
             autoskrytie_s: 20,
             proces_hry: "Torchlight Infinite, Torchlight".to_string(),
             zvuk: false,
@@ -37,7 +43,8 @@ impl Nastavenia {
 
         self.kluc = self.kluc.trim().to_string();
         self.hotkey = self.hotkey.to_uppercase();
-        
+        self.hotkey_canvas = self.hotkey_canvas.to_uppercase();
+
         if self.autoskrytie_s > 600 {
             self.autoskrytie_s = 600;
         }
@@ -52,6 +59,11 @@ impl Nastavenia {
     /// Skratka pre priamy prístup k endpointu, ktorý vracia výpočet ťahov na doske.
     pub fn adresa_analyza(&self) -> String {
         self.adresa("/api/analyza")
+    }
+
+    /// Frozen Canvas (TLI 4b) — ten istý endpoint, iný modul.
+    pub fn adresa_analyza_canvas(&self) -> String {
+        self.adresa("/api/analyza?modul=canvas")
     }
 
     /// Skratka pre kontrolu dostupnosti a stavu serverového API.
@@ -96,7 +108,22 @@ mod testy {
         assert_eq!(n.url_servera, "https://tli.tvojtatko.sk");
         assert_eq!(n.kluc, "");
         assert_eq!(n.hotkey, "F8");
+        assert_eq!(n.hotkey_canvas, "F9");
         assert_eq!(n.autoskrytie_s, 20);
+    }
+
+    #[test]
+    fn adresa_analyza_canvas_nesie_modul() {
+        let n = Nastavenia::default();
+        assert_eq!(n.adresa_analyza_canvas(),
+                  "https://tli.tvojtatko.sk/api/analyza?modul=canvas");
+    }
+
+    #[test]
+    fn hotkey_canvas_sa_tiez_velkymi_pismenami() {
+        let mut n = Nastavenia { hotkey_canvas: "f9".to_string(), ..Default::default() };
+        n.normalizuj();
+        assert_eq!(n.hotkey_canvas, "F9");
     }
 
     #[test]

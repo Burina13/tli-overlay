@@ -5,6 +5,7 @@ const formular = document.getElementById("formular");
 const inpUrl = document.getElementById("inp-url");
 const inpKluc = document.getElementById("inp-kluc");
 const inpHotkey = document.getElementById("inp-hotkey");
+const inpHotkeyCanvas = document.getElementById("inp-hotkey-canvas");
 const inpProces = document.getElementById("inp-proces");
 const inpAutoskrytie = document.getElementById("inp-autoskrytie");
 const inpZvuk = document.getElementById("inp-zvuk");
@@ -33,6 +34,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         inpUrl.value = nastavenia.url_servera || "";
         inpKluc.value = nastavenia.kluc || "";
         inpHotkey.value = nastavenia.hotkey || "F8";
+        inpHotkeyCanvas.value = nastavenia.hotkey_canvas || "F9";
         inpProces.value = nastavenia.proces_hry || "";
         inpAutoskrytie.value = nastavenia.autoskrytie_s || 0;
         inpZvuk.checked = !!nastavenia.zvuk;
@@ -79,6 +81,7 @@ formular.addEventListener("submit", async (e) => {
         url_servera: url,
         kluc: kluc,
         hotkey: inpHotkey.value.trim(),
+        hotkey_canvas: inpHotkeyCanvas.value.trim(),
         proces_hry: inpProces.value.trim(),
         autoskrytie_s: parseInt(inpAutoskrytie.value, 10) || 0,
         zvuk: inpZvuk.checked

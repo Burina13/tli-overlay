@@ -81,6 +81,86 @@ impl Default for Analyza {
     }
 }
 
+// ── Frozen Canvas (TLI 4b) — `?modul=canvas`, kontrakt v
+// docs/fakty/hry/torchlight-infinite/canvas-api-kontrakt.md. Odpoveď nesie
+// `kroky[]` (sekvenciu ČO→KAM), nie jedno `odporucanie` ako Tartarus, lebo
+// cieľ typicky žiada viac umiestnení naraz.
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct Box01 {
+    pub x: f64,
+    pub y: f64,
+    pub w: f64,
+    pub h: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct KrokZdroj {
+    pub typ_slotu: String,
+    pub index: i64,
+    #[serde(rename = "box")]
+    pub box_: Option<Box01>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct KrokCiel {
+    pub typ_bunky: String,
+    pub riadok: i64,
+    pub stlpec: i64,
+    #[serde(rename = "box")]
+    pub box_: Option<Box01>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct Krok {
+    pub poradie: i64,
+    pub zdroj: KrokZdroj,
+    pub ciel: KrokCiel,
+    pub dovod: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AnalyzaCanvas {
+    pub ok: bool,
+    pub modul: String,
+    pub kroky: Vec<Krok>,
+    pub istota: Option<f64>,
+    pub istota_rozpoznania: Option<f64>,
+    pub skontroluj: Vec<String>,
+    pub trvanie_ms: Option<u64>,
+}
+
+impl Default for AnalyzaCanvas {
+    fn default() -> Self {
+        Self {
+            ok: false,
+            modul: "canvas".to_string(),
+            kroky: vec![],
+            istota: None,
+            istota_rozpoznania: None,
+            skontroluj: vec![],
+            trvanie_ms: None,
+        }
+    }
+}
+
+/// Krok, ktorého zdroj aj cieľ majú súradnice (iné odpadli, lebo rozpoznávanie
+/// pre ne nevrátilo box — rovnaká konvencia ako Tartarus `pouzitelne_polia`).
+pub fn pouzitelne_kroky(a: &AnalyzaCanvas) -> Vec<&Krok> {
+    a.kroky
+        .iter()
+        .filter(|k| {
+            k.zdroj.box_.map(|b| b.w > 0.0 && b.h > 0.0).unwrap_or(false)
+                && k.ciel.box_.map(|b| b.w > 0.0 && b.h > 0.0).unwrap_or(false)
+        })
+        .collect()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ChybaServera {
@@ -200,5 +280,64 @@ mod testy {
         };
         assert!(je_neiste(&a, 7));
         assert!(!je_neiste(&a, 1));
+    }
+
+    #[test]
+    fn parsovanie_analyzy_canvas() {
+        // Tvar presne podľa docs/fakty/hry/torchlight-infinite/canvas-api-kontrakt.md.
+        let json = r#"{
+            "ok": true,
+            "modul": "canvas",
+            "kroky": [
+                {
+                    "poradie": 1,
+                    "zdroj": {"typ_slotu": "ruka", "index": 0,
+                              "box": {"x": 0.1, "y": 0.9, "w": 0.08, "h": 0.08}},
+                    "ciel": {"typ_bunky": "platno", "riadok": 3, "stlpec": 3,
+                             "box": {"x": 0.3, "y": 0.3, "w": 0.08, "h": 0.08}},
+                    "dovod": "Vezmi dwarf Lv1 zo slotu 0..."
+                },
+                {
+                    "poradie": 2,
+                    "zdroj": {"typ_slotu": "ruka", "index": 1, "box": null},
+                    "ciel": {"typ_bunky": "platno", "riadok": 4, "stlpec": 2, "box": null},
+                    "dovod": "Chýba súradnica"
+                }
+            ],
+            "istota": 0.9,
+            "skontroluj": []
+        }"#;
+        let a: AnalyzaCanvas = serde_json::from_str(json).unwrap();
+        assert!(a.ok);
+        assert_eq!(a.modul, "canvas");
+        assert_eq!(a.kroky.len(), 2);
+        assert_eq!(a.kroky[0].poradie, 1);
+        assert_eq!(a.kroky[0].zdroj.index, 0);
+        assert_eq!(a.kroky[0].ciel.riadok, 3);
+        assert!(a.kroky[0].zdroj.box_.is_some());
+        assert!(a.kroky[1].zdroj.box_.is_none());
+        assert_eq!(a.istota, Some(0.9));
+    }
+
+    #[test]
+    fn pouzitelne_kroky_vynecha_kroky_bez_boxu() {
+        let mut a = AnalyzaCanvas { ok: true, ..Default::default() };
+        a.kroky.push(Krok {
+            poradie: 1,
+            zdroj: KrokZdroj { typ_slotu: "ruka".to_string(), index: 0,
+                              box_: Some(Box01 { x: 0.1, y: 0.1, w: 0.05, h: 0.05 }) },
+            ciel: KrokCiel { typ_bunky: "platno".to_string(), riadok: 1, stlpec: 1,
+                             box_: Some(Box01 { x: 0.2, y: 0.2, w: 0.05, h: 0.05 }) },
+            dovod: "ok".to_string(),
+        });
+        a.kroky.push(Krok {
+            poradie: 2,
+            zdroj: KrokZdroj { typ_slotu: "ruka".to_string(), index: 1, box_: None },
+            ciel: KrokCiel { typ_bunky: "platno".to_string(), riadok: 2, stlpec: 1, box_: None },
+            dovod: "chyba box".to_string(),
+        });
+        let pouzitelne = pouzitelne_kroky(&a);
+        assert_eq!(pouzitelne.len(), 1);
+        assert_eq!(pouzitelne[0].poradie, 1);
     }
 }
