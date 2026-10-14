@@ -98,8 +98,15 @@ jobs:
           ) | Where-Object { Test-Path $_ } | Select-Object -First 1
           if (-not $edge) { Write-Warning "Edge sa nenašiel, náhľad preskakujem."; exit 0 }
           $cesta = (Resolve-Path "ui/nahlad.html").Path
-          & $edge --headless=new --disable-gpu --screenshot="$PWD\overlay-nahlad.png" `
-                  --window-size=1600,900 --virtual-time-budget=4000 "file:///$($cesta -replace '\\','/')"
+          # `--headless=new` prestalo byť platnou hodnotou (nová Chromium "headless new"
+          # je dnes JEDINÝ režim, bez prepínača) — staršia appka s neplatným argumentom
+          # skončila okamžite bez snímky, čo vyzeralo ako zamrznutie/preskočenie.
+          $p = Start-Process -FilePath $edge -ArgumentList @(
+            "--headless", "--disable-gpu", "--screenshot=$PWD\overlay-nahlad.png",
+            "--window-size=1600,900", "--virtual-time-budget=4000",
+            "file:///$($cesta -replace '\\','/')"
+          ) -NoNewWindow -Wait -PassThru
+          Write-Host "Edge exit code: $($p.ExitCode)"
           if (-not (Test-Path "overlay-nahlad.png")) { Write-Warning "Edge obrázok nevytvoril." }
       - uses: actions/upload-artifact@v4
         if: always()
@@ -120,8 +127,12 @@ jobs:
           ) | Where-Object { Test-Path $_ } | Select-Object -First 1
           if (-not $edge) { Write-Warning "Edge sa nenašiel, náhľad preskakujem."; exit 0 }
           $cesta = (Resolve-Path "ui/nahlad-canvas.html").Path
-          & $edge --headless=new --disable-gpu --screenshot="$PWD\overlay-nahlad-canvas.png" `
-                  --window-size=1600,900 --virtual-time-budget=4000 "file:///$($cesta -replace '\\','/')"
+          $p = Start-Process -FilePath $edge -ArgumentList @(
+            "--headless", "--disable-gpu", "--screenshot=$PWD\overlay-nahlad-canvas.png",
+            "--window-size=1600,900", "--virtual-time-budget=4000",
+            "file:///$($cesta -replace '\\','/')"
+          ) -NoNewWindow -Wait -PassThru
+          Write-Host "Edge exit code: $($p.ExitCode)"
           if (-not (Test-Path "overlay-nahlad-canvas.png")) { Write-Warning "Edge obrázok nevytvoril." }
       - uses: actions/upload-artifact@v4
         if: always()
