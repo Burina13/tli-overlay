@@ -1,0 +1,192 @@
+:root {
+    --bg-farba: #121018;
+    --bg-panel: rgba(255, 255, 255, 0.05);
+    --text-hlavny: #ffffff;
+    --text-tlmeny: #a0a0a0;
+    --akcent: #ff962c;
+    --akcent-hover: #ffaa52;
+    --cervena: #ff6b6b;
+    --zelena: #4caf50;
+    --border: rgba(255, 255, 255, 0.1);
+}
+
+body {
+    background-color: var(--bg-farba);
+    color: var(--text-hlavny);
+    font-family: "Segoe UI", system-ui, sans-serif;
+    margin: 0;
+    padding: 20px;
+    box-sizing: border-box;
+}
+
+.kontajner {
+    max-width: 600px;
+    margin: 0 auto;
+    background: var(--bg-panel);
+    padding: 24px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+}
+
+h1 {
+    margin-top: 0;
+    color: var(--akcent);
+    font-size: 22px;
+}
+
+hr {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 24px 0;
+}
+
+.skryte {
+    display: none !important;
+}
+
+.mt-8 { margin-top: 8px; }
+.mt-16 { margin-top: 16px; }
+
+/* --- Informačný blok --- */
+.info-blok {
+    background: rgba(255, 150, 44, 0.1);
+    border-left: 4px solid var(--akcent);
+    padding: 12px;
+    border-radius: 0 8px 8px 0;
+    font-size: 14px;
+    line-height: 1.5;
+    margin-bottom: 24px;
+}
+
+/* --- Formuláre --- */
+.skupina {
+    margin-bottom: 16px;
+    display: flex;
+    flex-direction: column;
+}
+
+label {
+    font-size: 14px;
+    margin-bottom: 6px;
+    font-weight: 600;
+}
+
+input[type="text"],
+input[type="password"],
+input[type="number"] {
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid var(--border);
+    color: var(--text-hlavny);
+    padding: 10px 12px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-family: inherit;
+}
+
+input[type="text"]:focus,
+input[type="password"]:focus,
+input[type="number"]:focus {
+    outline: none;
+    border-color: var(--akcent);
+    box-shadow: 0 0 0 2px rgba(255, 150, 44, 0.2);
+}
+
+small {
+    color: var(--text-tlmeny);
+    margin-top: 4px;
+    font-size: 12px;
+}
+
+code {
+    background: rgba(255, 255, 255, 0.1);
+    padding: 2px 4px;
+    border-radius: 4px;
+    font-family: monospace;
+}
+
+.heslo-obal {
+    display: flex;
+    gap: 8px;
+}
+.heslo-obal input {
+    flex: 1;
+}
+
+.checkbox-obal {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: normal;
+    cursor: pointer;
+}
+
+/* --- Tlačidlá --- */
+button {
+    cursor: pointer;
+    font-family: inherit;
+    border-radius: 6px;
+    border: none;
+    font-weight: 600;
+    transition: background 0.2s, transform 0.1s;
+}
+
+button:active {
+    transform: scale(0.98);
+}
+
+.btn-hlavny {
+    background: var(--akcent);
+    color: #000;
+    padding: 10px 20px;
+    font-size: 15px;
+}
+.btn-hlavny:hover {
+    background: var(--akcent-hover);
+}
+
+.btn-sekundarny {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-hlavny);
+    padding: 10px 16px;
+    font-size: 14px;
+}
+.btn-sekundarny:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.btn-maly {
+    padding: 6px 12px;
+    font-size: 13px;
+}
+
+.akcia-riadok {
+    flex-direction: row;
+    align-items: center;
+    gap: 16px;
+}
+
+/* --- Odkazy a pätička --- */
+.odkazy {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 24px;
+}
+
+.paticka {
+    background: rgba(0, 0, 0, 0.2);
+    padding: 16px;
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+}
+
+#vysledok-testu, #vysledok-ulozenia, #vysledok-aktualizacie {
+    font-size: 14px;
+    font-weight: bold;
+}
+
+.uspech { color: var(--zelena); }
+.chyba { color: var(--cervena); }

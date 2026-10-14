@@ -1,0 +1,6 @@
+{
+  "version": "0.0.0",
+  "notes": "Zatiaľ nie je vydaná žiadna verzia. Po prvom release sa tu objaví verzia, odkaz na MSI a jeho SHA256.",
+  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.0.0/Tvoj-Tatko-TLI-Overlay_0.0.0_x64_en-US.msi",
+  "msiSha256": ""
+}

@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Overlay aj okno nastavení potrebujú len jadro Tauri: volať vlastné príkazy appky a počúvať udalosť `stav`. Žiadny plugin sa z JavaScriptu nevolá — globálna skratka aj sieť bežia výhradne v Ruste.",
+  "windows": ["overlay", "nastavenia"],
+  "permissions": ["core:default"]
+}

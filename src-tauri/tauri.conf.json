@@ -1,0 +1,68 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Tvoj Tatko TLI Overlay",
+  "version": "0.1.0",
+  "identifier": "sk.tvojtatko.tli-overlay",
+  "build": {
+    "frontendDist": "../ui"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "overlay",
+        "url": "index.html",
+        "title": "Tvoj Tatko TLI Overlay",
+        "width": 760,
+        "height": 300,
+        "visible": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "shadow": false,
+        "resizable": false,
+        "maximizable": false,
+        "minimizable": false,
+        "focus": false
+      },
+      {
+        "label": "nastavenia",
+        "url": "nastavenia.html",
+        "title": "Tvoj Tatko TLI Overlay — nastavenia",
+        "width": 660,
+        "height": 760,
+        "visible": false,
+        "resizable": true,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' ipc: http://ipc.localhost; object-src 'none'; base-uri 'none'; form-action 'none'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["msi"],
+    "publisher": "Tvoj Tatko",
+    "copyright": "Tvoj Tatko",
+    "category": "Utility",
+    "shortDescription": "Odporúčaný ťah v Tartarus priamo nad hrou",
+    "longDescription": "Stlačíš F8, appka odfotí okno hry Torchlight: Infinite, pošle snímku na tli.tvojtatko.sk a nad hrou ti ukáže odporúčaný ťah aj s dôvodom po slovensky. Iba číta obrazovku — nesiaha do hry.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "allowDowngrades": false,
+      "wix": {
+        "upgradeCode": "d4dac792-734c-507d-9004-d1dae51a2874"
+      },
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      }
+    }
+  }
+}

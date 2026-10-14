@@ -1,0 +1,109 @@
+# Testy. Jadro (čistá logika) beží na Linuxe a je hotové do minúty; appka sa
+# zostavuje na Windowse, lebo inde sa Tauri s WebView2 ani nedá preložiť.
+name: Testy
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  jadro:
+    name: Jadro (prepočet súradníc, nastavenia, updater)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core
+      - run: cargo test --manifest-path core/Cargo.toml -- --nocapture
+
+  pravidla:
+    name: Pravidlá ToS a pripnutý manifest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: V kóde nesmie byť zásah do hry ani simulácia vstupu
+        run: |
+          # Zadanie TLI 3/3: appka LEN číta obrazovku. Tento test je jediné miesto,
+          # ktoré to drží aj po budúcich úpravách — preto hľadá API, nie dobré úmysly.
+          zakazane='SendInput|mouse_event|keybd_event|ReadProcessMemory|WriteProcessMemory|VirtualAllocEx|CreateRemoteThread|SetWindowsHookEx|LoadLibraryA|D3D11|IDXGI|pcap|WinDivert|Detour'
+          if grep -REn "$zakazane" src-tauri/src core/src ui 2>/dev/null; then
+            echo "::error::Našiel sa zákaz z pravidiel ToS (zásah do hry alebo simulácia vstupu)."
+            exit 1
+          fi
+          echo "OK — žiadne zakázané API."
+      - name: Updater pozná len náš latest-tli.json
+        run: |
+          # Incident A2Tools 13.10.2026: cudzí manifest prepísal nášmu klientovi
+          # inštaláciu. Jediná povolená adresa je konštanta v core/src/aktualizacia.rs.
+          nase=$(grep -c 'raw.githubusercontent.com/Burina13/tli-overlay/main/latest-tli.json' core/src/aktualizacia.rs)
+          test "$nase" -ge 1 || { echo "::error::MANIFEST_URL sa zmenil."; exit 1; }
+          python3 - <<'PY'
+          import pathlib, re, sys
+          # Testy zámerne OBSAHUJÚ cudzie adresy (overujú, že ich zarážka odmietne),
+          # takže sa z kontroly vystrihnú. Kontroluje sa kód, ktorý sa naozaj vykoná.
+          POVOLENE = ("https://tli.tvojtatko.sk",
+                      "https://raw.githubusercontent.com/Burina13/tli-overlay/")
+          zle = []
+          for subor in list(pathlib.Path("src-tauri/src").rglob("*.rs")) + \
+                       list(pathlib.Path("core/src").rglob("*.rs")):
+              text = subor.read_text(encoding="utf-8")
+              text = re.split(r"#\[cfg\(test\)\]", text)[0]
+              for cislo, riadok in enumerate(text.splitlines(), 1):
+                  for najdena in re.findall(r"https?://[^\s"'`)]+", riadok):
+                      if not any(najdena.startswith(p) for p in POVOLENE):
+                          zle.append(f"{subor}:{cislo}: {najdena}")
+          if zle:
+              print("::error::V kóde je adresa mimo nášho servera a nášho repozitára:")
+              print("\n".join(zle))
+              sys.exit(1)
+          print("OK — žiadny cudzí endpoint.")
+          PY
+      - name: Manifest latest-tli.json je platný JSON a ukazuje na nás
+        run: |
+          python3 - <<'PY'
+          import json, sys
+          m = json.load(open("latest-tli.json"))
+          for k in ("version", "notes", "msiUrl", "msiSha256"):
+              assert k in m, f"v manifeste chýba {k}"
+          assert m["msiUrl"].startswith("https://github.com/Burina13/tli-overlay/releases/download/"), m["msiUrl"]
+          print("OK —", m["version"])
+          PY
+
+  appka:
+    name: Appka a E2E proti mock serveru (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: cargo test --manifest-path src-tauri/Cargo.toml
+      - name: Náhľad overlayu ako obrázok (artefakt behu)
+        shell: pwsh
+        run: |
+          # Overlay je obyčajná stránka, takže sa dá vykresliť aj v Edge, ktorý je
+          # na runneri predinštalovaný. `nahlad.html` podsunie `overlay.js` ukážkovú
+          # odpoveď servera — teda presne to, čo nakreslí naživo nad hrou.
+          $edge = @(
+            "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+            "C:\Program Files\Microsoft\Edge\Application\msedge.exe"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $edge) { Write-Warning "Edge sa nenašiel, náhľad preskakujem."; exit 0 }
+          $cesta = (Resolve-Path "ui/nahlad.html").Path
+          & $edge --headless=new --disable-gpu --screenshot="$PWD\overlay-nahlad.png" `
+                  --window-size=1600,900 --virtual-time-budget=4000 "file:///$($cesta -replace '\\','/')"
+          if (-not (Test-Path "overlay-nahlad.png")) { Write-Warning "Edge obrázok nevytvoril." }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: overlay-nahlad
+          path: overlay-nahlad.png
+          if-no-files-found: warn

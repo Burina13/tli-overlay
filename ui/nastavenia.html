@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nastavenia - Tartarus</title>
+    <link rel="stylesheet" href="nastavenia.css">
+</head>
+<body>
+    <div class="kontajner">
+        <h1>Nastavenia</h1>
+        
+        <p class="vysvetlivka info-blok">
+            <strong>Čo appka robí a čo nerobí:</strong> Iba číta obrazovku, neposiela nič iné než snímku okna hry na analýzu, nesiaha do pamäte hry, nesimuluje stlačenia kláves ani klikanie. Tvoj účet je v bezpečí.
+        </p>
+
+        <form id="formular">
+            <div class="skupina">
+                <label for="inp-url">Adresa servera</label>
+                <input type="text" id="inp-url" value="https://tli.tvojtatko.sk">
+            </div>
+
+            <div class="skupina">
+                <label for="inp-kluc">Osobný kľúč</label>
+                <div class="heslo-obal">
+                    <input type="password" id="inp-kluc">
+                    <button type="button" id="btn-ukazat-kluc" class="btn-maly">Ukázať</button>
+                </div>
+            </div>
+
+            <div class="skupina akcia-riadok">
+                <button type="button" id="btn-test" class="btn-sekundarny">Test pripojenia</button>
+                <span id="vysledok-testu"></span>
+            </div>
+
+            <hr>
+
+            <div class="skupina">
+                <label for="inp-hotkey">Klávesová skratka</label>
+                <input type="text" id="inp-hotkey" value="F8">
+                <small>Napríklad: <code>F8</code> alebo <code>CommandOrControl+Shift+T</code></small>
+            </div>
+
+            <div class="skupina">
+                <label for="inp-proces">Okno hry</label>
+                <input type="text" id="inp-proces" value="Torchlight Infinite, Torchlight">
+                <small>Zoznam názvov okien a procesov (oddelené čiarkami), ktoré sa majú zachytávať.</small>
+            </div>
+
+            <div class="skupina">
+                <label for="inp-autoskrytie">Automatické skrytie (sekundy)</label>
+                <input type="number" id="inp-autoskrytie" min="0" value="0">
+                <small>Ak je nastavené na 0, overlay sa nikdy neskryje sám.</small>
+            </div>
+
+            <div class="skupina">
+                <label class="checkbox-obal">
+                    <input type="checkbox" id="inp-zvuk">
+                    Zahrať zvuk po analýze
+                </label>
+            </div>
+
+            <div class="skupina akcia-riadok mt-16">
+                <button type="submit" id="btn-ulozit" class="btn-hlavny">Uložiť</button>
+                <span id="vysledok-ulozenia"></span>
+            </div>
+        </form>
+
+        <hr>
+
+        <div class="odkazy">
+            <button type="button" id="odkaz-kluc" class="btn-sekundarny">Vydať si kľúč</button>
+            <button type="button" id="odkaz-sprievodca" class="btn-sekundarny">Sprievodca Tartarus</button>
+            <button type="button" id="odkaz-analyzer" class="btn-sekundarny">Analyzér na webe</button>
+        </div>
+
+        <div class="paticka">
+            <div id="verzia-text">Verzia sa načítava...</div>
+            <button type="button" id="btn-aktualizacia" class="btn-sekundarny btn-maly">Skontrolovať aktualizáciu</button>
+            <div id="vysledok-aktualizacie"></div>
+            <button type="button" id="btn-stiahnut" class="btn-hlavny skryte mt-8">Stiahnuť novú verziu</button>
+        </div>
+    </div>
+
+    <script src="nastavenia.js"></script>
+</body>
+</html>

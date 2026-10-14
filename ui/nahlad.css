@@ -1,0 +1,6 @@
+/* Len pre náhľad v CI: naostro je pozadie priehľadné a za ním je hra. Tu treba
+   niečo, nad čím je overlay vidieť aj na obrázku. */
+body.nahlad {
+    background:
+        repeating-linear-gradient(45deg, #1b1724 0 22px, #221d2e 22px 44px);
+}
