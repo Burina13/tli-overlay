@@ -1,6 +1,6 @@
 {
-  "version": "0.1.0",
-  "notes": "Prvé vydanie. F8 nad hrou spraví snímku okna, pošle ju na tli.tvojtatko.sk a nad hrou ukáže odporúčaný ťah, dôvod po slovensky, dve alternatívy a istotu. Appka iba číta obrazovku — nesimuluje vstup a nezasahuje do hry.",
-  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.1.0/Tvoj-Tatko-TLI-Overlay_0.1.0_x64_en-US.msi",
-  "msiSha256": "d448cf0bcad8e4009525baf92c612fe701c01f96e8ae054ac1552c3142d01a27"
+  "version": "0.2.0",
+  "notes": "Frozen Canvas (TLI 4b). Druhá klávesová skratka (predvolene F9, vedľa F8) analyzuje obrazovku Frozen Canvas a overlay ukáže očíslovanú sekvenciu krokov ČO (paint v ruke) → KAM (bunka na plátne) dvoma zelenými rámikmi na krok. Tartarus (F8) sa nemení.",
+  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.2.0/Tvoj-Tatko-TLI-Overlay_0.2.0_x64_en-US.msi",
+  "msiSha256": "bf101b65e68126ef6924e4445c2d02ac73fa82957908f53cbeab7598b43df543"
 }
