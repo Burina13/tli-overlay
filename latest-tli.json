@@ -1,6 +1,6 @@
 {
-  "version": "0.0.0",
-  "notes": "Zatiaľ nie je vydaná žiadna verzia. Po prvom release sa tu objaví verzia, odkaz na MSI a jeho SHA256.",
-  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.0.0/Tvoj-Tatko-TLI-Overlay_0.0.0_x64_en-US.msi",
-  "msiSha256": ""
+  "version": "0.1.0",
+  "notes": "Prvé vydanie. F8 nad hrou spraví snímku okna, pošle ju na tli.tvojtatko.sk a nad hrou ukáže odporúčaný ťah, dôvod po slovensky, dve alternatívy a istotu. Appka iba číta obrazovku — nesimuluje vstup a nezasahuje do hry.",
+  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.1.0/Tvoj-Tatko-TLI-Overlay_0.1.0_x64_en-US.msi",
+  "msiSha256": "d448cf0bcad8e4009525baf92c612fe701c01f96e8ae054ac1552c3142d01a27"
 }
