@@ -56,7 +56,7 @@ jobs:
               text = subor.read_text(encoding="utf-8")
               text = re.split(r"#\[cfg\(test\)\]", text)[0]
               for cislo, riadok in enumerate(text.splitlines(), 1):
-                  for najdena in re.findall(r"https?://[^\s"'`)]+", riadok):
+                  for najdena in re.findall(r"""https?://[^\s"'`)]+""", riadok):
                       if not any(najdena.startswith(p) for p in POVOLENE):
                           zle.append(f"{subor}:{cislo}: {najdena}")
           if zle:
