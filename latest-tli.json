@@ -1,6 +1,6 @@
 {
-  "version": "0.2.0",
-  "notes": "Frozen Canvas (TLI 4b). Druhá klávesová skratka (predvolene F9, vedľa F8) analyzuje obrazovku Frozen Canvas a overlay ukáže očíslovanú sekvenciu krokov ČO (paint v ruke) → KAM (bunka na plátne) dvoma zelenými rámikmi na krok. Tartarus (F8) sa nemení.",
-  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.2.0/Tvoj-Tatko-TLI-Overlay_0.2.0_x64_en-US.msi",
-  "msiSha256": "bf101b65e68126ef6924e4445c2d02ac73fa82957908f53cbeab7598b43df543"
+  "version": "0.3.0",
+  "notes": "Frozen Canvas — zber dát a priznanie neoverených pravidiel (TLI 4c). Nové nastavenie \"Zber dát\" (vypnuté predvolene): keď je zapnuté, hotkey Frozen Canvas (F9) nevykreslí radu — len odfotí, pošle na server (ten uloží vždy, bez ohľadu na istotu) a ukáže počítadlo \"Uložené #N\". Rada pre smer, ktorý ešte nemá dosť potvrdených párov pred/po, má v nadpise prefix ⚠️. Tartarus (F8) sa nemení.",
+  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.3.0/Tvoj-Tatko-TLI-Overlay_0.3.0_x64_en-US.msi",
+  "msiSha256": "d657064727617b5c06420cf6ff8c9fddc9bf30525b21ed869a2097d9eb10799c"
 }
