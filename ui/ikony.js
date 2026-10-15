@@ -3,8 +3,11 @@
  * PREČO VLASTNÉ SVG A NIE SŤAHOVANIE Z `tli-web`: overlay beží cez obrazovku
  * hry a panel sa musí vykresliť OKAMŽITE aj vtedy, keď server práve
  * nedosiahnuteľný je. Preto je tu ten istý vizuálny jazyk ako na webe
- * (`stacks/games/tli-web/static/kruh.js`), ale ako lokálny, offline zdroj —
- * žiadny sieťový request navyše a žiadne čakanie na obrázok.
+ * (`stacks/games/tli-web/static/doska.js`), ale ako lokálny, offline zdroj —
+ * žiadny sieťový request navyše a žiadne čakanie na obrázok. Web od TLI 9b
+ * používa reálne výrezy z videa (`/ikony/tartarus/...`), tunajšie zjednodušené
+ * siluety ZOSTÁVAJÚ SVG — panel sa kreslí ~28 px, kde by sa detail aj tak
+ * stratil, a appka nesmie pri vykreslení čakať na súbor/sieť.
  *
  * Klasický skript (nie ES modul) — `index.html` ho načíta pred `overlay.js`,
  * rovnako ako ostatné súbory tohto UI.
@@ -12,9 +15,10 @@
 (function (globalny) {
     "use strict";
 
-    // Farby rarít — tie isté ako na webe (tier 0..5).
-    var TIER_FARBA = ["#9ca3af", "#60a5fa", "#fde047", "#c084fc", "#f87171", "#ff6ad5"];
-    var TIER_SK = ["Normálny", "Magický", "Vzácny", "Legendárny", "Najvyšší", "Dúhový"];
+    // Farby rarít — tie isté ako na webe (TLI 9b: 5 stupňov White..Chromatic,
+    // nie 6 — predtým Normal..Rainbow).
+    var TIER_FARBA = ["#d1d5db", "#60a5fa", "#c084fc", "#fb923c", "#ff0055"];
+    var TIER_SK = ["Biely", "Modrý", "Fialový", "Oranžový", "Chromatický"];
     var BEAST_SK = { mammoth: "Mamut", lion: "Lev", wolf: "Vlk", rat: "Potkan" };
 
     // Portréty štyroch väzňov — zjednodušené oproti webu (panel ich kreslí

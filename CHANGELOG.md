@@ -2,6 +2,23 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.5.0 — 15.10.2026
+
+Oprava farieb/názvov rarity v paneli s dôvodom (TLI 9b).
+
+- Video 8SESQy9Pe70 + Richardov screenshot ukázali, že skutočná hra má **5 stupňov
+  rarity** (White/Blue/Purple/Orange/Chromatic), nie 6 (Normal..Rainbow) a doska je
+  **obdĺžniková**, nie kruhová — detail
+  `docs/fakty/hry/torchlight-infinite/tartarus-pravidla.md` v repe `ops`.
+  Server (`tli-web`) aj engine sú na nový model premigrované.
+- `ui/ikony.js`: `TIER_FARBA`/`TIER_SK` skrátené na 5 položiek so správnymi menami —
+  predtým mal panel pri tieroch 2-4 PRESUNUTÉ (nesprávne) farby a mená, lebo pole malo
+  staré indexy 0-5.
+- Siluety väzňov v paneli ZOSTÁVAJÚ jednoduché SVG (nie reálne výrezy ako na webe) —
+  appka ich musí vykresliť okamžite aj offline, bez čakania na súbor/sieť; pri ~28 px
+  veľkosti sa detail aj tak stratí.
+- Zelené rámiky, čísla krokov ani žiadna iná funkcia sa nemenia.
+
 ## 0.4.0 — 15.10.2026
 
 Ikony v paneli s dôvodom (TLI 8).
