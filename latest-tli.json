@@ -1,6 +1,6 @@
 {
-  "version": "0.4.0",
-  "notes": "Ikony v paneli s dôvodom (TLI 8). Nad textom dôvodu je nový riadok: ikona toho, koho sa ťah týka (portrét väzňa vo farbe jeho rarity pri Tartarus, štvorček paintu s levelom pri Frozen Canvas), a malá ikona cieľovej akcie (patrola, požretie, výmena, nástroj, dar, položenie na plátno). Ikony sú kreslené priamo v appke, nesťahujú sa — panel sa vykreslí aj vtedy, keď server nie je dostupný. Zelené rámiky a čísla krokov sa nemenia.",
-  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.4.0/Tvoj-Tatko-TLI-Overlay_0.4.0_x64_en-US.msi",
-  "msiSha256": "9626e5888a9553475abec290fcbd7685346f0bd23576be8b097bb006090e7918"
+  "version": "0.5.0",
+  "notes": "Oprava farieb a názvov rarity v paneli s dôvodom (TLI 9b). Video SS14 a Richardov screenshot ukázali, že hra má päť stupňov rarity (White/Blue/Purple/Orange/Chromatic), nie šesť — panel preto pri stredných stupňoch zobrazoval posunuté, nesprávne farby a mená. Siluety väzňov zostávajú kreslené priamo v appke, aby sa panel vykreslil aj bez servera. Zelené rámiky, čísla krokov ani žiadna iná funkcia sa nemenia.",
+  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.5.0/Tvoj-Tatko-TLI-Overlay_0.5.0_x64_en-US.msi",
+  "msiSha256": "f1affdda54055bf64fc506a4d96ec0bdf1d43c928c289cfa7b7aef5dcbc1c0a1"
 }
