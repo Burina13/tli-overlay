@@ -303,6 +303,21 @@ V hre prepni Nastavenia → Zobrazenie → Režim okna na „Okno bez okrajov“
                 let vysledok = snimka::do_jpegu(&snimok, zmensenie::MAX_DLZKA, 80)
                     .and_then(|jpeg| klient::posli_analyzu_canvas(&nastavenia, jpeg));
                 match vysledok {
+                    // Zber dát (TLI 4c): server ULOŽIL stav (robí to vždy, bez
+                    // ohľadu na istotu solvera — nezmenené od TLI 4b), takže
+                    // KAŽDÉ Ok() tu znamená "uložené", nezávisle od toho, či
+                    // solver vôbec niečo navrhol. Žiadna rada sa nevykresľuje —
+                    // zámerne, nech zber dát nepokazí nehádaný smer tým, že by
+                    // vnucoval neoverenú radu.
+                    Ok(_v) if nastavenia.zber_dat_zapnute => {
+                        let pocet = {
+                            let stav = app.state::<Stav>();
+                            let mut p = stav.pocitadlo_zber.lock().unwrap();
+                            *p += 1;
+                            *p
+                        };
+                        let _ = app.emit("stav", json!({ "faza": "zber_ulozene", "pocet": pocet }));
+                    }
                     Ok(v) => {
                         // Frozen Canvas (TLI 4b): KAŽDÝ krok nesie DVA páry
                         // súradníc (zdroj v ruke + cieľ na plátne), prepočítané
@@ -499,6 +514,7 @@ fn main() {
             nastavenia: Mutex::new(nacitane),
             beh: Mutex::new(false),
             zobrazene_od: Mutex::new(None),
+            pocitadlo_zber: Mutex::new(0),
         })
         .invoke_handler(tauri::generate_handler![
             nacitaj_nastavenia,

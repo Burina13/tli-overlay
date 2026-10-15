@@ -44,7 +44,22 @@ listen("stav", (event) => {
     else if (payload.faza === "hotovo_canvas") {
         vykresliHotovoCanvas(payload);
     }
+    else if (payload.faza === "zber_ulozene") {
+        vykresliZberUlozene(payload);
+    }
 });
+
+// ── Zber dát (TLI 4c) — žiadna rada, len potvrdenie že sa snímka odoslala
+// a server ju uložil (robí to vždy, bez ohľadu na istotu solvera).
+function vykresliZberUlozene(data) {
+    pNadpis.textContent = `Zber dát — uložené #${data.pocet}`;
+    pDovod.textContent = "Snímka odoslaná a uložená na serveri. Over F9 pred aj po "
+        + "každom položení paintu.";
+    pIstota.textContent = "";
+    pSkontroluj.classList.add("skryte");
+    pAlternativy.classList.add("skryte");
+    elPanel.classList.remove("skryte");
+}
 
 function vykresliHotovo(data) {
     const analyza = data.analyza;
@@ -212,9 +227,16 @@ function vykresliHotovoCanvas(data) {
     });
 
     // --- 2. Panel: prvý krok v hlavnom texte, ďalšie pod ním ako zoznam ---
-    pNadpis.textContent = kroky.length === 1
+    // TLI 4c: keď smer aktívneho cieľa ešte nemá dosť potvrdených párov
+    // pred/po (canvas.yml: prah_overenia_parov), server to pošle v
+    // `pravidlo_overene: false` — rada sa aj tak zobrazí (solver implementuje
+    // len overené smery), ale nadpis to musí priznať, nech ju hráč neberie
+    // ako isté pravidlo.
+    const neoverene = analyza.pravidlo_overene === false;
+    const prefixNadpisu = neoverene ? "⚠️ " : "";
+    pNadpis.textContent = prefixNadpisu + (kroky.length === 1
         ? "Frozen Canvas — 1 krok"
-        : `Frozen Canvas — ${kroky.length} krokov`;
+        : `Frozen Canvas — ${kroky.length} krokov`);
 
     const istotaPercenta = Math.round((analyza.istota || 0) * 100);
     pIstota.textContent = `Istota: ${istotaPercenta} %`;

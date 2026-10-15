@@ -14,6 +14,13 @@ pub struct Nastavenia {
     pub autoskrytie_s: u64,
     pub proces_hry: String,
     pub zvuk: bool,
+    /// Zber dát (TLI 4c, `2026-10-15-0028-mcp.md`): keď zapnuté, hotkey pre
+    /// Frozen Canvas (`hotkey_canvas`) NEukazuje radu solvera, len odfotí,
+    /// pošle na server (ten uloží VŽDY, bez ohľadu na istotu — nezmenené
+    /// správanie servera z TLI 4b) a ukáže počítadlo „uložené #N". Žiadny
+    /// tretí hotkey — zámerne, nech sa Richard uprostred hrania nemusí učiť
+    /// novú klávesu, len si raz zaškrtne prepínač v Nastaveniach.
+    pub zber_dat_zapnute: bool,
 }
 
 impl Default for Nastavenia {
@@ -26,6 +33,7 @@ impl Default for Nastavenia {
             autoskrytie_s: 20,
             proces_hry: "Torchlight Infinite, Torchlight".to_string(),
             zvuk: false,
+            zber_dat_zapnute: false,
         }
     }
 }
@@ -161,6 +169,21 @@ mod testy {
     fn poskodeny_json_vrati_predvolene() {
         let n = Nastavenia::z_jsonu("{ zle : [");
         assert_eq!(n.url_servera, "https://tli.tvojtatko.sk");
+    }
+
+    #[test]
+    fn zber_dat_zapnute_je_predvolene_vypnute() {
+        let n = Nastavenia::default();
+        assert!(!n.zber_dat_zapnute);
+    }
+
+    #[test]
+    fn stary_json_bez_zber_dat_pola_sa_nacita_s_vypnutym_predvolenim() {
+        // Nastavenia z verzie pred TLI 4c (0.2.0) toto pole nemajú vôbec —
+        // `#[serde(default)]` nesmie pri ich načítaní zlyhať.
+        let n = Nastavenia::z_jsonu(r#"{"kluc":"abc","hotkey":"F8"}"#);
+        assert!(!n.zber_dat_zapnute);
+        assert_eq!(n.kluc, "abc");
     }
 
     #[test]

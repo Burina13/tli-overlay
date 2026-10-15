@@ -40,6 +40,8 @@ Konfigurácia sa ukladá do `%APPDATA%\sk.tvojtatko.tli-overlay\nastavenia.json`
 | Klávesová skratka | Hotkey na spustenie analýzy. Zápis napr. `F8`, `CommandOrControl+Shift+T`. | `F8` |
 | Okno hry | Zoznam oddelený čiarkami; porovnáva sa s názvom okna **aj** s menom procesu, bez ohľadu na veľkosť písmen, medzery a interpunkciu. Položky kratšie než 3 znaky sa ignorujú. | `Torchlight Infinite, Torchlight` |
 | Automatické skrytie | Po koľkých sekundách overlay sám zhasne. `0` = nikdy. | `20` |
+| Klávesová skratka — Frozen Canvas | Druhá, nezávislá skratka pre inú obrazovku hry (mriežka miešania paintov, samostatný cieľ Richardovho testovania 16.10.2026). | `F9` |
+| Zber dát (Frozen Canvas) | Keď zapnuté, skratka pre Frozen Canvas nevykreslí radu — len odfotí, pošle na server (uloží sa VŽDY) a ukáže počítadlo „Uložené #N". Zapni počas zberu dát, inak nech je vypnuté. | vypnuté |
 
 ## Bezpečnosť a pravidlá hry
 

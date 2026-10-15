@@ -2,6 +2,20 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.3.0 — 15.10.2026
+
+Frozen Canvas (TLI 4c) — režim zberu dát a priznanie neoverených pravidiel.
+
+- Nové nastavenie „Zber dát (Frozen Canvas)" (vypnuté predvolene): keď je zapnuté, hotkey
+  Frozen Canvas (predvolene F9) nevykreslí radu solvera — len odfotí, pošle na server (ten
+  uloží stav VŽDY, bez ohľadu na istotu — nezmenené od 0.2.0) a ukáže počítadlo
+  „Zber dát — uložené #N". Žiadny tretí hotkey, nech sa počas hrania netreba učiť novú
+  klávesu.
+- Keď smer aktívneho cieľa ešte nemá dosť potvrdených párov pred/po (server o tom rozhoduje
+  cez nové pole `pravidlo_overene`), nadpis rady dostane prefix „⚠️ " a panel „Neisté" ukáže
+  dôvod — solver síce radu dá (implementuje len smery s overeným pravidlom), ale hráč má
+  vidieť, že ešte nie je potvrdená dátami.
+
 ## 0.2.0 — 15.10.2026
 
 Frozen Canvas (TLI 4b) — druhá, nezávislá mechanika vedľa Tartarus.

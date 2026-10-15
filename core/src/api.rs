@@ -133,6 +133,11 @@ pub struct AnalyzaCanvas {
     pub istota_rozpoznania: Option<f64>,
     pub skontroluj: Vec<String>,
     pub trvanie_ms: Option<u64>,
+    /// TLI 4c (`2026-10-15-0028-mcp.md`): `true`/`false` = smer aktívneho
+    /// cieľa má/nemá aspoň `canvas.yml:prah_overenia_parov` potvrdených párov
+    /// pred/po; `null` keď plátno nemá rozpoznaný cieľ (nedá sa posúdiť).
+    /// Kontrakt: `canvas-api-kontrakt.md` § `pravidlo_overene`.
+    pub pravidlo_overene: Option<bool>,
 }
 
 impl Default for AnalyzaCanvas {
@@ -145,6 +150,7 @@ impl Default for AnalyzaCanvas {
             istota_rozpoznania: None,
             skontroluj: vec![],
             trvanie_ms: None,
+            pravidlo_overene: None,
         }
     }
 }
@@ -317,6 +323,23 @@ mod testy {
         assert!(a.kroky[0].zdroj.box_.is_some());
         assert!(a.kroky[1].zdroj.box_.is_none());
         assert_eq!(a.istota, Some(0.9));
+    }
+
+    #[test]
+    fn parsovanie_analyzy_canvas_s_pravidlo_overene() {
+        let json = r#"{"ok": true, "modul": "canvas", "kroky": [],
+                       "istota": 0.9, "skontroluj": [], "pravidlo_overene": false}"#;
+        let a: AnalyzaCanvas = serde_json::from_str(json).unwrap();
+        assert_eq!(a.pravidlo_overene, Some(false));
+    }
+
+    #[test]
+    fn chybajuce_pravidlo_overene_je_none_nie_chyba() {
+        // Starší server (pred TLI 4c) toto pole nevracia vôbec — parsovanie
+        // nesmie spadnúť, len sa to má brať ako "neznáme".
+        let json = r#"{"ok": true, "modul": "canvas", "kroky": [], "istota": 0.9, "skontroluj": []}"#;
+        let a: AnalyzaCanvas = serde_json::from_str(json).unwrap();
+        assert_eq!(a.pravidlo_overene, None);
     }
 
     #[test]

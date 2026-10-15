@@ -7,6 +7,12 @@ pub struct Stav {
     pub nastavenia: Mutex<Nastavenia>,
     pub beh: Mutex<bool>,
     pub zobrazene_od: Mutex<Option<Instant>>,
+    /// Zber dát (TLI 4c) — koľko snímok sa za tento beh appky úspešne poslalo
+    /// a uložilo na server v režime "Zber dát". Len v pamäti (reštart appky
+    /// počítadlo vynuluje) — Richard má za jeden deň zberu jedno spustenie,
+    /// presný súčet beztak drží server (DB `analyzy`), toto je len okamžitá
+    /// spätná väzba "fungovalo mi to práve teraz".
+    pub pocitadlo_zber: Mutex<u32>,
 }
 
 /// Sluzi na bezpecne ziskanie zlozky na ulozenie konfiguracie pre hracie konto z operacneho systemu.

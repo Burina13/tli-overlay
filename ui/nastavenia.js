@@ -9,6 +9,7 @@ const inpHotkeyCanvas = document.getElementById("inp-hotkey-canvas");
 const inpProces = document.getElementById("inp-proces");
 const inpAutoskrytie = document.getElementById("inp-autoskrytie");
 const inpZvuk = document.getElementById("inp-zvuk");
+const inpZberDat = document.getElementById("inp-zber-dat");
 
 const btnUkazatKluc = document.getElementById("btn-ukazat-kluc");
 const btnTest = document.getElementById("btn-test");
@@ -38,6 +39,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         inpProces.value = nastavenia.proces_hry || "";
         inpAutoskrytie.value = nastavenia.autoskrytie_s || 0;
         inpZvuk.checked = !!nastavenia.zvuk;
+        inpZberDat.checked = !!nastavenia.zber_dat_zapnute;
 
         // Načítanie verzie
         const verzia = await invoke("verzia");
@@ -84,7 +86,8 @@ formular.addEventListener("submit", async (e) => {
         hotkey_canvas: inpHotkeyCanvas.value.trim(),
         proces_hry: inpProces.value.trim(),
         autoskrytie_s: parseInt(inpAutoskrytie.value, 10) || 0,
-        zvuk: inpZvuk.checked
+        zvuk: inpZvuk.checked,
+        zber_dat_zapnute: inpZberDat.checked
     };
 
     try {
