@@ -2,6 +2,22 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.4.0 — 15.10.2026
+
+Ikony v paneli s dôvodom (TLI 8).
+
+- Nad dôvodom odporúčania je nový riadok s ikonami: **koho sa ťah týka** (portrét väzňa
+  v farbe jeho rarity pri Tartarus, štvorček paintu s jeho levelom pri Frozen Canvas)
+  a **akú akciu s ním urobiť** (patrola, požretie, výmena, nástroj, dar, položenie na
+  plátno). Rovnaký vizuálny jazyk ako doska na `tli.tvojtatko.sk`.
+- Ikony sú kreslené v appke ako SVG (`ui/ikony.js`), NIE sťahované zo servera — panel sa
+  musí vykresliť aj vtedy, keď server práve nedosiahnuteľný je, a bez requestu navyše.
+- Keď sa ikona nedá zostaviť (neznámy väzeň, chýbajúci paint), riadok ostane skrytý —
+  panel sa kvôli tomu nikdy nerozbije.
+- **Zelené rámiky a čísla krokov sa NEMENIA** — mení sa len panel.
+- Vnútorne: `AnalyzaCanvas` prenáša zo servera aj `platno` (bez interpretácie), inak by
+  sa paint zdrojového slotu do UI nedostal.
+
 ## 0.3.0 — 15.10.2026
 
 Frozen Canvas (TLI 4c) — režim zberu dát a priznanie neoverených pravidiel.

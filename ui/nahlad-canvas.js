@@ -39,6 +39,20 @@ const UKAZKA_CANVAS = {
     istota: 0.9,
     istota_rozpoznania: 0.95,
     skontroluj: [],
+    // TLI 8: panel z `platno.ruka` berie paint zdrojového slotu a ukáže jeho
+    // ikonu; index slotu je v `kroky[].zdroj` (pôvodné, neprepočítané).
+    kroky: [
+      { poradie: 1, zdroj: { typ_slotu: "ruka", index: 0 } },
+      { poradie: 2, zdroj: { typ_slotu: "ruka", index: 1 } },
+      { poradie: 3, zdroj: { typ_slotu: "ruka", index: 2 } },
+    ],
+    platno: {
+      ruka: [
+        { index: 0, paint: { kategoria: "monster", typ: "dwarf", level: 1 } },
+        { index: 1, paint: { kategoria: "monster", typ: "dwarf", level: 1 } },
+        { index: 2, paint: { kategoria: "monster", typ: "dwarf", level: 1 } },
+      ],
+    },
   },
 };
 

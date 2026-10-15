@@ -12,6 +12,7 @@ const elSipkaCiara = document.getElementById("sipka-ciara");
 const pNadpis = document.getElementById("panel-nadpis");
 const pIstota = document.getElementById("panel-istota");
 const pDovod = document.getElementById("panel-dovod");
+const pIkony = document.getElementById("panel-ikony");
 const pSkontroluj = document.getElementById("panel-skontroluj");
 const pAlternativy = document.getElementById("panel-alternativy");
 
@@ -60,6 +61,31 @@ function vykresliZberUlozene(data) {
     pAlternativy.classList.add("skryte");
     elPanel.classList.remove("skryte");
 }
+
+/* TLI 8 — riadok s ikonami nad dôvodom: koho sa odporúčanie týka
+   (väzeň/paint) a akú akciu s ním urobiť. Keď sa ani jedna ikona nedá
+   zostaviť (neznámy väzeň, chýbajúci typ akcie), riadok ostane skrytý —
+   panel sa kvôli tomu nikdy nerozbije. */
+function vykresliIkonyPanela(ikony) {
+    if (!pIkony) return;
+    pIkony.innerHTML = "";
+    const platne = (ikony || []).filter((x) => x);
+    if (!platne.length) {
+        pIkony.classList.add("skryte");
+        return;
+    }
+    platne.forEach((el, i) => {
+        if (i > 0) {
+            const sipka = document.createElement("span");
+            sipka.className = "panel-ikona-sipka";
+            sipka.textContent = "→";
+            pIkony.appendChild(sipka);
+        }
+        pIkony.appendChild(el);
+    });
+    pIkony.classList.remove("skryte");
+}
+
 
 function vykresliHotovo(data) {
     const analyza = data.analyza;
@@ -117,6 +143,18 @@ function vykresliHotovo(data) {
     pDovod.textContent = odporucanie
         ? odporucanie.dovod
         : "Na tejto doske som nenašiel žiadny legálny ťah.";
+
+    // Ikony: väzeň na cieľovom políčku (keď ho poznáme) a cieľová akcia.
+    if (odporucanie && window.TLIIkony) {
+        const bunky = (analyza.board && analyza.board.cells) || [];
+        const bunka = ciel !== null ? bunky.find((c) => c && c.index === ciel) : null;
+        vykresliIkonyPanela([
+            bunka ? window.TLIIkony.ikonaVazna(bunka.inmate) : null,
+            window.TLIIkony.ikonaAkcie(odporucanie.akcia, odporucanie.nazov),
+        ]);
+    } else {
+        vykresliIkonyPanela([]);
+    }
 
     // Neistý zápis dosky
     if (analyza.skontroluj && analyza.skontroluj.length > 0) {
@@ -243,6 +281,20 @@ function vykresliHotovoCanvas(data) {
     pIstota.classList.toggle("nizka", istotaPercenta < 50);
 
     pDovod.textContent = kroky[0].dovod || "";
+
+    // Ikony: paint, ktorý sa berie z ruky, a akcia „polož na plátno".
+    // POZOR: `kroky` sú už prepočítané na CSS pixely a index slotu v nich nie
+    // je — ten ostáva v pôvodnej `analyza.kroky` (spárované cez `poradie`).
+    if (window.TLIIkony) {
+        const surove = (analyza.kroky || []).find((k) => k && k.poradie === kroky[0].poradie);
+        const zdroj = (surove && surove.zdroj) || {};
+        const ruka = (analyza.platno && analyza.platno.ruka) || [];
+        const slot = ruka.find((s) => s && s.index === zdroj.index);
+        vykresliIkonyPanela([
+            slot ? window.TLIIkony.ikonaPaintu(slot.paint) : null,
+            window.TLIIkony.ikonaAkcie("polozit", "Polož na plátno"),
+        ]);
+    }
 
     pAlternativy.innerHTML = "";
     if (kroky.length > 1) {

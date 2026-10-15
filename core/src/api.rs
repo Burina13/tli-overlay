@@ -138,6 +138,12 @@ pub struct AnalyzaCanvas {
     /// pred/po; `null` keď plátno nemá rozpoznaný cieľ (nedá sa posúdiť).
     /// Kontrakt: `canvas-api-kontrakt.md` § `pravidlo_overene`.
     pub pravidlo_overene: Option<bool>,
+    /// TLI 8: doplnený stav plátna a ruky zo servera, prenesený do UI BEZ
+    /// interpretácie (`serde_json::Value`) — panel z neho berie len paint
+    /// v zdrojovom slote ruky, aby pri odporúčaní ukázal jeho ikonu. Rust
+    /// o tvare plátna nič nevie a vedieť nepotrebuje; keby server pole
+    /// nepriložil, ostane `null` a panel ikonu paintu jednoducho nenakreslí.
+    pub platno: Option<serde_json::Value>,
 }
 
 impl Default for AnalyzaCanvas {
@@ -151,6 +157,7 @@ impl Default for AnalyzaCanvas {
             skontroluj: vec![],
             trvanie_ms: None,
             pravidlo_overene: None,
+            platno: None,
         }
     }
 }

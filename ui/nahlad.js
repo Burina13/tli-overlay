@@ -31,6 +31,18 @@ const UKAZKA = {
       { akcia: "scratch", nazov: "Škrabanec", ciel: 9, hodnota: 12.1, istota: 0.21,
         dovod: "Bezpečnejšie, ale pomalšie." },
     ],
+    // `board` je v kontrakte od začiatku; náhľad ho pridal až s TLI 8, keď
+    // panel začal podľa neho kresliť portrét väzňa na cieľovom políčku.
+    board: {
+      day: 7, drill_days: 20, food_chain: "single", warden: 3, vault: 2,
+      destinations: [6], tools: [], used: { devour: false, swap: false },
+      prey: null, pending_event: null,
+      cells: Array.from({ length: 16 }, (_, i) => ({
+        index: i, sealed: false,
+        inmate: i === 6 ? { beast: "mammoth", tier: 3 }
+              : i === 7 ? { beast: "rat", tier: 1 } : null,
+      })),
+    },
     istota: 0.41,
     istota_rozpoznania: 0.87,
     skontroluj: ["cells[7].inmate.tier", "warden"],
