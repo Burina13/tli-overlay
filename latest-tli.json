@@ -1,6 +1,6 @@
 {
-  "version": "0.6.0",
-  "notes": "Nové hlavné okno so záložkami Tracker/Solvery/Guide/Nastavenia (TLI 11, krok 1/5) — otvára sa položkou „Otvoriť\" v menu tray ikony. Zatiaľ kostra: Tracker a Guide sú placeholder, Solvery je informačný prehľad (Tartarus/Frozen Canvas bežia ďalej presne tak, ako doteraz, na F8/F9), Nastavenia zatiaľ len otvára existujúce okno. F8/F9 hotkey, overlay ani odosielanie na server sa nemenili.",
-  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.6.0/Tvoj-Tatko-TLI-Overlay_0.6.0_x64_en-US.msi",
-  "msiSha256": "116551bb743f9324ab63fee3b0381b0f4aafc24db7a9ab4cd75414395d42566b"
+  "version": "0.7.0",
+  "notes": "Tracker je živý (TLI 11 kroky 2 a 3 + TLI 11b). Appka číta herný log UE_game.log a počíta ČISTÝ ZISK z mapy = hodnota dropov mínus hodnota spotrebovaných vstupov (chart, kompasy, beacony). Ceny berie z tvojich vlastných vyhľadávaní na trhu v hre (referenčná hodnota je 10. percentil ponúk vo Flame Elementium) a pri každej drží, aká je stará. Zo spotreby pri otvorení mapy zistí štartovací chart aj vložené kompasy a rozdelí výsledky podľa kombinácie chart + kompasy + mapa, takže je vidieť, čo sa najviac oplatí; k tomu FE/h, máp/h, priemer na mapu, história máp a export CSV. Okno už nie je celé tmavé — PREDVOLENÁ je svetlá téma a v hlavičke je prepínač svetlá/tmavá. V hre si musíš zapnúť Settings → Other Settings → \"Enable Log\". Appka naďalej iba číta súbor na disku — žiadne čítanie pamäte hry, žiadna injekcia, žiadne pakety. F8/F9, overlay ani solvery sa nemenili.",
+  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.7.0/Tvoj-Tatko-TLI-Overlay_0.7.0_x64_en-US.msi",
+  "msiSha256": "95b64c1c9b1e0659d545d8972182543bfcb5d4da5cc269d70c58b3294af0f1c6"
 }
