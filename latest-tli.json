@@ -1,6 +1,6 @@
 {
-  "version": "0.10.0",
-  "notes": "Tracker si log už nájde sám (TLI 11c). Appka prečíta Steam register a steamapps/libraryfolders.vdf a sama nájde UE_game.log — pole „Cesta k logu\" v záložke Tracker je predvyplnené, zmena len cez tlačidlo „Vybrať…\", vedľa stavová ikonka (✅ veľkosť a vek, alebo ⚠️ keď log chýba/je prázdny/nemá zapnuté Settings → Other Settings → „Enable Log\"). Živé čítanie teraz beží na pozadí nezávisle od otvorených okien, takže tracker počíta ďalej aj schovaný v tray — predtým to záviselo na tom, že niektoré okno bolo otvorené. Opravená chyba kódovania pri dlhších UTF-16 logoch (po prvej dávke sa niekedy dekódovalo nesprávne). Appka naďalej iba číta súbor na disku: žiadne čítanie pamäte hry, žiadna injekcia, žiadne pakety. F8/F9, overlay, solvery, Guide ani synchronizácia s partiou sa nemenili.",
-  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.10.0/Tvoj-Tatko-TLI-Overlay_0.10.0_x64_en-US.msi",
-  "msiSha256": "176b0a1183f11c32d601adaeb51241848eb408dd188f41e5c0e9760ee8f11a7b"
+  "version": "0.11.0",
+  "notes": "Pripomienka „Enable Log\" na začiatku každej session (TLI 11d). Hra si toto nastavenie nepamätá medzi spusteniami — appka teraz sama pozná rotáciu UE_game.log (nová session) a keď do 60 sekúnd nevidí ani jeden riadok, ktorý sa zapisuje len pri zapnutom logovaní, upozorní: toastom priamo nad hrou, Windows notifikáciou aj červeným stavom v záložke Tracker. Keď hráč prvé upozornenie prehliadne, appka to pripomenie znova presne pri vstupe do prvej mapy. Upozornenie zmizne samo, len čo začnú prichádzať herné riadky (\"✅ Logovanie beží\"). Nový prepínač „Pripomínať Enable Log\" v záložke Tracker, predvolene zapnutý. Appka naďalej iba číta súbor na disku, nič v hre nemení.",
+  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.11.0/Tvoj-Tatko-TLI-Overlay_0.11.0_x64_en-US.msi",
+  "msiSha256": "620441f5b6023b1cfdcb5ec6b3b422fc26021bacbf65b7571eea06ff3fd04a36"
 }
