@@ -11,3 +11,5 @@ pub mod nastavenia;
 pub mod obraz;
 pub mod suradnice;
 pub mod zmensenie;
+
+pub mod tracker;

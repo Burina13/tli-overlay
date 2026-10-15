@@ -1,0 +1,132 @@
+[2026.10.15-19.00.00:000][401]GameLog: Display: [Game] PlayerInitPkgMgr@ Login2Client OK
++player+Name [Burina]
++player+Level [100]
++player+SeasonId [1501]
++player+HeroId [1800]
++player+PlayerId [947466339310800896]
+[2026.10.15-19.00.00:000][402]GameLog: Display: [Game] BagMgr@:InitBagData PageId = 102 SlotId = 1 ConfigBaseId = 100300 Num = 12000
+[2026.10.15-19.00.00:000][403]GameLog: Display: [Game] BagMgr@:InitBagData PageId = 103 SlotId = 10 ConfigBaseId = 400021 Num = 20
+[2026.10.15-19.00.00:000][404]GameLog: Display: [Game] BagMgr@:InitBagData PageId = 103 SlotId = 11 ConfigBaseId = 500101 Num = 40
+[2026.10.15-19.00.00:000][405]GameLog: Display: [Game] BagMgr@:InitBagData PageId = 103 SlotId = 12 ConfigBaseId = 500102 Num = 15
+[2026.10.15-19.00.00:000][406]GameLog: Display: [Game] BagMgr@:InitBagData PageId = 103 SlotId = 20 ConfigBaseId = 5080 Num = 500
+[2026.10.15-19.00.05:000][407]GameLog: Display: [Game] ----Socket SendMessage STT----XchgSearchPrice----SynId = 11001
++filters+1+KeyType [ItemBaseId]
+|         +refer [400021]
+[2026.10.15-19.00.05:000][408]GameLog: Display: [Game] ----Socket SendMessage End----
+[2026.10.15-19.00.05:000][409]GameLog: Display: [Game] ----Socket RecvMessage STT----XchgSearchPrice----SynId = 11001
++prices+1+currency [100300]
+|       +unitPrices+1 [2.10]
+|       +unitPrices+2 [2.15]
+|       +unitPrices+3 [2.20]
+|       +unitPrices+4 [2.40]
+|       +unitPrices+5 [3.00]
++errCode
+[2026.10.15-19.00.05:000][410]GameLog: Display: [Game] ----Socket RecvMessage End----
+[2026.10.15-19.00.08:000][411]GameLog: Display: [Game] ----Socket SendMessage STT----XchgSearchPrice----SynId = 11002
++filters+1+KeyType [ItemBaseId]
+|         +refer [500101]
+[2026.10.15-19.00.08:000][412]GameLog: Display: [Game] ----Socket SendMessage End----
+[2026.10.15-19.00.08:000][413]GameLog: Display: [Game] ----Socket RecvMessage STT----XchgSearchPrice----SynId = 11002
++prices+1+currency [100300]
+|       +unitPrices+1 [0.50]
+|       +unitPrices+2 [0.52]
+|       +unitPrices+3 [0.60]
+|       +unitPrices+4 [0.70]
+|       +unitPrices+5 [1.00]
++errCode
+[2026.10.15-19.00.08:000][414]GameLog: Display: [Game] ----Socket RecvMessage End----
+[2026.10.15-19.00.11:000][415]GameLog: Display: [Game] ----Socket SendMessage STT----XchgSearchPrice----SynId = 11003
++filters+1+KeyType [ItemBaseId]
+|         +refer [500102]
+[2026.10.15-19.00.11:000][416]GameLog: Display: [Game] ----Socket SendMessage End----
+[2026.10.15-19.00.11:000][417]GameLog: Display: [Game] ----Socket RecvMessage STT----XchgSearchPrice----SynId = 11003
++prices+1+currency [100300]
+|       +unitPrices+1 [1.00]
+|       +unitPrices+2 [1.10]
+|       +unitPrices+3 [1.20]
+|       +unitPrices+4 [1.50]
+|       +unitPrices+5 [2.00]
++errCode
+[2026.10.15-19.00.11:000][418]GameLog: Display: [Game] ----Socket RecvMessage End----
+[2026.10.15-19.00.14:000][419]GameLog: Display: [Game] ----Socket SendMessage STT----XchgSearchPrice----SynId = 11004
++filters+1+KeyType [ItemBaseId]
+|         +refer [5080]
+[2026.10.15-19.00.14:000][420]GameLog: Display: [Game] ----Socket SendMessage End----
+[2026.10.15-19.00.14:000][421]GameLog: Display: [Game] ----Socket RecvMessage STT----XchgSearchPrice----SynId = 11004
++prices+1+currency [100300]
+|       +unitPrices+1 [0.10]
+|       +unitPrices+2 [0.11]
+|       +unitPrices+3 [0.12]
+|       +unitPrices+4 [0.15]
+|       +unitPrices+5 [0.20]
++errCode
+[2026.10.15-19.00.14:000][422]GameLog: Display: [Game] ----Socket RecvMessage End----
+[2026.10.15-19.00.17:000][423]GameLog: Display: [Game] ----Socket SendMessage STT----XchgSearchPrice----SynId = 11005
++filters+1+KeyType [ItemBaseId]
+|         +refer [140005]
+[2026.10.15-19.00.17:000][424]GameLog: Display: [Game] ----Socket SendMessage End----
+[2026.10.15-19.00.17:000][425]GameLog: Display: [Game] ----Socket RecvMessage STT----XchgSearchPrice----SynId = 11005
++prices+1+currency [100300]
+|       +unitPrices+1 [0.02]
+|       +unitPrices+2 [0.02]
+|       +unitPrices+3 [0.03]
+|       +unitPrices+4 [0.04]
+|       +unitPrices+5 [0.05]
++errCode
+[2026.10.15-19.00.17:000][426]GameLog: Display: [Game] ----Socket RecvMessage End----
+[2026.10.15-19.00.19:000][427]GameLog: Display: [Game] SceneLevelMgr@ OpenMainWorld END! InMainLevelPath = /Game/Art/Maps/01SD/XZ_YuJinZhiXiBiNanSuo200/XZ_YuJinZhiXiBiNanSuo200.XZ_YuJinZhiXiBiNanSuo200
+[2026.10.15-19.00.19:000][428]GameLog: Display: [Game] LevelMgr@ LevelUid, LevelType, LevelId = 111000 0 110
+[2026.10.15-19.00.29:000][429]GameLog: Display: [Game] ItemChange@ ProtoName=Spv3Open start
+[2026.10.15-19.00.29:000][430]GameLog: Display: [Game] BagMgr@:Modfy BagItem PageId = 103 SlotId = 10 ConfigBaseId = 400021 Num = 19
+[2026.10.15-19.00.29:000][431]GameLog: Display: [Game] BagMgr@:Modfy BagItem PageId = 103 SlotId = 11 ConfigBaseId = 500101 Num = 38
+[2026.10.15-19.00.29:000][432]GameLog: Display: [Game] ItemChange@ ProtoName=Spv3Open end
+[2026.10.15-19.00.33:000][433]GameLog: Display: [Game] SceneLevelMgr@ OpenMainWorld END! InMainLevelPath = /Game/Art/Season/S10/Maps/YunDuanLvZhou/YunDuanLvZhou.YunDuanLvZhou
+[2026.10.15-19.00.33:000][434]GameLog: Display: [Game] LevelMgr@ LevelUid, LevelType, LevelId = 2035 21 9999999
+[2026.10.15-19.01.13:000][435]GameLog: Display: [Game] ItemChange@ ProtoName=PickItems start
+[2026.10.15-19.01.13:000][436]GameLog: Display: [Game] BagMgr@:Modfy BagItem PageId = 103 SlotId = 20 ConfigBaseId = 5080 Num = 620
+[2026.10.15-19.01.13:000][437]GameLog: Display: [Game] ItemChange@ ProtoName=PickItems end
+[2026.10.15-19.02.13:000][438]GameLog: Display: [Game] ItemChange@ ProtoName=PickItems start
+[2026.10.15-19.02.13:000][439]GameLog: Display: [Game] BagMgr@:Modfy BagItem PageId = 103 SlotId = 21 ConfigBaseId = 140005 Num = 300
+[2026.10.15-19.02.13:000][440]GameLog: Display: [Game] ItemChange@ ProtoName=PickItems end
+[2026.10.15-19.03.33:000][441]GameLog: Display: [Game] ItemChange@ ProtoName=PickItems start
+[2026.10.15-19.03.33:000][442]GameLog: Display: [Game] BagMgr@:Modfy BagItem PageId = 102 SlotId = 1 ConfigBaseId = 100300 Num = 12450
+[2026.10.15-19.03.33:000][443]GameLog: Display: [Game] ItemChange@ ProtoName=PickItems end
+[2026.10.15-19.03.53:000][444]GameLog: Display: [Game] ItemChange@ ProtoName=XchgBuy start
+[2026.10.15-19.03.53:000][445]GameLog: Display: [Game] BagMgr@:Modfy BagItem PageId = 103 SlotId = 11 ConfigBaseId = 500101 Num = 48
+[2026.10.15-19.03.53:000][446]GameLog: Display: [Game] ItemChange@ ProtoName=XchgBuy end
+[2026.10.15-19.05.33:000][447]GameLog: Display: [Game] SceneLevelMgr@ OpenMainWorld END! InMainLevelPath = /Game/Art/Maps/01SD/XZ_YuJinZhiXiBiNanSuo200/XZ_YuJinZhiXiBiNanSuo200.XZ_YuJinZhiXiBiNanSuo200
+[2026.10.15-19.05.33:000][448]GameLog: Display: [Game] LevelMgr@ LevelUid, LevelType, LevelId = 111000 0 110
+[2026.10.15-19.05.45:000][449]GameLog: Display: [Game] ItemChange@ ProtoName=Spv3Open start
+[2026.10.15-19.05.45:000][450]GameLog: Display: [Game] BagMgr@:Modfy BagItem PageId = 103 SlotId = 10 ConfigBaseId = 400021 Num = 18
+[2026.10.15-19.05.45:000][451]GameLog: Display: [Game] BagMgr@:Modfy BagItem PageId = 103 SlotId = 12 ConfigBaseId = 500102 Num = 14
+[2026.10.15-19.05.45:000][452]GameLog: Display: [Game] ItemChange@ ProtoName=Spv3Open end
+[2026.10.15-19.05.49:000][453]GameLog: Display: [Game] SceneLevelMgr@ OpenMainWorld END! InMainLevelPath = /Game/Art/Maps/KD_YuanSuKuangDong/KD_YuanSuKuangDong.KD_YuanSuKuangDong
+[2026.10.15-19.05.49:000][454]GameLog: Display: [Game] LevelMgr@ LevelUid, LevelType, LevelId = 2036 3 1061299
+[2026.10.15-19.06.39:000][455]GameLog: Display: [Game] ItemChange@ ProtoName=PickItems start
+[2026.10.15-19.06.39:000][456]GameLog: Display: [Game] BagMgr@:Modfy BagItem PageId = 103 SlotId = 20 ConfigBaseId = 5080 Num = 680
+[2026.10.15-19.06.39:000][457]GameLog: Display: [Game] ItemChange@ ProtoName=PickItems end
+[2026.10.15-19.07.49:000][458]GameLog: Display: [Game] ItemChange@ ProtoName=PickItems start
+[2026.10.15-19.07.49:000][459]GameLog: Display: [Game] BagMgr@:Modfy BagItem PageId = 102 SlotId = 1 ConfigBaseId = 100300 Num = 12750
+[2026.10.15-19.07.49:000][460]GameLog: Display: [Game] ItemChange@ ProtoName=PickItems end
+[2026.10.15-19.08.49:000][461]GameLog: Display: [Game] ItemChange@ ProtoName=PickItems start
+[2026.10.15-19.08.49:000][462]GameLog: Display: [Game] BagMgr@:Modfy BagItem PageId = 103 SlotId = 30 ConfigBaseId = 999999 Num = 3
+[2026.10.15-19.08.49:000][463]GameLog: Display: [Game] ItemChange@ ProtoName=PickItems end
+[2026.10.15-19.09.49:000][464]GameLog: Display: [Game] SceneLevelMgr@ OpenMainWorld END! InMainLevelPath = /Game/Art/Maps/01SD/XZ_YuJinZhiXiBiNanSuo200/XZ_YuJinZhiXiBiNanSuo200.XZ_YuJinZhiXiBiNanSuo200
+[2026.10.15-19.09.49:000][465]GameLog: Display: [Game] LevelMgr@ LevelUid, LevelType, LevelId = 111000 0 110
+[2026.10.15-19.09.59:000][466]GameLog: Display: [Game] ItemChange@ ProtoName=Spv3Open start
+[2026.10.15-19.09.59:000][467]GameLog: Display: [Game] BagMgr@:Modfy BagItem PageId = 103 SlotId = 10 ConfigBaseId = 400021 Num = 17
+[2026.10.15-19.09.59:000][468]GameLog: Display: [Game] BagMgr@:Modfy BagItem PageId = 103 SlotId = 11 ConfigBaseId = 500101 Num = 46
+[2026.10.15-19.09.59:000][469]GameLog: Display: [Game] ItemChange@ ProtoName=Spv3Open end
+[2026.10.15-19.10.03:000][470]GameLog: Display: [Game] SceneLevelMgr@ OpenMainWorld END! InMainLevelPath = /Game/Art/Season/S10/Maps/YunDuanLvZhou/YunDuanLvZhou.YunDuanLvZhou
+[2026.10.15-19.10.03:000][471]GameLog: Display: [Game] LevelMgr@ LevelUid, LevelType, LevelId = 2037 21 9999999
+[2026.10.15-19.11.03:000][472]GameLog: Display: [Game] ItemChange@ ProtoName=PickItems start
+[2026.10.15-19.11.03:000][473]GameLog: Display: [Game] BagMgr@:Modfy BagItem PageId = 103 SlotId = 20 ConfigBaseId = 5080 Num = 720
+[2026.10.15-19.11.03:000][474]GameLog: Display: [Game] ItemChange@ ProtoName=PickItems end
+[2026.10.15-19.12.03:000][475]GameLog: Display: [Game] ItemChange@ ProtoName=PickItems start
+[2026.10.15-19.12.03:000][476]GameLog: Display: [Game] BagMgr@:Modfy BagItem PageId = 102 SlotId = 1 ConfigBaseId = 100300 Num = 12850
+[2026.10.15-19.12.03:000][477]GameLog: Display: [Game] ItemChange@ ProtoName=PickItems end
+[2026.10.15-19.13.03:000][478]GameLog: Display: [Game] SceneLevelMgr@ OpenMainWorld END! InMainLevelPath = /Game/Art/Maps/01SD/XZ_YuJinZhiXiBiNanSuo200/XZ_YuJinZhiXiBiNanSuo200.XZ_YuJinZhiXiBiNanSuo200
+[2026.10.15-19.13.03:000][479]GameLog: Display: [Game] LevelMgr@ LevelUid, LevelType, LevelId = 111000 0 110
+[2026.10.15-19.20.00:000][123]LogTemp: Warning: niečo úplne iné
+
+[2026.10.15-19.20.01:000][124]GameLog: Display: [Game] SoundTriggerTimestamps blah
