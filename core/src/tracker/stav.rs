@@ -139,6 +139,10 @@ pub struct Sledovac {
     aktivna_sprava: Option<(Smer, String, u64, Option<Cas>)>,
     telo_spravy: Vec<String>,
     neznamych_riadkov: u64,
+    /// Posledná známa hodnota výkonového ukazovateľa postavy (`DPS`, `DEF`, …) —
+    /// kľúč je `nazov` z `Udalost::VykonPostavy`. TLI 12: nástroj na porovnanie
+    /// buildov („koľko DPS mal pred a po zmene výbavy/talentov/paktu").
+    posledne_staty_postavy: BTreeMap<String, (f64, Option<Cas>)>,
 }
 
 impl Sledovac {
@@ -174,6 +178,12 @@ impl Sledovac {
 
     pub fn neznamych_riadkov(&self) -> u64 {
         self.neznamych_riadkov
+    }
+
+    /// Posledná známa hodnota pomenovaného výkonového ukazovateľa (napr. `"DPS"`,
+    /// `"DEF"`) a čas jej zápisu do logu. `None`, kým sa taký riadok nenašiel.
+    pub fn posledny_stat_postavy(&self, nazov: &str) -> Option<(f64, Option<Cas>)> {
+        self.posledne_staty_postavy.get(nazov).cloned()
     }
 
     /// Interná metóda na spracovanie konkrétnej udalosti (užitočné aj pre testy)
@@ -292,6 +302,10 @@ impl Sledovac {
                     }
                 }
                 self.telo_spravy.clear();
+                None
+            }
+            Udalost::VykonPostavy { nazov, nova, .. } => {
+                self.posledne_staty_postavy.insert(nazov, (nova, cas));
                 None
             }
         }
@@ -702,5 +716,49 @@ mod testy {
         sledovac.riadok("invalid_line");
         // Nemôžeme presne vedieť čo vráti parsuj_riadok v reáli, ale ak None:
         // aspoň sa nezrúti.
+    }
+
+    #[test]
+    fn test_vykon_postavy_sa_uklada_a_prepisuje() {
+        let mut sledovac = Sledovac::novy();
+        assert_eq!(sledovac.posledny_stat_postavy("DPS"), None);
+
+        sledovac.spracuj_udalost(
+            cas(100),
+            Udalost::VykonPostavy {
+                base_id: 3210,
+                gold_id: 112139,
+                nazov: "DPS".to_string(),
+                stara: 100.0,
+                nova: 200.0,
+            },
+        );
+        assert_eq!(sledovac.posledny_stat_postavy("DPS").unwrap().0, 200.0);
+        // DEF je nezávislý kľúč, DPS zostáva
+        sledovac.spracuj_udalost(
+            cas(200),
+            Udalost::VykonPostavy {
+                base_id: 4727,
+                gold_id: 0,
+                nazov: "DEF".to_string(),
+                stara: 10.0,
+                nova: 15.0,
+            },
+        );
+        assert_eq!(sledovac.posledny_stat_postavy("DPS").unwrap().0, 200.0);
+        assert_eq!(sledovac.posledny_stat_postavy("DEF").unwrap().0, 15.0);
+
+        // Nová hodnota DPS prepíše starú (build sa zmenil znova)
+        sledovac.spracuj_udalost(
+            cas(300),
+            Udalost::VykonPostavy {
+                base_id: 3210,
+                gold_id: 112139,
+                nazov: "DPS".to_string(),
+                stara: 200.0,
+                nova: 250.0,
+            },
+        );
+        assert_eq!(sledovac.posledny_stat_postavy("DPS").unwrap().0, 250.0);
     }
 }

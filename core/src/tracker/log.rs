@@ -92,10 +92,17 @@ pub enum Udalost {
     SpravaZaciatok { smer: Smer, akcia: String, syn_id: u64 },
     SpravaKoniec,
     TeloSpravy { surovy: String },
+    /// `AttributeMgr:Log(BaseId=X, GoldId=Y) DPS: stara -> nova` (aj `DEF:`) —
+    /// hra si prepočíta vlastný výkonový ukazovateľ pri zmene výbavy/talentov/
+    /// pactu. `nazov` je zámerne `String`, nie enum: hra môže časom logovať aj
+    /// iné štatistiky týmto istým tvarom (TLI 12, `log-format.md` §10).
+    VykonPostavy { base_id: u64, gold_id: u64, nazov: String, stara: f64, nova: f64 },
 }
 
 /// Helper na vyťahovanie hodnôt formátu Kľúč=Hodnota. Povoľuje chýbajúce aj
 /// viacnásobné medzery, pretože formátovač v engine je nekonzistentný.
+/// Zastaví sa aj na `,`/`)` — potrebné pre tvary ako `AttributeMgr:Log(BaseId=X, GoldId=Y)`,
+/// kde `Kľúč=Hodnota` nekončí medzerou ani `]`, ale zoznamom v zátvorke.
 fn extract_val<'a>(s: &'a str, key: &str) -> Option<&'a str> {
     let i = s.find(key)?;
     let mut rest = s[i + key.len()..].trim_start();
@@ -103,12 +110,35 @@ fn extract_val<'a>(s: &'a str, key: &str) -> Option<&'a str> {
         rest = rest[1..].trim_start();
     }
     let end = rest
-        .find(|c: char| c.is_whitespace() || c == ']')
+        .find(|c: char| c.is_whitespace() || c == ']' || c == ',' || c == ')')
         .unwrap_or(rest.len());
     if end == 0 {
         return None;
     }
     Some(&rest[..end])
+}
+
+/// `AttributeMgr:Log(BaseId=3210, GoldId=112139) DPS: 2839721.56 -> 2581565.05`
+/// Izolované do vlastnej funkcie kvôli čitateľnosti — `parsuj_riadok` by inak
+/// mal jeden obrovský reťazec podmienok navyše.
+fn parsuj_vykon_postavy(riadok: &str) -> Option<Udalost> {
+    let znacka = "AttributeMgr:Log(";
+    let od = riadok.find(znacka)? + znacka.len();
+    let rest = &riadok[od..];
+    let base_id: u64 = extract_val(rest, "BaseId")?.parse().ok()?;
+    let gold_id: u64 = extract_val(rest, "GoldId")?.parse().ok()?;
+    let zavierka = rest.find(')')?;
+    let chvost = rest[zavierka + 1..].trim_start();
+    let dvojbodka = chvost.find(':')?;
+    let nazov = chvost[..dvojbodka].trim().to_string();
+    if nazov.is_empty() {
+        return None;
+    }
+    let hodnoty = chvost[dvojbodka + 1..].trim();
+    let mut casti = hodnoty.split("->").map(|s| s.trim());
+    let stara: f64 = casti.next()?.parse().ok()?;
+    let nova: f64 = casti.next()?.parse().ok()?;
+    Some(Udalost::VykonPostavy { base_id, gold_id, nazov, stara, nova })
 }
 
 /// Izoluje logiku parsovania jedného riadku kvôli testovateľnosti a čistote.
@@ -132,6 +162,12 @@ pub fn parsuj_riadok(riadok: &str) -> Option<(Option<Cas>, Udalost)> {
         let stranka = extract_val(riadok, "PageId").and_then(|s| s.parse().ok()).unwrap_or(0);
         let slot = extract_val(riadok, "SlotId").and_then(|s| s.parse().ok()).unwrap_or(0);
         return Some((cas, Udalost::BatohOdstranenie { stranka, slot }));
+    }
+
+    if riadok.contains("AttributeMgr:Log(") {
+        if let Some(udalost) = parsuj_vykon_postavy(riadok) {
+            return Some((cas, udalost));
+        }
     }
 
     if riadok.contains("ItemChange@") && riadok.contains("ProtoName") {
@@ -417,6 +453,45 @@ mod testy {
         let mapa = parsuj_telo(&riadky);
         assert_eq!(mapa.get("worldInitArgs.ownerPlayerId").unwrap(), "814971382814871552");
         assert_eq!(mapa.get("worldInitArgs.seed").unwrap(), "1532413606");
+    }
+
+    #[test]
+    fn test_vykon_postavy_dps() {
+        let r = "[2026.10.14-22.23.06:532][103]TLLua: Display: [Game] AttributeMgr:Log(BaseId=3210, GoldId=112139) DPS: 2839721.5618293 -> 2581565.0562085";
+        let (_, ud) = parsuj_riadok(r).unwrap();
+        assert_eq!(
+            ud,
+            Udalost::VykonPostavy {
+                base_id: 3210,
+                gold_id: 112139,
+                nazov: "DPS".to_string(),
+                stara: 2839721.5618293,
+                nova: 2581565.0562085,
+            }
+        );
+    }
+
+    #[test]
+    fn test_vykon_postavy_def_bez_goldid() {
+        let r = "AttributeMgr:Log(BaseId=4727, GoldId=0) DEF: 100.5 -> 120.25";
+        let (_, ud) = parsuj_riadok(r).unwrap();
+        assert_eq!(
+            ud,
+            Udalost::VykonPostavy {
+                base_id: 4727,
+                gold_id: 0,
+                nazov: "DEF".to_string(),
+                stara: 100.5,
+                nova: 120.25,
+            }
+        );
+    }
+
+    #[test]
+    fn test_vykon_postavy_nezhoda_sa_ignoruje() {
+        // Zámerne pokazený tvar (chýba šípka) — nesmie spadnúť, len sa ignoruje.
+        let r = "AttributeMgr:Log(BaseId=1, GoldId=2) DPS: 100.0 iba jedna hodnota";
+        assert!(parsuj_riadok(r).is_none());
     }
 
     #[test]
