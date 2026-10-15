@@ -8,6 +8,7 @@ mod okno;
 #[cfg(windows)]
 mod snimka;
 mod stav;
+mod tracker;
 
 use serde_json::json;
 use stav::Stav;
@@ -380,6 +381,73 @@ fn spusti_analyzu(app: AppHandle, _modul: Modul) {
     ukaz_chybu(&app, None, "Appka funguje len na Windowse.");
 }
 
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Farm tracker (TLI 11/11b)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Prečíta nové riadky logu a vráti hotový prehľad pre záložku Tracker.
+///
+/// Volá to UI v pravidelnom takte — jedno volanie teda musí byť lacné. Preto sa
+/// číta len prírastok od poslednej pozície a prepočet beží nad už rozparsovanými
+/// behmi, nie nad celým logom odznova.
+#[tauri::command]
+fn tracker_prehlad(
+    stav: tauri::State<Stav>,
+    tracker: tauri::State<tracker::Tracker>,
+) -> Result<tracker::PrehladProUi, String> {
+    let n = stav.nastavenia.lock().unwrap().clone();
+    let mut t = tracker.0.lock().unwrap();
+
+    if !n.tracker_zapnuty {
+        return Ok(tracker::prehlad_pre_ui(&t, false, n.tracker_dan));
+    }
+
+    match tracker::najdi_log(&n.cesta_logu) {
+        Some(cesta) => {
+            t.chyba = match tracker::precitaj(&mut t, &cesta) {
+                Ok(_) => None,
+                Err(e) => Some(e),
+            };
+        }
+        None => {
+            t.chyba = Some(
+                "Herný log sa nenašiel. Zapni si v hre Settings → Other Settings → \"Enable Log\"                  a ak hra nie je v štandardnom priečinku, zadaj cestu k `UE_game.log` v nastaveniach."
+                    .to_string(),
+            );
+        }
+    }
+
+    Ok(tracker::prehlad_pre_ui(&t, true, n.tracker_dan))
+}
+
+/// Export histórie máp do CSV. Vracia obsah súboru — uloženie rieši UI.
+#[tauri::command]
+fn tracker_csv(
+    stav: tauri::State<Stav>,
+    tracker: tauri::State<tracker::Tracker>,
+) -> Result<String, String> {
+    let n = stav.nastavenia.lock().unwrap().clone();
+    let t = tracker.0.lock().unwrap();
+    let prehlad = tracker::prehlad_pre_ui(&t, n.tracker_zapnuty, n.tracker_dan);
+    Ok(tracker::csv(&prehlad.behy))
+}
+
+/// Prepnutie svetlej a tmavej témy. Je to samostatný príkaz (a nie uloženie
+/// celých nastavení), aby prepínač v hlavičke nemohol omylom prepísať kľúč,
+/// adresu servera ani skratky tým, že by poslal zastaraný objekt.
+#[tauri::command]
+fn uloz_temu(stav: tauri::State<Stav>, tema: String) -> Result<String, String> {
+    let mut n = stav.nastavenia.lock().unwrap();
+    n.tema = tema;
+    n.normalizuj();
+    let hodnota = n.tema.clone();
+    let kopia = n.clone();
+    drop(n);
+    stav::uloz(&kopia)?;
+    Ok(hodnota)
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Príkazy z okna nastavení
 // ─────────────────────────────────────────────────────────────────────────────
@@ -536,6 +604,7 @@ fn main() {
             zobrazene_od: Mutex::new(None),
             pocitadlo_zber: Mutex::new(0),
         })
+        .manage(tracker::Tracker::default())
         .invoke_handler(tauri::generate_handler![
             nacitaj_nastavenia,
             uloz_nastavenia,
@@ -544,7 +613,10 @@ fn main() {
             otvor_web,
             otvor_nastavenia,
             verzia,
-            skontroluj_aktualizaciu
+            skontroluj_aktualizaciu,
+            tracker_prehlad,
+            tracker_csv,
+            uloz_temu
         ])
         .setup(move |app| {
             let handle = app.handle().clone();

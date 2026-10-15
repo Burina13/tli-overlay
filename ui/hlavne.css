@@ -1,138 +1,435 @@
 :root {
-    --bg-farba: #121018;
-    --bg-panel: rgba(255, 255, 255, 0.05);
-    --text-hlavny: #ffffff;
-    --text-tlmeny: #a0a0a0;
-    --akcent: #ff962c;
-    --akcent-hover: #ffaa52;
-    --border: rgba(255, 255, 255, 0.1);
+    --farba-pozadie: #f6f7f9;
+    --farba-karta: #ffffff;
+    --farba-text-hlavny: #1c1f24;
+    --farba-text-tlmeny: #5b636e;
+    --farba-okraj: #e2e5ea;
+    
+    --farba-akcent: #ff962c;
+    /* Kôli prístupnosti (WCAG AA) na svetlom pozadí je textový akcent tmavší */
+    --farba-akcent-text: #c2610a;
+    --farba-akcent-pozadie-jemne: rgba(194, 97, 10, 0.08);
+    
+    --farba-zisk: #16a34a;
+    --farba-strata: #dc2626;
+    --farba-upozornenie: #d97706;
+    --farba-upozornenie-tlmene: rgba(217, 119, 6, 0.7);
+    --farba-upozornenie-pozadie: rgba(217, 119, 6, 0.1);
+    
+    --tien-karty: 0 2px 8px rgba(0, 0, 0, 0.05);
+    
+    --farba-priehladna: transparent;
+    --farba-tlacidlo-hlavne-text: #ffffff;
 }
 
-* {
+html[data-tema="tmava"] {
+    --farba-pozadie: #121018;
+    --farba-karta: rgba(255, 255, 255, 0.05);
+    --farba-text-hlavny: #ffffff;
+    --farba-text-tlmeny: #a0a0a0;
+    --farba-okraj: rgba(255, 255, 255, 0.1);
+    
+    --farba-akcent-text: #ff962c;
+    --farba-akcent-pozadie-jemne: rgba(255, 150, 44, 0.15);
+    
+    --farba-zisk: #4ade80;
+    --farba-strata: #f87171;
+    --farba-upozornenie: #fbbf24;
+    --farba-upozornenie-tlmene: rgba(251, 191, 36, 0.7);
+    --farba-upozornenie-pozadie: rgba(251, 191, 36, 0.15);
+    
+    --tien-karty: none;
+    --farba-tlacidlo-hlavne-text: #121018;
+}
+
+html {
+    color-scheme: light;
+    background-color: var(--farba-pozadie);
+    color: var(--farba-text-hlavny);
+    font-family: system-ui, sans-serif;
     box-sizing: border-box;
 }
 
+html[data-tema="tmava"] {
+    color-scheme: dark;
+}
+
+*, *::before, *::after {
+    box-sizing: inherit;
+    /* Plynulý prechod zabezpečí nevtieravú zmenu témy bez blikania */
+    transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
 body {
-    background-color: var(--bg-farba);
-    color: var(--text-hlavny);
-    font-family: "Segoe UI", system-ui, sans-serif;
     margin: 0;
     padding: 0;
 }
 
 .hlavicka {
     display: flex;
-    align-items: baseline;
-    gap: 10px;
-    padding: 18px 24px 8px;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 24px;
+    background-color: var(--farba-karta);
+    border-bottom: 1px solid var(--farba-okraj);
+    box-shadow: var(--tien-karty);
 }
 
 .hlavicka h1 {
     margin: 0;
-    color: var(--akcent);
-    font-size: 20px;
+    font-size: 1.25rem;
+    color: var(--farba-text-hlavny);
 }
 
 .verzia {
-    color: var(--text-tlmeny);
-    font-size: 13px;
+    font-size: 0.75rem;
+    color: var(--farba-text-tlmeny);
+    margin-left: 8px;
+}
+
+.prepinac-temy {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: 1px solid var(--farba-okraj);
+    background-color: var(--farba-priehladna);
+    color: var(--farba-text-hlavny);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
 }
 
 .zalozky {
     display: flex;
-    gap: 4px;
+    gap: 8px;
     padding: 0 24px;
-    border-bottom: 1px solid var(--border);
+    background-color: var(--farba-karta);
+    border-bottom: 1px solid var(--farba-okraj);
 }
 
 .zalozka {
-    background: transparent;
+    padding: 12px 16px;
     border: none;
-    color: var(--text-tlmeny);
-    padding: 10px 16px;
-    font-size: 14px;
-    font-weight: 600;
-    font-family: inherit;
+    background-color: var(--farba-priehladna);
+    color: var(--farba-text-tlmeny);
     cursor: pointer;
-    border-bottom: 2px solid transparent;
+    font-size: 0.9rem;
+    font-weight: 500;
+    border-bottom: 2px solid var(--farba-priehladna);
 }
 
 .zalozka:hover {
-    color: var(--text-hlavny);
+    color: var(--farba-text-hlavny);
 }
 
 .zalozka.aktivna {
-    color: var(--akcent);
-    border-bottom-color: var(--akcent);
+    color: var(--farba-akcent-text);
+    border-bottom-color: var(--farba-akcent);
 }
 
 main {
-    padding: 20px 24px 28px;
+    padding: 24px;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.panel {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
 }
 
 .panel h2 {
-    margin-top: 0;
-    font-size: 17px;
+    margin: 0 0 16px 0;
+    font-size: 1.1rem;
+    color: var(--farba-text-hlavny);
 }
 
+/* Trieda pre JS logiku prepínania obsahu */
 .skryte {
     display: none !important;
 }
 
 .vysvetlivka {
-    color: var(--text-tlmeny);
-    font-size: 14px;
-    line-height: 1.5;
-    max-width: 640px;
+    font-size: 0.85rem;
+    color: var(--farba-text-tlmeny);
+    margin-top: 4px;
 }
 
 code {
-    background: rgba(255, 255, 255, 0.1);
-    padding: 2px 4px;
+    background-color: var(--farba-okraj);
+    color: var(--farba-text-hlavny);
+    padding: 2px 6px;
     border-radius: 4px;
     font-family: monospace;
+    font-size: 0.9em;
 }
 
 .zoznam-planovane {
-    color: var(--text-tlmeny);
-    font-size: 14px;
-    line-height: 1.7;
-    max-width: 560px;
-}
-
-.karta-solver {
     display: flex;
-    justify-content: space-between;
-    align-items: center;
-    background: var(--bg-panel);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 12px 16px;
-    margin-bottom: 10px;
-    max-width: 420px;
+    flex-direction: column;
+    gap: 12px;
 }
 
-.karta-solver.karta-planovana {
+.karta-solver,
+.karta-planovana {
+    background-color: var(--farba-karta);
+    border: 1px solid var(--farba-okraj);
+    border-radius: 8px;
+    padding: 16px;
+    box-shadow: var(--tien-karty);
+}
+
+.karty-statistik {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 12px;
+}
+
+.karta-statistika {
+    background-color: var(--farba-karta);
+    border: 1px solid var(--farba-okraj);
+    border-radius: 8px;
+    padding: 16px;
+    box-shadow: var(--tien-karty);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.karta-popis {
+    font-size: 0.8rem;
+    color: var(--farba-text-tlmeny);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.karta-hodnota {
+    font-size: 1.75rem;
+    font-weight: bold;
+    color: var(--farba-text-hlavny);
+    /* Tabulárne číslice zabránia poskakovaniu šírky pri zmene čísel (napr. 1 vs 8) */
+    font-variant-numeric: tabular-nums;
+}
+
+.karta-detail {
+    font-size: 0.85rem;
+    color: var(--farba-text-tlmeny);
+}
+
+.hodnota-kladna {
+    color: var(--farba-zisk);
+}
+
+.hodnota-zaporna {
+    color: var(--farba-strata);
+}
+
+.zivy-pas {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background-color: var(--farba-karta);
+    border: 1px solid var(--farba-okraj);
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    font-weight: 500;
+}
+
+.zivy-pas.nekativny {
     opacity: 0.6;
 }
 
-button.btn-hlavny {
-    cursor: pointer;
-    font-family: inherit;
-    border-radius: 6px;
-    border: none;
+.zivy-bod {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: var(--farba-zisk);
+    animation: pulzovanie 2s infinite ease-in-out;
+}
+
+.zivy-pas.nekativny .zivy-bod {
+    background-color: var(--farba-text-tlmeny);
+    animation: none;
+}
+
+table.tabulka {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+    background-color: var(--farba-karta);
+    border: 1px solid var(--farba-okraj);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+thead th {
+    /* Sticky drží hlavičku na mieste pri dlhšom zozname v scrollovacej oblasti */
+    position: sticky;
+    top: 0;
+    background-color: var(--farba-karta);
+    color: var(--farba-text-tlmeny);
+    text-align: left;
+    padding: 10px 12px;
     font-weight: 600;
-    background: var(--akcent);
-    color: #000;
-    padding: 10px 18px;
+    border-bottom: 2px solid var(--farba-okraj);
+    z-index: 10;
+}
+
+tbody td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--farba-okraj);
+    color: var(--farba-text-hlavny);
+}
+
+tbody tr:last-child td {
+    border-bottom: none;
+}
+
+tbody tr:hover {
+    background-color: var(--farba-pozadie);
+}
+
+.cislo {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.odznak {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    background-color: var(--farba-okraj);
+    color: var(--farba-text-hlavny);
+}
+
+.odznak-bez-ceny {
+    background-color: var(--farba-upozornenie-pozadie);
+    color: var(--farba-upozornenie);
+}
+
+.odznak-stara {
+    background-color: var(--farba-priehladna);
+    color: var(--farba-upozornenie-tlmene);
+    border: 1px solid var(--farba-upozornenie-tlmene);
+}
+
+.vek-ceny {
+    font-size: 0.75rem;
+    color: var(--farba-text-tlmeny);
+    margin-left: 6px;
+}
+
+.prazdne {
+    text-align: center;
+    padding: 32px 16px;
+    color: var(--farba-text-tlmeny);
+    font-style: italic;
+}
+
+.riadok-akcii {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+button {
+    font-family: inherit;
+    font-size: 0.9rem;
+    border-radius: 6px;
+    padding: 8px 16px;
+    cursor: pointer;
+    font-weight: 500;
+}
+
+button.btn-hlavny {
+    background-color: var(--farba-akcent);
+    color: var(--farba-tlacidlo-hlavne-text);
+    border: none;
+}
+
+button.btn-vedlajsi {
+    background-color: var(--farba-priehladna);
+    color: var(--farba-text-hlavny);
+    border: 1px solid var(--farba-okraj);
+}
+
+button.btn-vedlajsi:hover {
+    background-color: var(--farba-okraj);
+}
+
+/* Jasná indikácia focusu pre klávesnicovú prístupnosť */
+button:focus-visible {
+    outline: 2px solid var(--farba-akcent);
+    outline-offset: 2px;
+}
+
+.skupina-najlepsia td {
+    background-color: var(--farba-akcent-pozadie-jemne);
+}
+
+/* Ľavý okraj len na prvej bunke najlepšej skupiny cez inset tieň (border by rozbil tabuľku) */
+.skupina-najlepsia td:first-child {
+    box-shadow: inset 4px 0 0 0 var(--farba-akcent);
+}
+
+@keyframes pulzovanie {
+    0% {
+        transform: scale(0.9);
+        opacity: 1;
+    }
+    50% {
+        transform: scale(1.4);
+        opacity: 0.4;
+    }
+    100% {
+        transform: scale(0.9);
+        opacity: 1;
+    }
+}
+
+/* Vypnutie animácií pre používateľov citlivých na pohyb */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        transition: none !important;
+        animation: none !important;
+    }
+}
+/* ── Doplnky k rozloženiu záložky Tracker ──────────────────────────────── */
+
+/* Nadpis a verzia držia pokope vľavo, prepínač témy ostáva vpravo. */
+.hlavicka-vlavo {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+}
+
+/* Nadpis nad tabuľkou je menší než nadpis panela — je to medzistupeň,
+   nie druhá sekcia. */
+.nadpis-tabulky {
+    margin: 0;
     font-size: 14px;
-    transition: background 0.2s, transform 0.1s;
+    font-weight: 600;
+    color: var(--farba-text-hlavny);
 }
 
-button.btn-hlavny:hover {
-    background: var(--akcent-hover);
+/* Tabuľka nech nelepí na predošlý blok ani na vysvetlivku pod ňou. */
+table.tabulka {
+    margin-bottom: 18px;
 }
 
-button.btn-hlavny:active {
-    transform: scale(0.98);
+/* Ikona v prepínači témy je vložené SVG (nie emoji — tie na Windowse aj v CI
+   chýbajú). `display:block` jej bráni zdediť riadkovanie textu a `fill` sa
+   berie z farby tlačidla, nech sedí v oboch témach. */
+.prepinac-temy svg {
+    display: block;
+    width: 16px;
+    height: 16px;
+    flex: 0 0 auto;
+    fill: currentColor;
 }

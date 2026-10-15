@@ -21,6 +21,17 @@ pub struct Nastavenia {
     /// tretí hotkey — zámerne, nech sa Richard uprostred hrania nemusí učiť
     /// novú klávesu, len si raz zaškrtne prepínač v Nastaveniach.
     pub zber_dat_zapnute: bool,
+    /// Vzhľad hlavného okna: `svetla` alebo `tmava`. **Predvolená je svetlá** —
+    /// Richard 15.10.2026: „nemá to byť celé tmavé". Prepínač je v hlavičke okna.
+    pub tema: String,
+    /// Farm tracker (TLI 11/11b): cesta k hernému logu `UE_game.log`. Prázdna
+    /// hodnota znamená „nájdi ju sám" — appka skúsi bežné inštalačné cesty.
+    pub cesta_logu: String,
+    /// Či sa má log vôbec čítať. Vypnuté = tracker nerobí nič a nič nečíta.
+    pub tracker_zapnuty: bool,
+    /// Odpočítať z hodnoty dropov 12,5 % daň z predaja na trhu. Na samotné FE
+    /// sa neuplatňuje nikdy (daň sa platí z predaja, nie z meny).
+    pub tracker_dan: bool,
 }
 
 impl Default for Nastavenia {
@@ -34,6 +45,10 @@ impl Default for Nastavenia {
             proces_hry: "Torchlight Infinite, Torchlight".to_string(),
             zvuk: false,
             zber_dat_zapnute: false,
+            tema: "svetla".to_string(),
+            cesta_logu: String::new(),
+            tracker_zapnuty: true,
+            tracker_dan: false,
         }
     }
 }
@@ -56,6 +71,11 @@ impl Nastavenia {
         if self.autoskrytie_s > 600 {
             self.autoskrytie_s = 600;
         }
+
+        // Neznáma hodnota témy nesmie nechať okno bez farieb — padá sa na svetlú.
+        let t = self.tema.trim().to_lowercase();
+        self.tema = if t == "tmava" { t } else { "svetla".to_string() };
+        self.cesta_logu = self.cesta_logu.trim().to_string();
     }
 
     /// Bezpečné zostrojenie adresy zamedzuje chybám v smerovaní požadaviek

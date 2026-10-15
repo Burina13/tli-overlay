@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="sk">
+<html lang="sk" data-tema="svetla">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -9,8 +9,12 @@
 </head>
 <body>
     <div class="hlavicka">
-        <h1>Tvoj Tatko TLI Overlay</h1>
-        <span id="verzia-text" class="verzia"></span>
+        <div class="hlavicka-vlavo">
+            <h1>Tvoj Tatko TLI Overlay</h1>
+            <span id="verzia-text" class="verzia"></span>
+        </div>
+        <button type="button" class="prepinac-temy" id="prepinac-temy"
+                title="Prepnúť svetlú a tmavú tému" aria-label="Prepnúť svetlú a tmavú tému"></button>
     </div>
 
     <nav class="zalozky" id="zalozky">
@@ -22,21 +26,53 @@
 
     <main>
         <section id="panel-tracker" class="panel">
-            <h2>Tracker</h2>
-            <p class="vysvetlivka">
-                Sem príde sledovanie máp — zoznam dropov s cenou, FE zarobené a trvanie
-                každej mapy, agregácie podľa chartu aj podľa mapy, história s filtrami
-                a export CSV. Táto záložka je zatiaľ len kostra (TLI 11, krok 1) — dáta
-                naplní krok 2 (parser <code>UE_game.log</code>).
-            </p>
-            <ul class="zoznam-planovane">
-                <li>Mapa a štartovací chart (Compass / Voidchart / beacons…)</li>
-                <li>FE zarobené a trvanie za každú mapu, zoznam dropov s cenou</li>
-                <li>FE/h, máp/h, priemer FE na mapu</li>
-                <li>Rozdelenie podľa chartu a podľa mapy — čo sa najviac oplatí</li>
-                <li>Session aj celkovo za ligu, história s filtrami, export CSV</li>
-                <li>Voliteľný mini-overlay počas mapy (FE, čas, FE/h) — zapnuteľný/vypnuteľný</li>
-            </ul>
+            <div class="zivy-pas nekativny" id="zivy-pas">
+                <span class="zivy-bod"></span>
+                <span id="zivy-text">Tracker čaká na prvú mapu…</span>
+            </div>
+
+            <div class="karty-statistik" id="karty-statistik"></div>
+
+            <div class="riadok-akcii">
+                <h3 class="nadpis-tabulky">Ktorá kombinácia sa oplatí</h3>
+                <span class="vek-ceny" id="info-ceny"></span>
+            </div>
+            <table class="tabulka" id="tabulka-kombinacie">
+                <thead>
+                    <tr>
+                        <th>Chart a kompasy</th>
+                        <th>Mapa</th>
+                        <th class="cislo">Máp</th>
+                        <th class="cislo">Čistý zisk/h</th>
+                        <th class="cislo">Priemer na mapu</th>
+                        <th class="cislo">Priemerný čas</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+            <p class="prazdne" id="prazdne-kombinacie">Zatiaľ žiadna dokončená mapa.</p>
+
+            <div class="riadok-akcii">
+                <h3 class="nadpis-tabulky">História máp</h3>
+                <button type="button" class="btn-vedlajsi" id="btn-csv">Export CSV</button>
+            </div>
+            <table class="tabulka" id="tabulka-behov">
+                <thead>
+                    <tr>
+                        <th class="cislo">#</th>
+                        <th>Mapa</th>
+                        <th>Chart a kompasy</th>
+                        <th class="cislo">Trvanie</th>
+                        <th class="cislo">Dropy</th>
+                        <th class="cislo">Vstupy</th>
+                        <th class="cislo">Čistý zisk</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+            <p class="prazdne" id="prazdne-behy">Zatiaľ žiadna dokončená mapa.</p>
+
+            <p class="vysvetlivka" id="stav-trackera"></p>
         </section>
 
         <section id="panel-solvery" class="panel skryte">
