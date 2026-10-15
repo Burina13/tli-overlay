@@ -211,3 +211,108 @@ fn e2e_canvas_analyza_az_po_parovane_obdlzniky() {
     // Zdroj a cieľ sú na iných súradniciach — dôkaz, že sa nepomiešali.
     assert!((zdroj_css.x - ciel_css.x).abs() > 1.0);
 }
+
+// ── Guide a synchronizácia s partiou (TLI 11, kroky 4 a 5) ──────────────────
+
+const ODPOVED_GUIDE: &str = r#"{
+  "ok": true,
+  "verzia": "a1b2c3d4e5f6",
+  "zdroj": "https://tlicompendium.com/en/build-guides/erika1-lvl1-to-ss20-ultimate-guide",
+  "tahak": {"slug": "tahak-na-start", "nazov": "Ťahák", "html": "<p>Začni tu.</p>"},
+  "kapitoly": [
+    {"slug": "uvod", "nazov": "Úvod",
+     "html": "<p><img src=\"/ikony/skill/thunder-spike.webp\" alt=\"Thunder Spike\"> a <script>zle()</script> koniec</p>"}
+  ],
+  "ikony": {"skill/thunder-spike.webp": "data:image/webp;base64,QUFB"}
+}"#;
+
+const ODPOVED_SYNC: &str = r#"{"ok": true, "prijatych": 2, "preskocenych": 1}"#;
+
+#[test]
+fn e2e_guide_od_servera_az_po_html_pre_okno() {
+    let (port, prijimac) = mock(200, ODPOVED_GUIDE);
+    let n = nastavenia(port);
+
+    let telo = klient::stiahni_guide(&n, "?ak_novsie_ako=stara")
+        .expect("guide sa nestiahol")
+        .expect("server poslal 204, hoci mal poslať obsah");
+
+    let (hlavicky, _) = prijimac.recv().expect("mock nedostal požiadavku");
+    assert!(hlavicky.contains("GET /api/guide?ak_novsie_ako=stara"), "{hlavicky}");
+    assert!(hlavicky.contains("Authorization: Bearer tli_test_kluc"));
+
+    let g = tli_overlay_core::guide::z_odpovede(&telo, 1_000).expect("odpoveď sa nedá prečítať");
+    assert_eq!(g.verzia, "a1b2c3d4e5f6");
+    assert_eq!(g.stiahnuty, 1_000);
+
+    let html = tli_overlay_core::guide::priprav_html(&g.kapitoly[0].html, &g.ikony);
+    // Ikona sa vložila priamo do HTML (webview `img-src 'self' data:`)…
+    assert!(html.contains("src=\"data:image/webp;base64,QUFB\""), "{html}");
+    assert!(!html.contains("/ikony/"), "{html}");
+    // …a skript zo servera sa do okna nedostane.
+    assert!(!html.to_lowercase().contains("<script"), "{html}");
+}
+
+#[test]
+fn e2e_guide_204_znamena_mame_najnovsie() {
+    let (port, _prijimac) = mock(204, "");
+    let n = nastavenia(port);
+    assert!(klient::stiahni_guide(&n, "?ak_novsie_ako=a1b2c3d4e5f6")
+        .expect("204 nie je chyba")
+        .is_none());
+}
+
+#[test]
+fn e2e_sync_posle_mapy_a_precita_zhrnutie() {
+    use tli_overlay_core::tracker::agregacie::VysledokBehu;
+    use tli_overlay_core::tracker::sync;
+
+    let vysledky = vec![
+        VysledokBehu {
+            id: 1,
+            zona: "Oaza".to_string(),
+            podpis_vstupov: "400021x1".to_string(),
+            podpis_kombinacie: "400021x1@Oaza".to_string(),
+            zaciatok: "2026-10-15 20:00:00".to_string(),
+            trvanie_ms: 300_000,
+            hodnota_dropov: 468.0,
+            hodnota_vstupov: 3.1,
+            cisty_zisk: 464.9,
+            bez_ceny: vec![],
+            najstarsia_cena: None,
+        },
+        // Bez času začiatku — podpis by nebol stabilný, takže sa neposiela.
+        VysledokBehu {
+            id: 2,
+            zona: "Lava".to_string(),
+            podpis_vstupov: "400021x1".to_string(),
+            podpis_kombinacie: "400021x1@Lava".to_string(),
+            zaciatok: String::new(),
+            trvanie_ms: 240_000,
+            hodnota_dropov: 306.0,
+            hodnota_vstupov: 3.1,
+            cisty_zisk: 302.9,
+            bez_ceny: vec![],
+            najstarsia_cena: None,
+        },
+    ];
+
+    let davka = sync::vyber_neposlane(&vysledky, &std::collections::BTreeSet::new(), 200);
+    assert_eq!(davka.len(), 1, "beh bez času začiatku sa nemá posielať");
+
+    let (port, prijimac) = mock(200, ODPOVED_SYNC);
+    let n = nastavenia(port);
+    let odpoved = klient::posli_tracker_sync(&n, &sync::telo_poziadavky(&davka, "0.9.0"))
+        .expect("sync zlyhal");
+
+    let (hlavicky, telo_poziadavky) = prijimac.recv().expect("mock nedostal požiadavku");
+    assert!(hlavicky.contains("POST /api/tracker/sync"), "{hlavicky}");
+    let poslane = String::from_utf8_lossy(&telo_poziadavky);
+    assert!(poslane.contains("\"klient\":\"0.9.0\""), "{poslane}");
+    assert!(poslane.contains("\"zona\":\"Oaza\""), "{poslane}");
+    assert!(!poslane.contains("Lava"), "{poslane}");
+
+    let v = sync::z_odpovede(&odpoved).expect("odpoveď sa nedá prečítať");
+    assert_eq!((v.prijatych, v.preskocenych), (2, 1));
+    assert!(sync::zhrnutie(&v).contains('2'));
+}

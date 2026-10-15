@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::Instant;
@@ -13,6 +14,11 @@ pub struct Stav {
     /// presný súčet beztak drží server (DB `analyzy`), toto je len okamžitá
     /// spätná väzba "fungovalo mi to práve teraz".
     pub pocitadlo_zber: Mutex<u32>,
+    /// Kľúče máp, ktoré už partiový server dostal (TLI 11, krok 5). Len v pamäti:
+    /// po reštarte appky sa dávka pošle znova a server ju podľa toho istého
+    /// kľúča ticho zahodí (`INSERT OR IGNORE`) — druhý zoznam na disku by bol
+    /// len ďalšie miesto, ktoré sa vie rozísť s pravdou na serveri.
+    pub poslane_behy: Mutex<BTreeSet<String>>,
 }
 
 /// Sluzi na bezpecne ziskanie zlozky na ulozenie konfiguracie pre hracie konto z operacneho systemu.

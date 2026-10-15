@@ -14,6 +14,10 @@ pub struct VysledokBehu {
     pub zona: String,
     pub podpis_vstupov: String,
     pub podpis_kombinacie: String,
+    /// Začiatok mapy z herného logu (`RRRR-MM-DD HH:MM:SS`), prázdny keď ho log
+    /// nedal. Je to jediný údaj, podľa ktorého sa beh dá rozpoznať aj po reštarte
+    /// appky — `id` je len poradie v rámci jedného čítania.
+    pub zaciatok: String,
     pub trvanie_ms: i64,
     /// Hodnota všetkých dropov v FE.
     pub hodnota_dropov: f64,
@@ -59,6 +63,7 @@ pub fn ocen_beh(beh: &Beh, cennik: &Cennik, nastavenie: &Nastavenie) -> Option<V
         zona: beh.zona.clone(),
         podpis_vstupov: beh.podpis_vstupov(),
         podpis_kombinacie: beh.podpis_kombinacie(),
+        zaciatok: beh.zaciatok.as_ref().map(|c| c.text()).unwrap_or_default(),
         trvanie_ms: beh.trvanie_ms().unwrap_or(0),
         hodnota_dropov: ocenene_dropy.fe,
         hodnota_vstupov: ocenene_vstupy.fe,
@@ -253,6 +258,7 @@ mod testy {
             zona: mapa.to_string(),
             podpis_vstupov: vstupy.to_string(),
             podpis_kombinacie: kombinacia.to_string(),
+            zaciatok: format!("2026-10-15 20:{:02}:00", id.min(59)),
             trvanie_ms: cas_ms,
             hodnota_dropov: zisk + 10.0,
             hodnota_vstupov: 10.0,

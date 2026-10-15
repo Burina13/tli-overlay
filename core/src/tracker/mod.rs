@@ -11,3 +11,4 @@ pub mod log;
 pub mod agregacie;
 pub mod ceny;
 pub mod stav;
+pub mod sync;

@@ -32,6 +32,13 @@ pub struct Nastavenia {
     /// Odpočítať z hodnoty dropov 12,5 % daň z predaja na trhu. Na samotné FE
     /// sa neuplatňuje nikdy (daň sa platí z predaja, nie z meny).
     pub tracker_dan: bool,
+    /// Posielať výsledky máp partii na `tli.tvojtatko.sk` (TLI 11, krok 5).
+    /// **Predvolene VYPNUTÉ** — je to zdieľanie vlastných čísel s partiou a to
+    /// si musí hráč zapnúť sám, nie sa to na neho nasťahovať s aktualizáciou.
+    pub tracker_sync: bool,
+    /// Malý panel nad hrou s FE tejto mapy, časom a FE/h (TLI 11, krok 5).
+    /// Predvolene vypnutý — overlay nad hrou je rušivý a nie každý ho chce.
+    pub mini_overlay: bool,
 }
 
 impl Default for Nastavenia {
@@ -49,6 +56,8 @@ impl Default for Nastavenia {
             cesta_logu: String::new(),
             tracker_zapnuty: true,
             tracker_dan: false,
+            tracker_sync: false,
+            mini_overlay: false,
         }
     }
 }
@@ -92,6 +101,11 @@ impl Nastavenia {
     /// Frozen Canvas (TLI 4b) — ten istý endpoint, iný modul.
     pub fn adresa_analyza_canvas(&self) -> String {
         self.adresa("/api/analyza?modul=canvas")
+    }
+
+    /// Príjem výsledkov máp pre rebríček partie (TLI 11, krok 5).
+    pub fn adresa_tracker_sync(&self) -> String {
+        self.adresa("/api/tracker/sync")
     }
 
     /// Skratka pre kontrolu dostupnosti a stavu serverového API.
@@ -189,6 +203,24 @@ mod testy {
     fn poskodeny_json_vrati_predvolene() {
         let n = Nastavenia::z_jsonu("{ zle : [");
         assert_eq!(n.url_servera, "https://tli.tvojtatko.sk");
+    }
+
+    #[test]
+    fn synchronizacia_a_mini_overlay_su_predvolene_vypnute() {
+        // Zdieľanie vlastných čísel s partiou aj panel nad hrou sú veci, ktoré
+        // si hráč zapína sám — nesmú sa zapnúť samy pri aktualizácii.
+        let n = Nastavenia::default();
+        assert!(!n.tracker_sync);
+        assert!(!n.mini_overlay);
+        assert_eq!(n.adresa_tracker_sync(), "https://tli.tvojtatko.sk/api/tracker/sync");
+    }
+
+    #[test]
+    fn stare_nastavenia_bez_novych_poli_sa_nacitaju() {
+        let n = Nastavenia::z_jsonu(r#"{"kluc":"abc","tracker_zapnuty":true}"#);
+        assert!(!n.tracker_sync);
+        assert!(!n.mini_overlay);
+        assert_eq!(n.kluc, "abc");
     }
 
     #[test]

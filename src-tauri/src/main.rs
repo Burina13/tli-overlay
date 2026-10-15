@@ -27,9 +27,12 @@ use tli_overlay_core::{api, suradnice, zmensenie};
 const OVERLAY: &str = "overlay";
 /// Okno nastavení. Obyčajné okno s rámom, otvára sa z tray ikony.
 const NASTAVENIA: &str = "nastavenia";
-/// Hlavné okno so záložkami Tracker/Solvery/Guide/Nastavenia (TLI 11, krok 1 —
-/// zatiaľ len kostra, dáta pribudnú v ďalších krokoch). Otvára sa z tray ikony.
+/// Hlavné okno so záložkami Tracker/Solvery/Guide/Nastavenia. Otvára sa z tray
+/// ikony alebo položkou „Otvoriť".
 const HLAVNE: &str = "hlavne";
+/// Mini-overlay počas mapy (TLI 11, krok 5): malý panel vždy navrchu s FE tejto
+/// mapy, časom a FE/h. Predvolene vypnutý, zapína sa v záložke Tracker.
+const MINI: &str = "mini";
 
 /// Keď sa okno hry nenájde, chybová hláška sa aj tak musí mať kde zobraziť —
 /// overlay sa preto postaví na túto veľkosť do stredu hornej časti obrazovky.
@@ -496,6 +499,100 @@ fn guide_sync(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Synchronizácia s partiou a mini-overlay (TLI 11, krok 5)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Pošle partii mapy, ktoré ešte nepozná. Vracia vetu pre UI.
+///
+/// Volá sa z UI (nie z vlákna na pozadí): tracker aj tak číta log len vtedy,
+/// keď je hlavné okno otvorené, takže druhý mechanizmus by tu nič nepridal.
+#[tauri::command]
+fn tracker_sync_teraz(
+    stav: tauri::State<Stav>,
+    tracker: tauri::State<tracker::Tracker>,
+) -> Result<String, String> {
+    let n = stav.nastavenia.lock().unwrap().clone();
+    if !n.tracker_sync {
+        return Ok("Posielanie výsledkov partii je vypnuté.".to_string());
+    }
+    if let Some(chyba) = n.chyba_konfiguracie() {
+        return Err(chyba);
+    }
+
+    let vysledky = {
+        let t = tracker.0.lock().unwrap();
+        tracker::prehlad_pre_ui(&t, n.tracker_zapnuty, n.tracker_dan).behy
+    };
+
+    // Dávka je zhora obmedzená rovnako ako na serveri (200) — pri prvom zapnutí
+    // má hráč v logu kľudne stovky máp a nemá zmysel z toho robiť jednu obrovskú
+    // požiadavku; zvyšok odíde pri ďalšom kole.
+    let davka = {
+        let poslane = stav.poslane_behy.lock().unwrap();
+        tli_overlay_core::tracker::sync::vyber_neposlane(&vysledky, &poslane, 200)
+    };
+    if davka.is_empty() {
+        return Ok("Partia už má všetko, čo si odfarmil.".to_string());
+    }
+
+    let telo = tli_overlay_core::tracker::sync::telo_poziadavky(&davka, env!("CARGO_PKG_VERSION"));
+    let odpoved = klient::posli_tracker_sync(&n, &telo)?;
+    let vysledok = tli_overlay_core::tracker::sync::z_odpovede(&odpoved)?;
+
+    // Za odoslané sa považuje aj to, čo server „preskočil" — mal to už od nás,
+    // takže posielať to znova nemá zmysel.
+    let mut poslane = stav.poslane_behy.lock().unwrap();
+    for b in &davka {
+        poslane.insert(b.kluc.clone());
+    }
+
+    Ok(tli_overlay_core::tracker::sync::zhrnutie(&vysledok))
+}
+
+/// Prepínače v záložke Tracker. Samostatný príkaz (nie uloženie celých
+/// nastavení) z toho istého dôvodu ako `uloz_temu`: checkbox nesmie prepísať
+/// kľúč ani skratky zastaraným objektom.
+#[tauri::command]
+fn uloz_prepinac(
+    app: AppHandle,
+    stav: tauri::State<Stav>,
+    meno: String,
+    zapnuty: bool,
+) -> Result<bool, String> {
+    {
+        let mut n = stav.nastavenia.lock().unwrap();
+        match meno.as_str() {
+            "tracker_sync" => n.tracker_sync = zapnuty,
+            "mini_overlay" => n.mini_overlay = zapnuty,
+            "tracker_zapnuty" => n.tracker_zapnuty = zapnuty,
+            "tracker_dan" => n.tracker_dan = zapnuty,
+            ine => return Err(format!("Neznámy prepínač: {ine}")),
+        }
+        n.normalizuj();
+        let kopia = n.clone();
+        drop(n);
+        stav::uloz(&kopia)?;
+    }
+
+    if meno == "mini_overlay" {
+        nastav_mini(&app, zapnuty);
+    }
+    Ok(zapnuty)
+}
+
+/// Ukáže alebo schová mini-overlay. Keď okno neexistuje (nemalo by sa stať),
+/// appka sa nezhodí — panel je doplnok, nie podmienka chodu.
+fn nastav_mini(app: &AppHandle, zapnuty: bool) {
+    if let Some(okno) = app.get_webview_window(MINI) {
+        if zapnuty {
+            let _ = okno.show();
+        } else {
+            let _ = okno.hide();
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Príkazy z okna nastavení
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -650,6 +747,7 @@ fn main() {
             beh: Mutex::new(false),
             zobrazene_od: Mutex::new(None),
             pocitadlo_zber: Mutex::new(0),
+            poslane_behy: Mutex::new(std::collections::BTreeSet::new()),
         })
         .manage(tracker::Tracker::default())
         // Sprievodca sa načíta z disku hneď pri štarte — záložka Guide
@@ -668,7 +766,9 @@ fn main() {
             tracker_csv,
             uloz_temu,
             guide_data,
-            guide_sync
+            guide_sync,
+            tracker_sync_teraz,
+            uloz_prepinac
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -688,6 +788,16 @@ fn main() {
             }
             if let Some(okno) = app.get_webview_window(HLAVNE) {
                 let _ = okno.hide();
+            }
+            // Mini-overlay sa pri štarte ukáže len vtedy, keď si ho hráč zapol.
+            let mini_zapnuty = app.state::<Stav>().nastavenia.lock().unwrap().mini_overlay;
+            if let Some(okno) = app.get_webview_window(MINI) {
+                let _ = okno.set_ignore_cursor_events(true);
+                if mini_zapnuty {
+                    let _ = okno.show();
+                } else {
+                    let _ = okno.hide();
+                }
             }
 
             let polozka_hlavne =

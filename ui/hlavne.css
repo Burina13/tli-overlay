@@ -557,3 +557,43 @@ table.tabulka {
     text-align: left;
 }
 
+
+/* ── Prepínače v záložke Tracker (TLI 11, krok 5) ───────────────────────── */
+.riadok-prepinacov {
+    display: flex;
+    align-items: flex-start;
+    gap: 20px;
+    flex-wrap: wrap;
+    margin: 14px 24px 0;
+    padding: 12px 14px;
+    background-color: var(--farba-karta);
+    border: 1px solid var(--farba-okraj);
+    border-radius: 8px;
+    box-shadow: var(--tien-karty);
+}
+
+.prepinac {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    column-gap: 8px;
+    align-items: center;
+    max-width: 320px;
+    cursor: pointer;
+}
+
+.prepinac small {
+    grid-column: 2;
+    color: var(--farba-text-tlmeny);
+    font-size: 0.78rem;
+    line-height: 1.3;
+}
+
+.prepinac input {
+    accent-color: var(--farba-akcent);
+    width: 16px;
+    height: 16px;
+}
+
+.riadok-prepinacov .vek-ceny {
+    align-self: center;
+}

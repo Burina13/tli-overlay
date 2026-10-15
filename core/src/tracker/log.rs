@@ -14,6 +14,17 @@ pub struct Cas {
 }
 
 impl Cas {
+    /// Čas v tvare `RRRR-MM-DD HH:MM:SS`. Používa sa ako STABILNÝ podpis behu
+    /// (`tracker::sync::kluc_behu`): poradové `id` platí len v rámci jedného
+    /// čítania logu, takže po reštarte appky by sa tie isté mapy poslali na
+    /// server znova ako nové.
+    pub fn text(&self) -> String {
+        format!(
+            "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
+            self.rok, self.mesiac, self.den, self.hodina, self.minuta, self.sekunda
+        )
+    }
+
     /// Konverzia na milisekundy slúži na rýchle výpočty trvania medzi udalosťami v logu.
     /// Zjednodušene počíta dni od 1. januára, pretože beh hry málokedy prekročí jeden rok.
     pub fn ms_od_zaciatku_roka(&self) -> i64 {

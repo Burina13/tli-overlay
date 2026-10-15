@@ -223,6 +223,13 @@ async function obnovTracker() {
         vykresliKombinacie(p);
         vykresliBehy(p);
         vykresliStav(p);
+
+        // Automatické odoslanie partii — len keď si to hráč zapol a len raz za
+        // SYNC_KAZDYCH_KOL kôl, nech sa pri každom takte nechodí na server.
+        kolOdSyncu += 1;
+        if (chkSync.checked && kolOdSyncu >= SYNC_KAZDYCH_KOL) {
+            await posliPartii();
+        }
     } catch (e) {
         console.error(e);
     }
@@ -437,6 +444,68 @@ if (btnGuideZavriOdkaz) {
     });
 }
 
+
+// ─── Prepínače a synchronizácia s partiou (TLI 11, krok 5) ──────────────────
+// Oba prepínače ukladá Rust samostatným príkazom `uloz_prepinac` — checkbox
+// nesmie prepísať kľúč ani skratky tým, že pošle zastarané celé nastavenia.
+
+const chkMini = document.getElementById("chk-mini");
+const chkSync = document.getElementById("chk-sync");
+const btnSyncTeraz = document.getElementById("btn-sync-teraz");
+const stavSync = document.getElementById("stav-sync");
+
+/// Koľko kôl `obnovTracker` (á 3 s) prejde medzi dvoma automatickými odoslaniami.
+/// 60 kôl = 3 minúty: dosť zriedka na to, aby to nikoho neobťažovalo, a dosť
+/// často na to, aby partia videla výsledky ešte počas hrania.
+const SYNC_KAZDYCH_KOL = 60;
+let kolOdSyncu = 0;
+
+function ukazStavSyncu(text, chyba) {
+    stavSync.textContent = text;
+    stavSync.classList.toggle("hodnota-zaporna", Boolean(chyba));
+}
+
+async function prepni(meno, zapnuty) {
+    try {
+        await invoke("uloz_prepinac", { meno, zapnuty });
+    } catch (e) {
+        console.error(e);
+        ukazStavSyncu(String(e), true);
+    }
+}
+
+chkMini.addEventListener("change", () => prepni("mini_overlay", chkMini.checked));
+
+chkSync.addEventListener("change", async () => {
+    await prepni("tracker_sync", chkSync.checked);
+    // Po zapnutí sa pošle hneď prvá dávka — inak by hráč klikol a pol hodiny
+    // nevidel, či to vôbec funguje.
+    if (chkSync.checked) {
+        await posliPartii();
+    } else {
+        ukazStavSyncu("Partii sa neposiela nič.", false);
+    }
+});
+
+async function posliPartii() {
+    kolOdSyncu = 0;
+    try {
+        ukazStavSyncu(await invoke("tracker_sync_teraz"), false);
+    } catch (e) {
+        ukazStavSyncu(String(e), true);
+    }
+}
+
+btnSyncTeraz.addEventListener("click", async () => {
+    btnSyncTeraz.disabled = true;
+    try {
+        await posliPartii();
+    } finally {
+        btnSyncTeraz.disabled = false;
+    }
+});
+
+
 // ─── Štart ──────────────────────────────────────────────────────────────────
 document.getElementById("btn-otvor-nastavenia").addEventListener("click", async () => {
     try {
@@ -461,6 +530,10 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (!parametre.get("tema")) {
             nastavTemu(nastavenia.tema || "svetla");
         }
+        chkMini.checked = Boolean(nastavenia.mini_overlay);
+        chkSync.checked = Boolean(nastavenia.tracker_sync);
+        ukazStavSyncu(chkSync.checked ? "Posiela sa automaticky každé tri minúty."
+                                      : "Partii sa neposiela nič.", false);
     } catch (e) {
         console.error(e);
     }

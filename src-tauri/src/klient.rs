@@ -176,6 +176,26 @@ pub fn stiahni_guide(
     }
 }
 
+/// Pošle dávku odfarmených máp na partiový server (TLI 11, krok 5).
+/// Volá sa LEN keď má hráč `tracker_sync` zapnutý — kontroluje to volajúci.
+pub fn posli_tracker_sync(n: &Nastavenia, telo: &str) -> Result<String, String> {
+    let odpoved = ureq::post(&n.adresa_tracker_sync())
+        .set("Authorization", &format!("Bearer {}", n.kluc))
+        .set("Content-Type", "application/json")
+        .timeout(std::time::Duration::from_secs(30))
+        .send_string(telo);
+
+    match odpoved {
+        Ok(res) => Ok(res.into_string().unwrap_or_default()),
+        Err(ureq::Error::Status(kod, odpoved)) => {
+            let telo = odpoved.into_string().unwrap_or_default();
+            Err(api::sprava_chyby(kod, &telo))
+        }
+        Err(ina) => Err(api::sprava_siete(&ina.to_string())),
+    }
+}
+
+
 #[cfg(test)]
 mod testy {
     use super::*;

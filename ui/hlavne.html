@@ -30,6 +30,26 @@
                 <span id="zivy-text">Tracker čaká na prvú mapu…</span>
             </div>
 
+            <div class="riadok-prepinacov">
+                <!-- Prepinac pre mini-panel s vysvetlivkou -->
+                <label class="prepinac">
+                    <input type="checkbox" id="chk-mini">
+                    Mini-panel nad hrou
+                    <small>Zobrazuje zisk FE tejto mapy, čas a FE/h v malom priehľadnom okne navrchu.</small>
+                </label>
+
+                <!-- Prepinac pre synchronizaciu ucasti -->
+                <label class="prepinac">
+                    <input type="checkbox" id="chk-sync">
+                    Posielať výsledky partii
+                    <small>Výsledky máp sa objavia v rebríčku na tli.tvojtatko.sk/tracker. Bez zapnutia sa neposiela nič.</small>
+                </label>
+
+                <!-- Vedlajsie tlacidlo a indikator na explicitne synchronizovanie vysledkov -->
+                <button type="button" class="btn-vedlajsi" id="btn-sync-teraz">Poslať teraz</button>
+                <span class="vek-ceny" id="stav-sync"></span>
+            </div>
+
             <div class="karty-statistik" id="karty-statistik"></div>
 
             <div class="riadok-akcii">

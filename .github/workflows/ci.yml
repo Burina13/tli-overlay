@@ -156,7 +156,7 @@ jobs:
           t = t.replace("<title>Tvoj Tatko TLI Overlay</title>",
                         "<title>Náhľad hlavného okna</title>", 1)
           pathlib.Path("ui/nahlad-hlavne.html").write_text(t, encoding="utf-8")
-          print("náhľad hlavného okna vygenerovaný")
+          print("nahlad hlavneho okna vygenerovany")
           PY
 
       - name: Náhľad hlavného okna so záložkami (TLI 11) ako obrázky
@@ -191,4 +191,42 @@ jobs:
         with:
           name: hlavne-nahlad
           path: hlavne-panel-*.png
+          if-no-files-found: warn
+
+      - name: Náhľad mini-overlayu (TLI 11, krok 5) ako obrázok
+        shell: bash
+        run: |
+          # Mini-panel je obyčajná stránka ako overlay — stačí mu podstrčiť stub
+          # namiesto Tauri a dá sa odfotiť v Edge rovnako ako ostatné.
+          python3 - <<'PY'
+          import pathlib
+          t = pathlib.Path("ui/mini.html").read_text(encoding="utf-8")
+          k = '<link rel="stylesheet" href="mini.css">'
+          assert t.count(k) == 1, "v mini.html sa zmenil odkaz na CSS"
+          t = t.replace(k, '<script src="nahlad-stub.js"></script>\n    ' + k, 1)
+          pathlib.Path("ui/nahlad-mini.html").write_text(t, encoding="utf-8")
+          print("nahlad mini-overlayu vygenerovany")
+          PY
+
+      - name: Náhľad mini-overlayu — snímka
+        shell: pwsh
+        run: |
+          $edge = @(
+            "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+            "C:\Program Files\Microsoft\Edge\Application\msedge.exe"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $edge) { Write-Warning "Edge sa nenašiel, náhľad preskakujem."; exit 0 }
+          $cesta = (Resolve-Path "ui/nahlad-mini.html").Path
+          $p = Start-Process -FilePath $edge -ArgumentList @(
+            "--headless", "--disable-gpu", "--screenshot=$PWD\mini-nahlad.png",
+            "--window-size=300,120", "--virtual-time-budget=4000",
+            "file:///$($cesta -replace '\\','/')"
+          ) -NoNewWindow -Wait -PassThru
+          Write-Host "Edge exit code: $($p.ExitCode)"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mini-nahlad
+          path: mini-nahlad.png
           if-no-files-found: warn

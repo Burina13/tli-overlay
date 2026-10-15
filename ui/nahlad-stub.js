@@ -92,12 +92,15 @@ const UKAZKA_GUIDE = {
 };
 
 const ODPOVEDE = {
-  verzia: "0.8.0",
-  nacitaj_nastavenia: { hotkey: "F8", hotkey_canvas: "F9", tema: "svetla" },
+  verzia: "0.9.0",
+  nacitaj_nastavenia: { hotkey: "F8", hotkey_canvas: "F9", tema: "svetla",
+                        mini_overlay: true, tracker_sync: false },
   tracker_prehlad: UKAZKA_TRACKER,
   tracker_csv: "id;mapa\n1;YunDuanLvZhou\n",
   guide_data: UKAZKA_GUIDE,
   guide_sync: UKAZKA_GUIDE,
+  uloz_prepinac: true,
+  tracker_sync_teraz: "Odoslané: 3 nových, 1 už server mal.",
   uloz_temu: "svetla",
 };
 

@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="sk" data-tema="svetla">
+<head>
+    <meta charset="utf-8">
+    <title>Tvoj Tatko TLI Overlay - Mini</title>
+    <!-- Zahrnutie stylov pre tento specificky pohlad -->
+    <link rel="stylesheet" href="mini.css">
+</head>
+<body>
+    <!-- Hlavny obal panela. ID pre JS a trieda pre CSS stylovanie -->
+    <div class="mini necinny" id="mini">
+        <div id="mini-mapa">Žiadna mapa nebeží</div>
+        
+        <div class="spodny-riadok">
+            <!-- Blok pre zisk -->
+            <div class="blok-hodnoty">
+                <div class="popisok">zisk</div>
+                <div class="cislo" id="mini-zisk">—</div>
+            </div>
+            
+            <!-- Blok pre cas -->
+            <div class="blok-hodnoty">
+                <div class="popisok">čas</div>
+                <div class="cislo" id="mini-cas">—</div>
+            </div>
+            
+            <!-- Blok pre FE za hodinu -->
+            <div class="blok-hodnoty">
+                <div class="popisok">FE/h</div>
+                <div class="cislo" id="mini-zah">—</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Skript, ktory dynamicky taha a pocita data -->
+    <script src="mini.js"></script>
+</body>
+</html>

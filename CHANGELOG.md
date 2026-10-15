@@ -2,6 +2,32 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.9.0 — 15.10.2026
+
+Synchronizácia s partiou a mini-overlay počas mapy (TLI 11, krok 5/5 — posledný).
+
+- **Posielanie výsledkov partii, predvolene VYPNUTÉ.** Prepínač „Posielať výsledky
+  partii" v záložke Tracker; keď je zapnutý, odfarmené mapy idú na
+  `tli.tvojtatko.sk` a objavia sa v rebríčku na **`/tracker`** (kto koľko zarobí
+  za hodinu a ktorá kombinácia chart + kompasy + mapa sa oplatí). Bez zapnutia
+  neodíde zo stroja **nič**.
+- Odosiela sa len **výsledok mapy** (zóna, podpis chartu a kompasov, trvanie,
+  hodnota dropov/vstupov, čistý zisk) — žiadny log, žiadne screenshoty, žiadne
+  zoznamy položiek.
+- Každá mapa má **stabilný podpis** (FNV-1a nad časom začiatku, zónou, kombináciou
+  a trvaním), takže po reštarte appky sa tá istá mapa pošle znova a server ju
+  podľa toho istého podpisu ticho zahodí — v rebríčku sa nezdvojí.
+- Odosiela sa automaticky **raz za tri minúty**, kým je hlavné okno otvorené,
+  plus tlačidlom „Poslať teraz". Dávka je zhora obmedzená na 200 máp.
+- **Mini-overlay počas mapy**, tiež predvolene vypnutý: malé priehľadné okno
+  260 × 92 px vždy navrchu s čistým ziskom tejto mapy, časom a FE/h. Je
+  priechodné pre myš — klikne sa cezeň do hry.
+- Server: `POST /api/tracker/sync`, `GET /api/tracker/rebricek` a stránka
+  `/tracker` (rola `Torchlight` ako ostatné). **Discord ID sa v rebríčku
+  neposiela** — porovnávajú sa výkony, nie identifikátory.
+- Nové nastavenia `tracker_sync` a `mini_overlay` (obe `false`); staré
+  `nastavenia.json` sa načíta bez zmeny a oba prepínače ostanú vypnuté.
+
 ## 0.8.0 — 15.10.2026
 
 Záložka **Guide** — sprievodca Erika 1 priamo v appke (TLI 11, krok 4/5).
