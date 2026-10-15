@@ -1,6 +1,6 @@
 {
-  "version": "0.11.0",
-  "notes": "Pripomienka „Enable Log\" na začiatku každej session (TLI 11d). Hra si toto nastavenie nepamätá medzi spusteniami — appka teraz sama pozná rotáciu UE_game.log (nová session) a keď do 60 sekúnd nevidí ani jeden riadok, ktorý sa zapisuje len pri zapnutom logovaní, upozorní: toastom priamo nad hrou, Windows notifikáciou aj červeným stavom v záložke Tracker. Keď hráč prvé upozornenie prehliadne, appka to pripomenie znova presne pri vstupe do prvej mapy. Upozornenie zmizne samo, len čo začnú prichádzať herné riadky (\"✅ Logovanie beží\"). Nový prepínač „Pripomínať Enable Log\" v záložke Tracker, predvolene zapnutý. Appka naďalej iba číta súbor na disku, nič v hre nemení.",
-  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.11.0/Tvoj-Tatko-TLI-Overlay_0.11.0_x64_en-US.msi",
-  "msiSha256": "620441f5b6023b1cfdcb5ec6b3b422fc26021bacbf65b7571eea06ff3fd04a36"
+  "version": "0.12.0",
+  "notes": "Lokálna databáza všetkého, čo sa dá z logu vyčítať (TLI 13, 1. časť). Tracker teraz priebežne ukladá uzavreté mapy do lokálnej SQLite databázy — monštrá podľa rarity, modifikátory mapy, zostatky mien, boss fighty, Frozen Canvas akcie aj ceny z trhu. Nová záložka „Analýza“: vyhľadávanie podľa mapy a minimálneho zisku, klik na riadok ukáže monštrá podľa rarity, export CSV aj JSON. Tlačidlo „Načítať staré logy“ spätne naimportuje aj zálohy UE_game-backup-*.log — bezpečné spustiť opakovane, nič sa nezdvojí. Appka naďalej iba číta súbor na disku, nič v hre nemení.",
+  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.12.0/Tvoj-Tatko-TLI-Overlay_0.12.0_x64_en-US.msi",
+  "msiSha256": "2d99dc5d4b7bcc1bf34c91d18da894bfcdb32c0fb46d8810de30acdfb5982ab1"
 }
