@@ -108,8 +108,13 @@ async function obnov() {
     }
 }
 
-// Spustenie hned po natiahnuti stranky a cyklenie kazde 2 sekundy.
+// Spustenie hned po natiahnuti stranky a cyklenie kazde 2 sekundy — to je
+// zalozka, zive citanie na pozadi (TLI 11c) posle udalost hned po novych
+// riadkoch a tá nizsie spusti prekreslenie okamzite.
 document.addEventListener("DOMContentLoaded", () => {
     obnov();
     setInterval(obnov, 2000);
+    if (window.__TAURI__.event) {
+        window.__TAURI__.event.listen("tracker-zmena", () => obnov());
+    }
 });

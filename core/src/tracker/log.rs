@@ -326,26 +326,63 @@ pub fn parsuj_telo(riadky: &[String]) -> BTreeMap<String, String> {
     vysledok
 }
 
-/// Súbory z Unreal Enginu a rôznych platforiem môžu mať iné kódovanie BOM.
-/// Lossy konverzia garantuje, že parser nikdy nepadne na nevalidnom znaku.
-pub fn dekoduj(bajty: &[u8]) -> String {
-    if bajty.starts_with(&[0xFF, 0xFE]) {
-        let u16_bajty: Vec<u16> = bajty[2..]
-            .chunks_exact(2)
-            .map(|c| u16::from_le_bytes([c[0], c[1]]))
-            .collect();
-        String::from_utf16_lossy(&u16_bajty)
-    } else if bajty.starts_with(&[0xFE, 0xFF]) {
-        let u16_bajty: Vec<u16> = bajty[2..]
-            .chunks_exact(2)
-            .map(|c| u16::from_be_bytes([c[0], c[1]]))
-            .collect();
-        String::from_utf16_lossy(&u16_bajty)
-    } else if bajty.starts_with(&[0xEF, 0xBB, 0xBF]) {
-        String::from_utf8_lossy(&bajty[3..]).into_owned()
-    } else {
-        String::from_utf8_lossy(bajty).into_owned()
+/// Kódovanie textového logu, rozpoznané podľa BOM na jeho úplnom začiatku
+/// (`log-format.md` §0). Unreal prepne na UTF-16 LE, len čo sa do logu
+/// dostane znak mimo ANSI (napr. emoji v mene postavy) — preto sa to nedá
+/// predpokladať vopred a treba to zistiť z bajtov.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+pub enum Kodovanie {
+    #[default]
+    Utf8,
+    Utf16Le,
+    Utf16Be,
+}
+
+impl Kodovanie {
+    /// Rozpozná kódovanie z BOM na začiatku `bajty` a vráti ho spolu
+    /// s dĺžkou samotnej BOM značky (tú treba pred dekódovaním odstrihnúť).
+    /// Keď BOM chýba, ide o obyčajné UTF-8 bez značky.
+    pub fn z_bom(bajty: &[u8]) -> (Kodovanie, usize) {
+        if bajty.starts_with(&[0xFF, 0xFE]) {
+            (Kodovanie::Utf16Le, 2)
+        } else if bajty.starts_with(&[0xFE, 0xFF]) {
+            (Kodovanie::Utf16Be, 2)
+        } else if bajty.starts_with(&[0xEF, 0xBB, 0xBF]) {
+            (Kodovanie::Utf8, 3)
+        } else {
+            (Kodovanie::Utf8, 0)
+        }
     }
+
+    /// Lossy konverzia garantuje, že parser nikdy nepadne na nevalidnom
+    /// znaku. `bajty` tu už BEZ BOM — tú odstrihol volajúci podľa `z_bom`.
+    pub fn dekoduj(&self, bajty: &[u8]) -> String {
+        match self {
+            Kodovanie::Utf16Le => {
+                let u16_bajty: Vec<u16> = bajty
+                    .chunks_exact(2)
+                    .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                    .collect();
+                String::from_utf16_lossy(&u16_bajty)
+            }
+            Kodovanie::Utf16Be => {
+                let u16_bajty: Vec<u16> = bajty
+                    .chunks_exact(2)
+                    .map(|c| u16::from_be_bytes([c[0], c[1]]))
+                    .collect();
+                String::from_utf16_lossy(&u16_bajty)
+            }
+            Kodovanie::Utf8 => String::from_utf8_lossy(bajty).into_owned(),
+        }
+    }
+}
+
+/// Jednorazové dekódovanie CELÉHO obsahu (so svojou vlastnou BOM na začiatku).
+/// Na čítanie logu po menších dávkach (kde BOM príde len v prvej z nich) slúži
+/// `StavChvosta` v `chvost.rs` — ten si kódovanie zapamätá naprieč dávkami.
+pub fn dekoduj(bajty: &[u8]) -> String {
+    let (kodovanie, posun) = Kodovanie::z_bom(bajty);
+    kodovanie.dekoduj(&bajty[posun..])
 }
 
 #[cfg(test)]

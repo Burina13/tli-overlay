@@ -43,17 +43,19 @@ Konfigurácia sa ukladá do `%APPDATA%\sk.tvojtatko.tli-overlay\nastavenia.json`
 | Klávesová skratka — Frozen Canvas | Druhá, nezávislá skratka pre inú obrazovku hry (mriežka miešania paintov, samostatný cieľ Richardovho testovania 16.10.2026). | `F9` |
 | Zber dát (Frozen Canvas) | Keď zapnuté, skratka pre Frozen Canvas nevykreslí radu — len odfotí, pošle na server (uloží sa VŽDY) a ukáže počítadlo „Uložené #N". Zapni počas zberu dát, inak nech je vypnuté. | vypnuté |
 
-## Hlavné okno (TLI 11, vo výstavbe)
+## Hlavné okno
 
 Okrem overlayu a nastavení pribudlo od verzie 0.6.0 tretie okno — otvára sa položkou
 **„Otvoriť"** v menu tray ikony (nad „Nastavenia"). Má štyri záložky: **Tracker**
-(tracker farmárskych máp — FE, trvanie, dropy, agregácie, história; zatiaľ len kostra,
-dáta pridá ďalší krok), **Solvery** (prehľad Tartarus/Frozen Canvas/Artistry — F8/F9
-a overlay fungujú ďalej presne tak, ako doteraz, táto záložka im nič nemení),
-**Guide** (ťahák Erika 1, zatiaľ placeholder) a **Nastavenia** (zatiaľ len tlačidlo,
-ktoré otvorí existujúce samostatné okno nastavení). Je to postupne rastúca appka —
-každý ďalší krok (parser logu, UI s agregáciami, guide, synchronizácia) príde ako
-samostatný release.
+(farm tracker — appka si od verzie 0.10.0 cestu k `UE_game.log` nájde sama cez Steam
+register a `libraryfolders.vdf`, pole „Cesta k logu" ju len ukáže na kontrolu;
+číta log naživo na pozadí aj keď je appka schovaná v tray, a počíta čistý zisk
+z máp — FE, trvanie, dropy, agregácie podľa chart + kompasy + mapa, história,
+export CSV, voliteľné posielanie výsledkov partii a mini-panel nad hrou),
+**Solvery** (prehľad Tartarus/Frozen Canvas/Artistry — F8/F9 a overlay fungujú
+ďalej presne tak, ako doteraz, táto záložka im nič nemení), **Guide** (sprievodca
+Erika 1, stiahnutý zo servera a funguje aj offline) a **Nastavenia** (zatiaľ len
+tlačidlo, ktoré otvorí existujúce samostatné okno nastavení).
 
 ## Bezpečnosť a pravidlá hry
 

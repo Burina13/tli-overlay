@@ -212,6 +212,90 @@ function vykresliStav(p) {
             : "Zatiaľ žiadna cena — vyhľadaj si v hre na trhu pár položiek a doplnia sa samy.";
 }
 
+// ─── Cesta k hernému logu (TLI 11c) ─────────────────────────────────────────
+// Pole je READONLY zámerne — zmena ide len cez natívny výber súboru
+// (`btn-vyber-logu`), nech appka nedostane preklep, ktorý nevie overiť za letu.
+const inpCestaLogu = document.getElementById("inp-cesta-logu");
+const btnVyberLogu = document.getElementById("btn-vyber-logu");
+const elStavCestyLogu = document.getElementById("stav-cesty-logu");
+
+function velkostText(b) {
+    if (b < 1024) return `${b} B`;
+    if (b < 1024 * 1024) return `${(b / 1024).toFixed(0)} KB`;
+    return `${(b / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function vekText(s) {
+    if (s < 60) return "pred chvíľou";
+    if (s < 3600) return `pred ${Math.floor(s / 60)} min`;
+    return `pred ${Math.floor(s / 3600)} h`;
+}
+
+async function obnovStavCestyLogu() {
+    try {
+        const s = await invoke("tracker_stav_cesty", { rucna: inpCestaLogu.value || "" });
+        elStavCestyLogu.classList.remove("stav-cesty-ok", "stav-cesty-varovanie");
+        if (!s.existuje) {
+            elStavCestyLogu.textContent =
+                "⚠️ Log sa nenašiel. Klikni na „Vybrať…“ a ukáž appke súbor UE_game.log ručne.";
+            elStavCestyLogu.classList.add("stav-cesty-varovanie");
+            return;
+        }
+        if (s.takmer_prazdny) {
+            elStavCestyLogu.textContent =
+                "⚠️ Log je skoro prázdny. V hre zapni Settings → Other Settings → „Enable Log“ a odohraj kúsok mapy.";
+            elStavCestyLogu.classList.add("stav-cesty-varovanie");
+            return;
+        }
+        if (s.chyba_vypnuty_log) {
+            elStavCestyLogu.textContent =
+                "⚠️ V logu chýbajú očakávané záznamy. V hre over Settings → Other Settings → „Enable Log“.";
+            elStavCestyLogu.classList.add("stav-cesty-varovanie");
+            return;
+        }
+        const vek = typeof s.upravene_pred_s === "number" ? `, zmenené ${vekText(s.upravene_pred_s)}` : "";
+        elStavCestyLogu.textContent = `✅ ${velkostText(s.velkost_b || 0)}${vek}`;
+        elStavCestyLogu.classList.add("stav-cesty-ok");
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+btnVyberLogu.addEventListener("click", async () => {
+    try {
+        const cesta = await invoke("tracker_vyber_subor");
+        if (!cesta) {
+            return;
+        }
+        await invoke("uloz_cestu_logu", { cesta });
+        inpCestaLogu.value = cesta;
+        await obnovStavCestyLogu();
+    } catch (e) {
+        console.error(e);
+        elStavCestyLogu.textContent = String(e);
+    }
+});
+
+/// Pri prvom otvorení appky (prázdna uložená cesta) appka cestu nájde sama
+/// (Steam register/vdf, inak krátky zoznam známych miest) a rovno ju aj
+/// uloží — hráč ju tu len skontroluje, presne ako v jeho ostatných addonoch.
+async function pripravCestuLogu(nastavenia) {
+    let cesta = nastavenia.cesta_logu || "";
+    if (!cesta) {
+        try {
+            const navrhnuta = await invoke("tracker_navrh_cestu");
+            if (navrhnuta) {
+                cesta = navrhnuta;
+                await invoke("uloz_cestu_logu", { cesta });
+            }
+        } catch (e) {
+            console.error(e);
+        }
+    }
+    inpCestaLogu.value = cesta;
+    await obnovStavCestyLogu();
+}
+
 async function obnovTracker() {
     try {
         const p = await invoke("tracker_prehlad");
@@ -534,6 +618,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         chkSync.checked = Boolean(nastavenia.tracker_sync);
         ukazStavSyncu(chkSync.checked ? "Posiela sa automaticky každé tri minúty."
                                       : "Partii sa neposiela nič.", false);
+        await pripravCestuLogu(nastavenia);
     } catch (e) {
         console.error(e);
     }
@@ -541,7 +626,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     await nacitajGuide();
 
     await obnovTracker();
-    // Takt 3 s: dosť rýchle na to, aby hráč videl mapu pribudnúť, a dosť pomalé
-    // na to, aby čítanie logu nestálo ani percento procesora.
+    // Takt 3 s je len záložka — živé čítanie na pozadí (notify + 1s polling,
+    // TLI 11c) pošle udalosť hneď, ako pribudnú nové riadky, a tá nižšie
+    // spustí prekreslenie okamžite namiesto čakania na najbližší takt.
     setInterval(obnovTracker, 3000);
+    if (window.__TAURI__.event) {
+        window.__TAURI__.event.listen("tracker-zmena", () => obnovTracker());
+    }
 });

@@ -91,10 +91,14 @@ const UKAZKA_GUIDE = {
   ],
 };
 
+const CESTA_LOGU_UKAZKA =
+  "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Torchlight Infinite\\UE_Game\\Torchlight\\Saved\\Logs\\UE_game.log";
+
 const ODPOVEDE = {
   verzia: "0.9.0",
   nacitaj_nastavenia: { hotkey: "F8", hotkey_canvas: "F9", tema: "svetla",
-                        mini_overlay: true, tracker_sync: false },
+                        mini_overlay: true, tracker_sync: false,
+                        cesta_logu: CESTA_LOGU_UKAZKA },
   tracker_prehlad: UKAZKA_TRACKER,
   tracker_csv: "id;mapa\n1;YunDuanLvZhou\n",
   guide_data: UKAZKA_GUIDE,
@@ -102,6 +106,18 @@ const ODPOVEDE = {
   uloz_prepinac: true,
   tracker_sync_teraz: "Odoslané: 3 nových, 1 už server mal.",
   uloz_temu: "svetla",
+  // TLI 11c — automatická detekcia cesty k logu (náhľad ukazuje stav „nájdené a v poriadku").
+  tracker_navrh_cestu: CESTA_LOGU_UKAZKA,
+  tracker_stav_cesty: {
+    cesta: CESTA_LOGU_UKAZKA,
+    existuje: true,
+    velkost_b: 19_300_000,
+    upravene_pred_s: 42,
+    takmer_prazdny: false,
+    chyba_vypnuty_log: false,
+  },
+  tracker_vyber_subor: CESTA_LOGU_UKAZKA,
+  uloz_cestu_logu: CESTA_LOGU_UKAZKA,
 };
 
 window.__TAURI__ = {

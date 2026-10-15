@@ -597,3 +597,43 @@ table.tabulka {
 .riadok-prepinacov .vek-ceny {
     align-self: center;
 }
+
+/* ── Cesta k hernému logu (TLI 11c) ──────────────────────────────────────── */
+.skupina-cesta-logu {
+    margin: 14px 24px 0;
+    padding: 12px 14px;
+    background-color: var(--farba-karta);
+    border: 1px solid var(--farba-okraj);
+    border-radius: 8px;
+    box-shadow: var(--tien-karty);
+}
+
+.skupina-cesta-logu label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 6px;
+}
+
+.riadok-cesty {
+    display: flex;
+    gap: 8px;
+}
+
+.riadok-cesty input[type="text"] {
+    flex: 1;
+    padding: 6px 10px;
+    border: 1px solid var(--farba-okraj);
+    border-radius: 6px;
+    background-color: var(--farba-pozadie);
+    color: var(--farba-text-hlavny);
+    font-family: monospace;
+    font-size: 0.85rem;
+}
+
+#stav-cesty-logu.stav-cesty-ok {
+    color: var(--farba-zisk);
+}
+
+#stav-cesty-logu.stav-cesty-varovanie {
+    color: var(--farba-upozornenie);
+}

@@ -437,6 +437,48 @@ fn tracker_csv(
     Ok(tracker::csv(&prehlad.behy))
 }
 
+/// Cesta, ktorú appka navrhne do poľa „Cesta k logu" v záložke Tracker, keď
+/// je uložená hodnota prázdna — Steam register/vdf, inak krátky zoznam
+/// známych miest (TLI 11c). Nič nezapisuje, to urobí `uloz_cestu_logu`.
+#[tauri::command]
+fn tracker_navrh_cestu() -> Option<String> {
+    tracker::najdi_log("").map(|p| p.display().to_string())
+}
+
+/// Stav cesty pre ikonku a hlášku v záložke Tracker: existuje/veľkosť/vek a
+/// upozornenie, keď log vyzerá, že v hre nie je zapnuté „Enable Log" (TLI 11c).
+#[tauri::command]
+fn tracker_stav_cesty(rucna: String) -> tracker::StavCesty {
+    tracker::stav_cesty(&rucna)
+}
+
+/// Tlačidlo „Vybrať…" pri poli s cestou k logu — natívny výber súboru.
+/// `None`, keď hráč dialóg zavrie bez výberu.
+#[tauri::command]
+fn tracker_vyber_subor(app: AppHandle) -> Option<String> {
+    use tauri_plugin_dialog::DialogExt;
+    app.dialog()
+        .file()
+        .add_filter("Herný log", &["log"])
+        .blocking_pick_file()
+        .map(|cesta| cesta.to_string())
+}
+
+/// Uloženie cesty k logu zo záložky Tracker. Samostatný príkaz (nie uloženie
+/// celých nastavení) z rovnakého dôvodu ako `uloz_temu`/`uloz_prepinac` —
+/// nesmie prepísať kľúč ani skratky zastaraným objektom z inej časti UI.
+#[tauri::command]
+fn uloz_cestu_logu(stav: tauri::State<Stav>, cesta: String) -> Result<String, String> {
+    let mut n = stav.nastavenia.lock().unwrap();
+    n.cesta_logu = cesta;
+    n.normalizuj();
+    let hodnota = n.cesta_logu.clone();
+    let kopia = n.clone();
+    drop(n);
+    stav::uloz(&kopia)?;
+    Ok(hodnota)
+}
+
 /// Prepnutie svetlej a tmavej témy. Je to samostatný príkaz (a nie uloženie
 /// celých nastavení), aby prepínač v hlavičke nemohol omylom prepísať kľúč,
 /// adresu servera ani skratky tým, že by poslal zastaraný objekt.
@@ -742,6 +784,7 @@ fn main() {
 
     tauri::Builder::default()
         .plugin(skratky)
+        .plugin(tauri_plugin_dialog::init())
         .manage(Stav {
             nastavenia: Mutex::new(nacitane),
             beh: Mutex::new(false),
@@ -764,6 +807,10 @@ fn main() {
             skontroluj_aktualizaciu,
             tracker_prehlad,
             tracker_csv,
+            tracker_navrh_cestu,
+            tracker_stav_cesty,
+            tracker_vyber_subor,
+            uloz_cestu_logu,
             uloz_temu,
             guide_data,
             guide_sync,
@@ -778,6 +825,10 @@ fn main() {
             // Canvas sa registruje AŽ PO nej (tá ruší všetky skratky).
             let _ = prehlas_hotkey(&handle, &hotkey_pri_starte);
             let _ = prehlas_hotkey_canvas(&handle, &hotkey_canvas_pri_starte);
+
+            // Tracker (TLI 11c): číta log na pozadí nezávisle od toho, či je
+            // niektoré okno otvorené, aby appka fungovala aj schovaná v tray.
+            tracker::spusti_vlakno(handle.clone());
 
             if let Some(overlay) = app.get_webview_window(OVERLAY) {
                 let _ = overlay.set_ignore_cursor_events(true);

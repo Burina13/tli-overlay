@@ -2,6 +2,43 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.10.0 — 15.10.2026
+
+Tracker si sám nájde log a číta ho naživo (TLI 11c).
+
+- **Automatická detekcia cesty**: appka prečíta Steam inštaláciu z registra
+  (`HKCU\Software\Valve\Steam`, záložne `HKLM`) a zo `steamapps/libraryfolders.vdf`
+  prejde všetky knižnice, kým nenájde `UE_game.log`. Keď Steam nenájde nič,
+  padá na krátky zoznam bežných ciest (ako doteraz). Záložka Tracker má nové
+  pole „Cesta k logu" — predvyplnené nájdenou cestou, zmena len cez tlačidlo
+  „Vybrať…" (natívny výber súboru), a stavový riadok s ikonou: ✅ (veľkosť,
+  kedy sa naposledy zmenil), alebo ⚠️ keď súbor neexistuje, je skoro prázdny,
+  alebo v ňom chýbajú očakávané záznamy (návod zapnúť v hre
+  Settings → Other Settings → „Enable Log").
+- **Živé čítanie na pozadí, nezávislé od okien**: appka doteraz čítala log len
+  vtedy, keď bolo otvorené hlavné okno alebo mini-panel a ich JS si o dáta
+  samo povedalo (`setInterval`). Teraz beží vlastné vlákno od štartu appky —
+  sleduje priečinok s logom cez `notify` (reakcia pod sekundu) a záložne
+  dopĺňa pollingom raz za sekundu, takže tracker funguje aj schovaný v tray.
+  Okná dostanú udalosť `tracker-zmena` a prekreslia sa okamžite namiesto
+  čakania na vlastný interval.
+- **Pozícia v logu sa ukladá** (`tracker-pozicia.json` vedľa `nastavenia.json`)
+  — appka po reštarte nemusí reparsovať od začiatku aj to, čo už raz videla.
+  Keď sa uložená cesta nezhoduje s aktuálnou (iná hra/iný disk), číta sa od
+  nuly, nie „pokračuje" v cudzom súbore.
+- **Oprava kódovania naprieč dávkami**: appka číta log po kúskoch (2 MB), ale
+  UTF-16 BOM je v súbore len raz na úplnom začiatku. Pôvodný kód si kódovanie
+  nepamätal medzi dávkami, takže pri logu s UTF-16 (keď sa doň dostal znak
+  mimo ANSI, napr. emoji v mene postavy) sa po prvej dávke dekódovalo zle.
+  Teraz sa kódovanie zistí raz a platí pre celý súbor; rieši aj prípad, keď
+  dávka skončí uprostred 2-bajtovej jednotky.
+- Rotácia (hra pri reštarte log premenuje/skráti) bola otestovaná — predtým
+  mala appka logiku, ale ani jeden test.
+- Nové core moduly: `tracker::steam` (parsovanie `libraryfolders.vdf`,
+  skladanie kandidátnych ciest — testované na Linuxe s falošnými hodnotami)
+  a `tracker::chvost` (kódovanie a delenie na riadky naprieč dávkami, tiež
+  bez dotyku s diskom).
+
 ## 0.9.0 — 15.10.2026
 
 Synchronizácia s partiou a mini-overlay počas mapy (TLI 11, krok 5/5 — posledný).

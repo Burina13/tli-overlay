@@ -25,6 +25,15 @@
 
     <main>
         <section id="panel-tracker" class="panel">
+            <div class="skupina-cesta-logu">
+                <label for="inp-cesta-logu">Cesta k logu</label>
+                <div class="riadok-cesty">
+                    <input type="text" id="inp-cesta-logu" readonly placeholder="Hľadám automaticky…">
+                    <button type="button" class="btn-vedlajsi" id="btn-vyber-logu">Vybrať…</button>
+                </div>
+                <p class="vysvetlivka" id="stav-cesty-logu"></p>
+            </div>
+
             <div class="zivy-pas nekativny" id="zivy-pas">
                 <span class="zivy-bod"></span>
                 <span id="zivy-text">Tracker čaká na prvú mapu…</span>
