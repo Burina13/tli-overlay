@@ -2,6 +2,7 @@
 // vyskočilo čierne okno `cmd`.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod guide;
 mod klient;
 #[cfg(windows)]
 mod okno;
@@ -449,6 +450,52 @@ fn uloz_temu(stav: tauri::State<Stav>, tema: String) -> Result<String, String> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Guide (TLI 11, krok 4) — sprievodca Erika 1 zo servera, uložený lokálne
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Vráti sprievodcu tak, ako ho má appka práve uloženého. NIČ nesťahuje —
+/// záložka sa musí otvoriť aj bez siete a aj vtedy, keď server nebeží.
+#[tauri::command]
+fn guide_data(g: tauri::State<guide::StavGuide>) -> Result<guide::GuideProUi, String> {
+    let ulozeny = g.0.lock().unwrap();
+    Ok(guide::pre_ui(&ulozeny, tracker::unixovy_cas()))
+}
+
+/// Pozrie sa na server, či nie je novší sprievodca, a keď je, stiahne ho a uloží.
+/// Vracia ten istý tvar ako `guide_data`, takže UI po synchronizácii len
+/// prekreslí to, čo dostane — nemusí volať dva príkazy za sebou.
+#[tauri::command]
+fn guide_sync(
+    stav: tauri::State<Stav>,
+    g: tauri::State<guide::StavGuide>,
+) -> Result<guide::GuideProUi, String> {
+    let n = stav.nastavenia.lock().unwrap().clone();
+    if let Some(chyba) = n.chyba_konfiguracie() {
+        return Err(chyba);
+    }
+
+    // Parameter sa berie z TEJ verzie, ktorú appka práve má — keď je rovnaká,
+    // server vráti 204 a neprenáša sa ani bajt kapitol a ikon.
+    let parameter = {
+        let ulozeny = g.0.lock().unwrap();
+        tli_overlay_core::guide::parameter_verzie(&ulozeny)
+    };
+
+    match klient::stiahni_guide(&n, &parameter)? {
+        // 204 — máme najnovšie. Čas poslednej kontroly sa zámerne NEPREPISUJE:
+        // „stiahnuty" hovorí, odkedy je text, nie kedy sme sa naposledy pýtali.
+        None => guide_data(g),
+        Some(telo) => {
+            let novy = tli_overlay_core::guide::z_odpovede(&telo, tracker::unixovy_cas())?;
+            guide::uloz(&novy)?;
+            let pohlad = guide::pre_ui(&novy, tracker::unixovy_cas());
+            *g.0.lock().unwrap() = novy;
+            Ok(pohlad)
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Príkazy z okna nastavení
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -605,6 +652,9 @@ fn main() {
             pocitadlo_zber: Mutex::new(0),
         })
         .manage(tracker::Tracker::default())
+        // Sprievodca sa načíta z disku hneď pri štarte — záložka Guide
+        // tak ukáže obsah okamžite a bez siete.
+        .manage(guide::StavGuide(Mutex::new(guide::nacitaj())))
         .invoke_handler(tauri::generate_handler![
             nacitaj_nastavenia,
             uloz_nastavenia,
@@ -616,7 +666,9 @@ fn main() {
             skontroluj_aktualizaciu,
             tracker_prehlad,
             tracker_csv,
-            uloz_temu
+            uloz_temu,
+            guide_data,
+            guide_sync
         ])
         .setup(move |app| {
             let handle = app.handle().clone();

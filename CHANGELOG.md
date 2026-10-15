@@ -2,6 +2,51 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.8.0 — 15.10.2026
+
+Záložka **Guide** — sprievodca Erika 1 priamo v appke (TLI 11, krok 4/5).
+
+- Nový modul `core/src/guide.rs`: parsovanie odpovede servera, lokálna cache,
+  príprava HTML na vykreslenie (ikony sa vkladajú ako `data:` URI, `<script>`
+  a `<iframe>` sa odstraňujú, externé odkazy dostanú `data-externy="1"`).
+- Nový `src-tauri/src/guide.rs`: `guide.json` vedľa `nastavenia.json`
+  v `%APPDATA%`, príkazy **`guide_data`** (nič nesťahuje, funguje offline)
+  a **`guide_sync`** (pozrie sa na server a stiahne, len keď je novšia verzia).
+- Server `tli.tvojtatko.sk` má nový **`GET /api/guide`** (rola `Torchlight` ako
+  ostatné API): ťahák + kapitoly ako HTML aj s hernými ikonami vloženými priamo
+  v tele. Verzia je **hash obsahu**, nie čas súborov — redeploy bez zmeny textu
+  klientom nepovie, že je vonku nový sprievodca, a `?ak_novsie_ako=` vtedy vráti
+  prázdnu odpoveď 204.
+- **Ikony chodia ako `data:` URI zámerne:** okno má CSP `img-src 'self' data:`,
+  takže obrázok ťahaný z cudzej adresy by sa aj tak nenakreslil — a guide takto
+  funguje celý aj bez internetu.
+- **Appka neotvára cudzie adresy ani odtiaľto.** Odkaz na `tlicompendium.com`
+  alebo YouTube sa ukáže v lište pod obsahom a dá sa skopírovať; `otvor_web`
+  ostáva obmedzený na náš server a náš repozitár.
+- CI: náhľad hlavného okna sa **generuje z ostrého `ui/hlavne.html`**. Do 0.8.0
+  to bola ručná kópia (`ui/nahlad-hlavne.html`) a rozišla sa s originálom hneď,
+  ako pribudla táto záložka — screenshot by ukazoval staré okno.
+- Tracker, F8/F9, overlay ani nastavenia sa **nemenili**.
+
+## 0.7.0 — 15.10.2026
+
+Tracker farmenia: parser `UE_game.log`, ceny z trhu, agregácie (TLI 11 kroky 2 a 3,
+celé zadanie TLI 11b). *(Zápis doplnený spätne 15.10.2026 — pri vydaní 0.7.0 sa do
+tohto súboru nedostal.)*
+
+- `core/src/tracker/` — `log.rs` (riadky, UTF-16/BOM), `stav.rs` (delty inventára,
+  hranice behov, ceny z `XchgSearchPrice`), `ceny.rs` (cenník a vek ceny),
+  `agregacie.rs` (súhrny). 106 unit testov + 8 E2E nad vzorkou session s 3 mapami.
+- **Čistý zisk = dropy − spotrebované vstupy**; nákup na trhu uprostred mapy sa
+  do zisku nepočíta.
+- **Štartovací chart a kompasy** sa čítajú zo spotreby v bloku `Spv3Open`;
+  výsledky sa delia podľa kombinácie chart + kompasy + mapa.
+- **Ceny z vlastných vyhľadávaní hráča na trhu** (len mena FE `100300`,
+  10. percentil), pri každej cene sa drží jej vek. Na cudzí server nejde nič.
+- Svetlá téma ako **predvolená**, prepínač v hlavičke okna.
+- `src-tauri/src/tracker.rs` — hľadanie logu, čítanie po 2 MB dávkach od poslednej
+  pozície, rotácia logu, UTF-16 podľa BOM.
+
 ## 0.6.0 — 15.10.2026
 
 Kostra hlavného okna so záložkami Tracker/Solvery/Guide/Nastavenia (TLI 11, krok 1/5).

@@ -13,3 +13,5 @@ pub mod suradnice;
 pub mod zmensenie;
 
 pub mod tracker;
+
+pub mod guide;

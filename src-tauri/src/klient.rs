@@ -134,6 +134,48 @@ pub fn stiahni_manifest() -> Result<String, String> {
     }
 }
 
+/// Stiahne celý sprievodca Erika 1 zo servera (TLI 11, krok 4).
+pub fn stiahni_guide(
+    n: &Nastavenia,
+    parameter_verzie: &str,
+) -> Result<Option<String>, String> {
+    // Vnútorný import pre Read, aby sme neovplyvňovali zvyšok súboru
+    use std::io::Read;
+
+    let url = format!("{}{}", n.adresa("/api/guide"), parameter_verzie);
+    let odpoved = ureq::get(&url)
+        .set("Authorization", &format!("Bearer {}", n.kluc))
+        .timeout(std::time::Duration::from_secs(120))
+        .call();
+
+    match odpoved {
+        Ok(res) => {
+            // Server vráti 204 No Content ak máme najaktuálnejšiu verziu podľa parametra ?ak_novsie_ako=
+            if res.status() == 204 {
+                return Ok(None);
+            }
+
+            // NEPOUŽÍVAME res.into_string() !
+            // Knižnica ureq má pri `into_string()` pevný vnútorný limit na veľkosť odpovede (10 MB).
+            // Náš sprievodca obsahuje vložené ikony a telo môže tento limit presiahnuť.
+            // Preto čítame telo priamo z readera a nastavujeme rozumný limit (16 MB).
+            let mut telo = String::new();
+            res.into_reader()
+                .take(16 * 1024 * 1024)
+                .read_to_string(&mut telo)
+                .map_err(|e| format!("Nepodarilo sa načítať sprievodcu (odpoveď je možno príliš veľká): {}", e))?;
+
+            Ok(Some(telo))
+        }
+        Err(ureq::Error::Status(kod, odpoved)) => {
+            // Chybové odpovede sú malé (iba JSON chyby), takže here do_string() nevadí
+            let telo = odpoved.into_string().unwrap_or_default();
+            Err(api::sprava_chyby(kod, &telo))
+        }
+        Err(ina) => Err(api::sprava_siete(&ina.to_string())),
+    }
+}
+
 #[cfg(test)]
 mod testy {
     use super::*;

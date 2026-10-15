@@ -140,7 +140,26 @@ jobs:
           name: overlay-nahlad-canvas
           path: overlay-nahlad-canvas.png
           if-no-files-found: warn
-      - name: Náhľad hlavného okna so záložkami (TLI 11, krok 1) ako obrázky
+      - name: Náhľad hlavného okna — vygenerovať z ostrého hlavne.html
+        shell: bash
+        run: |
+          # Do 0.8.0 ležala v repe RUČNÁ kópia `ui/nahlad-hlavne.html` a rozišla sa
+          # s originálom hneď, ako pribudla záložka Guide — screenshot z CI potom
+          # ukazoval staré okno. Generuje sa preto z ostrého súboru; jediný rozdiel
+          # oproti appke je podstrčený `nahlad-stub.js` namiesto Tauri.
+          python3 - <<'PY'
+          import pathlib
+          t = pathlib.Path("ui/hlavne.html").read_text(encoding="utf-8")
+          k = '<link rel="stylesheet" href="hlavne.css">'
+          assert t.count(k) == 1, "v hlavne.html sa zmenil odkaz na CSS"
+          t = t.replace(k, '<script src="nahlad-stub.js"></script>\n    ' + k, 1)
+          t = t.replace("<title>Tvoj Tatko TLI Overlay</title>",
+                        "<title>Náhľad hlavného okna</title>", 1)
+          pathlib.Path("ui/nahlad-hlavne.html").write_text(t, encoding="utf-8")
+          print("náhľad hlavného okna vygenerovaný")
+          PY
+
+      - name: Náhľad hlavného okna so záložkami (TLI 11) ako obrázky
         shell: pwsh
         run: |
           # Rovnaký mechanizmus ako vyššie, nad `nahlad-hlavne.html` (= hlavne.html

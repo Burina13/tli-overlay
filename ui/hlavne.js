@@ -242,6 +242,201 @@ document.getElementById("btn-csv").addEventListener("click", async () => {
     }
 });
 
+// ─── Guide (TLI 11, krok 4) ─────────────────────────────────────────────────
+// Dáta prichádzajú hotové z Rustu (`guide_data`) — vrátane ikon ako `data:` URI
+// a bez `<script>`. JS tu nič nesťahuje a nič nečistí.
+let guideData = null;
+let guideVybrany = "";
+
+function guideKapitoly(d) {
+    if (!d) return [];
+    const zoznam = [];
+    
+    if (d.tahak) {
+        zoznam.push(d.tahak);
+    }
+    
+    if (d.kapitoly && d.kapitoly.length > 0) {
+        zoznam.push(...d.kapitoly);
+    }
+    
+    return zoznam;
+}
+
+function ukazKapitolu(slug) {
+    guideVybrany = slug;
+    
+    // Zvýrazní aktívne tlačidlo kapitoly v ľavom menu
+    const tlacidla = document.querySelectorAll(".guide-polozka");
+    for (const btn of tlacidla) {
+        if (btn.dataset.slug === slug) {
+            btn.classList.add("aktivna");
+        } else {
+            btn.classList.remove("aktivna");
+        }
+    }
+
+    // Nájde obsah zvolenej kapitoly a vloží ho do dom (HTML už prešlo bezpečnostnou čistkou v Ruste)
+    const elementObsah = document.getElementById("guide-obsah");
+    const kapitoly = guideKapitoly(guideData);
+    const najdenaKapitola = kapitoly.find(k => k.slug === slug);
+    
+    if (najdenaKapitola) {
+        elementObsah.innerHTML = najdenaKapitola.html;
+    } else {
+        elementObsah.innerHTML = "";
+    }
+
+    // Skryje panel s externým odkazom, ak náhodou zostal otvorený z minulej kapitoly
+    document.getElementById("guide-odkaz").classList.add("skryte");
+}
+
+function vykresliGuide(d) {
+    guideData = d;
+
+    const odsekPrazdny = document.getElementById("guide-prazdny");
+    const divRozlozenie = document.querySelector(".guide-rozlozenie");
+    const textStav = document.getElementById("guide-stav");
+    const menuZoznam = document.getElementById("guide-zoznam");
+
+    // Očistíme predchádzajúci stav chybovej hlášky
+    textStav.classList.remove("hodnota-zaporna");
+
+    // Ak sa sprievodca ešte nestiahol
+    if (d.je_prazdny) {
+        odsekPrazdny.classList.remove("skryte");
+        divRozlozenie.classList.add("skryte");
+        textStav.textContent = "Zatiaľ nestiahnuté";
+        return;
+    }
+
+    // Dáta existujú, prepneme zobrazenie UI
+    odsekPrazdny.classList.add("skryte");
+    divRozlozenie.classList.remove("skryte");
+
+    // Vypísanie informácie o veku a verzii dát
+    if (d.vek === "nikdy") {
+        textStav.textContent = "Zatiaľ nestiahnuté";
+    } else {
+        textStav.textContent = `Stiahnuté ${d.vek} · verzia ${d.verzia}`;
+    }
+
+    // Generovanie ľavého menu s kapitolami
+    menuZoznam.innerHTML = "";
+    const kapitoly = guideKapitoly(d);
+    let vybranaStaleExistuje = false;
+
+    for (const kap of kapitoly) {
+        const tlacidlo = document.createElement("button");
+        tlacidlo.type = "button";
+        tlacidlo.className = "guide-polozka";
+        tlacidlo.dataset.slug = kap.slug;
+        tlacidlo.textContent = kap.nazov;
+
+        tlacidlo.addEventListener("click", () => ukazKapitolu(kap.slug));
+        menuZoznam.appendChild(tlacidlo);
+
+        if (kap.slug === guideVybrany) {
+            vybranaStaleExistuje = true;
+        }
+    }
+
+    // Automatický výber prvej kapitoly, ak predtým nebola žiadna zvolená, alebo zmizla (napr. nová verzia)
+    if (!vybranaStaleExistuje && kapitoly.length > 0) {
+        ukazKapitolu(kapitoly[0].slug);
+    } else if (vybranaStaleExistuje) {
+        ukazKapitolu(guideVybrany); // Slúži na refresh obsahu v prípade aktualizácie
+    }
+}
+
+async function nacitajGuide() {
+    try {
+        const data = await invoke("guide_data");
+        vykresliGuide(data);
+    } catch (chyba) {
+        console.error("Chyba pri naťahovaní lokálnych dát pre Guide:", chyba);
+    }
+}
+
+// Obsluha tlačidla na kontrolu aktualizácií Guide zo servera
+const btnGuideSync = document.getElementById("btn-guide-sync");
+if (btnGuideSync) {
+    btnGuideSync.addEventListener("click", async () => {
+        const povodnyText = btnGuideSync.textContent;
+        const textStav = document.getElementById("guide-stav");
+        
+        // Zablokovanie tlačidla počas volania, aby používateľ neklikal viackrát
+        btnGuideSync.disabled = true;
+        btnGuideSync.textContent = "Sťahujem...";
+
+        try {
+            const noveData = await invoke("guide_sync");
+            vykresliGuide(noveData);
+        } catch (chybovaVeta) {
+            // Rust vracia string pri chybe (napr. chybný kľúč) - ukážeme to červeno namiesto normálneho stavu
+            textStav.textContent = chybovaVeta;
+            textStav.classList.add("hodnota-zaporna");
+        } finally {
+            // Vždy odblokovať, aj pri chybe
+            btnGuideSync.disabled = false;
+            btnGuideSync.textContent = povodnyText;
+        }
+    });
+}
+
+// Delegácia eventov kliknutia na odkazy priamo z vykresleného HTML (obsah kapitol).
+// Appka zámerne neotvára cudzie adresy (`otvor_web` ich odmieta) — odkaz na
+// tlicompendium.com či YouTube sa preto ukáže v lište a dá sa skopírovať.
+const divGuideObsah = document.getElementById("guide-obsah");
+if (divGuideObsah) {
+    divGuideObsah.addEventListener("click", (udalost) => {
+        const odkaz = udalost.target.closest("a");
+        if (!odkaz) return;
+
+        // Vnútorné odkazy (bez data-externy) necháme na pokoji (napr. posun v rámci dokumentu)
+        if (odkaz.dataset.externy === "1") {
+            udalost.preventDefault();
+
+            const panelOdkazu = document.getElementById("guide-odkaz");
+            const urlText = document.getElementById("guide-odkaz-url");
+
+            urlText.textContent = odkaz.href;
+            panelOdkazu.classList.remove("skryte");
+        }
+    });
+}
+
+// Obsluha kopírovania externého odkazu zo zobrazenej lišty do schránky (clipboard)
+const btnGuideKopiruj = document.getElementById("btn-guide-kopiruj");
+if (btnGuideKopiruj) {
+    btnGuideKopiruj.addEventListener("click", async () => {
+        const elementUrl = document.getElementById("guide-odkaz-url");
+        const hodnotaUrl = elementUrl.textContent;
+
+        try {
+            // Moderné API pre kopírovanie textu do schránky
+            await navigator.clipboard.writeText(hodnotaUrl);
+        } catch (chyba) {
+            // Fallback pre prípad nedostatočných práv: namiesto uloženia do schránky
+            // iba manuálne označí text, aby si ho používateľ mohol skopírovať sám (Ctrl+C).
+            const range = document.createRange();
+            range.selectNodeContents(elementUrl);
+            
+            const selekcia = window.getSelection();
+            selekcia.removeAllRanges();
+            selekcia.addRange(range);
+        }
+    });
+}
+
+// Schovanie lišty na externé odkazy
+const btnGuideZavriOdkaz = document.getElementById("btn-guide-zavri-odkaz");
+if (btnGuideZavriOdkaz) {
+    btnGuideZavriOdkaz.addEventListener("click", () => {
+        document.getElementById("guide-odkaz").classList.add("skryte");
+    });
+}
+
 // ─── Štart ──────────────────────────────────────────────────────────────────
 document.getElementById("btn-otvor-nastavenia").addEventListener("click", async () => {
     try {
@@ -269,6 +464,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     } catch (e) {
         console.error(e);
     }
+
+    await nacitajGuide();
 
     await obnovTracker();
     // Takt 3 s: dosť rýchle na to, aby hráč videl mapu pribudnúť, a dosť pomalé

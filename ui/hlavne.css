@@ -433,3 +433,127 @@ table.tabulka {
     flex: 0 0 auto;
     fill: currentColor;
 }
+
+/* ── Guide (TLI 11, krok 4) ─────────────────────────────────────────────── */
+/* --- Rozloženie a hlavička záložky Guide --- */
+.guide-hlavicka {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.guide-akcie {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.guide-rozlozenie {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: 16px;
+}
+
+/* --- Ľavé menu (Zoznam kapitol) --- */
+.guide-zoznam {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.guide-polozka {
+  text-align: left;
+  background: transparent;
+  border: none;
+  color: var(--farba-text-hlavny);
+  padding: 8px 12px;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 0.15s ease;
+}
+
+.guide-polozka:hover {
+  background: var(--farba-akcent-pozadie-jemne);
+}
+
+.guide-polozka.aktivna {
+  background: var(--farba-akcent-pozadie-jemne);
+  color: var(--farba-akcent-text);
+  font-weight: bold;
+}
+
+/* --- Pravý panel (Obsah kapitoly) --- */
+.guide-obsah {
+  background: var(--farba-karta);
+  border: 1px solid var(--farba-okraj);
+  border-radius: 6px;
+  padding: 16px;
+  box-shadow: var(--tien-karty);
+  overflow-wrap: anywhere;
+}
+
+/* Formátovanie HTML prvkov v obsahu kapitoly (zo servera) */
+.guide-obsah img {
+  max-width: 100%;
+}
+
+.guide-obsah table {
+  width: 100%;
+}
+
+.guide-obsah .tli-ikona {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.guide-obsah .tli-ikona img {
+  height: 1.3em;
+  vertical-align: text-bottom;
+}
+
+/* --- Panel pre zobrazenie externého odkazu --- */
+.guide-odkaz {
+  margin-top: 16px;
+  padding: 12px;
+  background: var(--farba-akcent-pozadie-jemne);
+  border: 1px solid var(--farba-okraj);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.guide-odkaz code {
+  background: var(--farba-karta);
+  color: var(--farba-text-hlavny);
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--farba-okraj);
+}
+
+/* Obrázok rozdelenia talentových bodov (TLI 8) prichádza v kapitolách ako
+   `<figure class="talenty-obrazok">` — bez tohto by vyskočil cez celú šírku. */
+.guide-obsah .talenty-obrazok {
+    margin: 12px 0;
+}
+
+.guide-obsah .talenty-obrazok figcaption {
+    color: var(--farba-text-tlmeny);
+    font-size: 0.85rem;
+    margin-top: 6px;
+}
+
+.guide-obsah h2,
+.guide-obsah h3 {
+    margin-top: 0.8em;
+}
+
+.guide-obsah th,
+.guide-obsah td {
+    border-bottom: 1px solid var(--farba-okraj);
+    padding: 6px 8px;
+    text-align: left;
+}
+

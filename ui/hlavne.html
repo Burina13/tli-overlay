@@ -96,12 +96,31 @@
         </section>
 
         <section id="panel-guide" class="panel skryte">
-            <h2>Guide</h2>
-            <p class="vysvetlivka">
-                Erika 1 ťahák a kapitoly, s originálnymi ikonami, synchronizované
-                z <code>tli.tvojtatko.sk</code>, nech nové preklady prídu samy.
-                Pripravuje sa (TLI 11, krok 4).
+            <div class="guide-hlavicka">
+                <h2>Guide</h2>
+                <div class="guide-akcie">
+                    <span class="vek-ceny" id="guide-stav"></span>
+                    <button type="button" class="btn-vedlajsi" id="btn-guide-sync">Skontrolovať aktualizáciu</button>
+                </div>
+            </div>
+
+            <p class="vysvetlivka" id="guide-prazdny">
+                Sprievodca Erika 1 sa ešte nestiahol. Klikni na „Skontrolovať aktualizáciu“
+                vyššie — stiahne sa zo servera aj s hernými ikonami a potom funguje aj bez
+                internetu. Treba na to vyplnený osobný kľúč v Nastaveniach.
             </p>
+
+            <div class="guide-rozlozenie skryte">
+                <nav class="guide-zoznam" id="guide-zoznam"></nav>
+                <article class="guide-obsah" id="guide-obsah"></article>
+            </div>
+
+            <div class="guide-odkaz skryte" id="guide-odkaz">
+                <span>Odkaz mimo appky:</span>
+                <code id="guide-odkaz-url"></code>
+                <button type="button" class="btn-vedlajsi" id="btn-guide-kopiruj">Skopírovať</button>
+                <button type="button" class="btn-vedlajsi" id="btn-guide-zavri-odkaz">Zavrieť</button>
+            </div>
         </section>
 
         <section id="panel-nastavenia" class="panel skryte">

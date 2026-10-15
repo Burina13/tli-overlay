@@ -54,11 +54,50 @@ const UKAZKA_TRACKER = {
   pocet_cien: 5,
 };
 
+// Ukážkový sprievodca pre záložku Guide (TLI 11, krok 4). Tvar je presne ten,
+// čo vracia príkaz `guide_data` — vrátane ikony ako `data:` URI, lebo tak ju
+// appka naozaj dostane (`img-src 'self' data:` v CSP nič iné nepustí).
+const IKONA_UKAZKA =
+  "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9" +
+  "IjAgMCAzMiAzMiI+PHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iNiIgZmlsbD0iI2ZmOTYyYyIvPjx0ZXh0" +
+  "IHg9IjE2IiB5PSIyMiIgZm9udC1zaXplPSIxNiIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0iIzFjMWYyNCI+VDwv" +
+  "dGV4dD48L3N2Zz4=";
+
+const UKAZKA_GUIDE = {
+  verzia: "a1b2c3d4e5f6",
+  zdroj: "https://tlicompendium.com/en/build-guides/erika1-lvl1-to-ss20-ultimate-guide",
+  stiahnuty: 1760000000,
+  vek: "pred 2 h",
+  je_prazdny: false,
+  tahak: {
+    slug: "tahak-na-start",
+    nazov: "Erika 1 — ťahák na štart",
+    html:
+      "<h2>1. Prvé hodiny a leveling v kampani</h2>" +
+      "<ul><li><strong>Mule skilly:</strong> na lvl 3 odomkni " +
+      '<span class="tli-ikona" title="Haunt"><img src="' + IKONA_UKAZKA + '" alt="Haunt">Haunt</span>' +
+      " a presuň ho cez truhlu na Erika1.</li>" +
+      "<li><strong>Koniec kampane:</strong> vyzdvihni si <em>Activation Medium: Motionless</em>.</li></ul>" +
+      "<h2>2. Skilly a progres</h2>" +
+      "<p>Na bossoch ručne obnovuj <em>Timid</em>. Zdroj: " +
+      '<a href="https://tlicompendium.com/en/build-guides/erika1-lvl1-to-ss20-ultimate-guide"' +
+      ' data-externy="1">tlicompendium.com</a>.</p>',
+  },
+  kapitoly: [
+    { slug: "uvod", nazov: "Úvod", html: "<h2>Úvod</h2><p>Hero Traits a Memories pre Eriku.</p>" },
+    { slug: "lvl1-45", nazov: "Build Version: lvl 1-45", html: "<h2>lvl 1-45</h2><p>Kampaň.</p>" },
+    { slug: "t1-t7-maps", nazov: "Build Version: T1-T7 Maps", html: "<h2>T1-T7</h2><p>Mapy.</p>" },
+    { slug: "t8", nazov: "Build Version: T8", html: "<h2>T8</h2><p>Min. 1B DPS.</p>" },
+  ],
+};
+
 const ODPOVEDE = {
-  verzia: "0.7.0",
+  verzia: "0.8.0",
   nacitaj_nastavenia: { hotkey: "F8", hotkey_canvas: "F9", tema: "svetla" },
   tracker_prehlad: UKAZKA_TRACKER,
   tracker_csv: "id;mapa\n1;YunDuanLvZhou\n",
+  guide_data: UKAZKA_GUIDE,
+  guide_sync: UKAZKA_GUIDE,
   uloz_temu: "svetla",
 };
 
