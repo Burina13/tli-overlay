@@ -140,3 +140,31 @@ jobs:
           name: overlay-nahlad-canvas
           path: overlay-nahlad-canvas.png
           if-no-files-found: warn
+      - name: Náhľad hlavného okna so záložkami (TLI 11, krok 1) ako obrázky
+        shell: pwsh
+        run: |
+          # Rovnaký mechanizmus ako vyššie, nad `nahlad-hlavne.html` (= hlavne.html
+          # + nahlad-stub.js, ten istý vzor ako nahlad.html pre overlay). Ktorá
+          # záložka je aktívna pri vykreslení, rieši query parameter `?tab=…`
+          # (len pre tento náhľad — appka ho nikde sama nepoužíva).
+          $edge = @(
+            "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+            "C:\Program Files\Microsoft\Edge\Application\msedge.exe"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $edge) { Write-Warning "Edge sa nenašiel, náhľad preskakujem."; exit 0 }
+          $cesta = (Resolve-Path "ui/nahlad-hlavne.html").Path
+          $zalozky = @("panel-tracker", "panel-solvery", "panel-guide", "panel-nastavenia")
+          foreach ($panel in $zalozky) {
+            $p = Start-Process -FilePath $edge -ArgumentList @(
+              "--headless", "--disable-gpu", "--screenshot=$PWD\hlavne-$panel.png",
+              "--window-size=1000,760", "--virtual-time-budget=4000",
+              "file:///$($cesta -replace '\\','/')?tab=$panel"
+            ) -NoNewWindow -Wait -PassThru
+            Write-Host "$panel — Edge exit code: $($p.ExitCode)"
+          }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: hlavne-nahlad
+          path: hlavne-panel-*.png
+          if-no-files-found: warn

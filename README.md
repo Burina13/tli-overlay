@@ -43,6 +43,18 @@ Konfigurácia sa ukladá do `%APPDATA%\sk.tvojtatko.tli-overlay\nastavenia.json`
 | Klávesová skratka — Frozen Canvas | Druhá, nezávislá skratka pre inú obrazovku hry (mriežka miešania paintov, samostatný cieľ Richardovho testovania 16.10.2026). | `F9` |
 | Zber dát (Frozen Canvas) | Keď zapnuté, skratka pre Frozen Canvas nevykreslí radu — len odfotí, pošle na server (uloží sa VŽDY) a ukáže počítadlo „Uložené #N". Zapni počas zberu dát, inak nech je vypnuté. | vypnuté |
 
+## Hlavné okno (TLI 11, vo výstavbe)
+
+Okrem overlayu a nastavení pribudlo od verzie 0.6.0 tretie okno — otvára sa položkou
+**„Otvoriť"** v menu tray ikony (nad „Nastavenia"). Má štyri záložky: **Tracker**
+(tracker farmárskych máp — FE, trvanie, dropy, agregácie, história; zatiaľ len kostra,
+dáta pridá ďalší krok), **Solvery** (prehľad Tartarus/Frozen Canvas/Artistry — F8/F9
+a overlay fungujú ďalej presne tak, ako doteraz, táto záložka im nič nemení),
+**Guide** (ťahák Erika 1, zatiaľ placeholder) a **Nastavenia** (zatiaľ len tlačidlo,
+ktoré otvorí existujúce samostatné okno nastavení). Je to postupne rastúca appka —
+každý ďalší krok (parser logu, UI s agregáciami, guide, synchronizácia) príde ako
+samostatný release.
+
 ## Bezpečnosť a pravidlá hry
 
 Toto sú nemenné technické pravidlá projektu, zaručujúce súlad s ToS (Terms of Service) hry.
@@ -65,7 +77,7 @@ Aplikácia používa framework Tauri v2 a Rust. Architektúra sa skladá z nasle
   - `snimka.rs` – Vytvorenie screenshotu (`BitBlt`) a kódovanie do formátu JPEG.
   - `klient.rs` – Synchrónna HTTP komunikácia (knižnica `ureq`).
   - `stav.rs` – Načítavanie a ukladanie JSON konfigurácie.
-  - `main.rs` – Registrácia tray ikony, globálnych skratiek a správa dvoch okien aplikácie (`overlay` - bez rámu, vždy navrchu, priechodné pre myš; `nastavenia` - štandardné OS okno).
+  - `main.rs` – Registrácia tray ikony, globálnych skratiek a správa troch okien aplikácie (`overlay` - bez rámu, vždy navrchu, priechodné pre myš; `nastavenia` a `hlavne` - štandardné OS okná).
 - `tauri.conf.json` – Definícia identity. Obsahuje `productName` ("Tvoj Tatko TLI Overlay"), `identifier` a dôležitý **pevne definovaný WiX upgrade code `d4dac792-734c-507d-9004-d1dae51a2874`** (UUIDv5 z identifikátora).
   - *Dôvod pripnutia kódu:* Dňa 13.10.2026 vydal upstream projekt A2Tools inštalátor, ktorý vďaka zhodnému productName (a z neho odvodeného upgrade code) začal prepisovať náš fork. Fixný kód to rieši.
 - **Git** – Hlavný repozitár je u nás na Forgejo (`burina/tli-overlay`). GitHub repozitár (`Burina13/tli-overlay`) je zrkadlo, slúžiace len pre beh GitHub Actions a hosťovanie release inštalátorov.

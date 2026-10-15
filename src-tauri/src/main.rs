@@ -25,6 +25,9 @@ use tli_overlay_core::{api, suradnice, zmensenie};
 const OVERLAY: &str = "overlay";
 /// Okno nastavení. Obyčajné okno s rámom, otvára sa z tray ikony.
 const NASTAVENIA: &str = "nastavenia";
+/// Hlavné okno so záložkami Tracker/Solvery/Guide/Nastavenia (TLI 11, krok 1 —
+/// zatiaľ len kostra, dáta pribudnú v ďalších krokoch). Otvára sa z tray ikony.
+const HLAVNE: &str = "hlavne";
 
 /// Keď sa okno hry nenájde, chybová hláška sa aj tak musí mať kde zobraziť —
 /// overlay sa preto postaví na túto veľkosť do stredu hornej časti obrazovky.
@@ -424,6 +427,23 @@ fn skry_overlay(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Ukáže a zaostrí dané okno (nastavenia/hlavné) — spoločné pre tray menu aj
+/// pre príkaz volaný z JS (tlačidlo „Otvoriť nastavenia“ v záložke Nastavenia
+/// hlavného okna).
+fn ukaz_a_zaostri(app: &AppHandle, label: &str) {
+    if let Some(okno) = app.get_webview_window(label) {
+        let _ = okno.show();
+        let _ = okno.unminimize();
+        let _ = okno.set_focus();
+    }
+}
+
+#[tauri::command]
+fn otvor_nastavenia(app: AppHandle) -> Result<(), String> {
+    ukaz_a_zaostri(&app, NASTAVENIA);
+    Ok(())
+}
+
 /// Otvára sa VÝHRADNE adresa pod nastaveným serverom. Webview nemá dôvod vedieť
 /// otvoriť hocijaký odkaz — a keby sa raz do UI dostal cudzí text, nech z toho
 /// nevznikne klikateľný odkaz kamkoľvek.
@@ -522,6 +542,7 @@ fn main() {
             otestuj_pripojenie,
             skry_overlay,
             otvor_web,
+            otvor_nastavenia,
             verzia,
             skontroluj_aktualizaciu
         ])
@@ -541,7 +562,12 @@ fn main() {
             if let Some(okno) = app.get_webview_window(NASTAVENIA) {
                 let _ = okno.hide();
             }
+            if let Some(okno) = app.get_webview_window(HLAVNE) {
+                let _ = okno.hide();
+            }
 
+            let polozka_hlavne =
+                tauri::menu::MenuItem::with_id(app, "hlavne", "Otvoriť", true, None::<&str>)?;
             let polozka_nastavenia =
                 tauri::menu::MenuItem::with_id(app, "nastavenia", "Nastavenia", true, None::<&str>)?;
             let polozka_verzia = tauri::menu::MenuItem::with_id(
@@ -555,7 +581,7 @@ fn main() {
                 tauri::menu::MenuItem::with_id(app, "koniec", "Ukončiť", true, None::<&str>)?;
             let menu = tauri::menu::Menu::with_items(
                 app,
-                &[&polozka_nastavenia, &polozka_verzia, &polozka_koniec],
+                &[&polozka_hlavne, &polozka_nastavenia, &polozka_verzia, &polozka_koniec],
             )?;
 
             let mut tray = tauri::tray::TrayIconBuilder::with_id("tray")
@@ -563,13 +589,8 @@ fn main() {
                 .menu(&menu)
                 .on_menu_event(|app, udalost| match udalost.id.as_ref() {
                     "koniec" => app.exit(0),
-                    "nastavenia" => {
-                        if let Some(okno) = app.get_webview_window(NASTAVENIA) {
-                            let _ = okno.show();
-                            let _ = okno.unminimize();
-                            let _ = okno.set_focus();
-                        }
-                    }
+                    "hlavne" => ukaz_a_zaostri(app, HLAVNE),
+                    "nastavenia" => ukaz_a_zaostri(app, NASTAVENIA),
                     _ => {}
                 });
             if let Some(ikona) = app.default_window_icon().cloned() {

@@ -1,0 +1,138 @@
+:root {
+    --bg-farba: #121018;
+    --bg-panel: rgba(255, 255, 255, 0.05);
+    --text-hlavny: #ffffff;
+    --text-tlmeny: #a0a0a0;
+    --akcent: #ff962c;
+    --akcent-hover: #ffaa52;
+    --border: rgba(255, 255, 255, 0.1);
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    background-color: var(--bg-farba);
+    color: var(--text-hlavny);
+    font-family: "Segoe UI", system-ui, sans-serif;
+    margin: 0;
+    padding: 0;
+}
+
+.hlavicka {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    padding: 18px 24px 8px;
+}
+
+.hlavicka h1 {
+    margin: 0;
+    color: var(--akcent);
+    font-size: 20px;
+}
+
+.verzia {
+    color: var(--text-tlmeny);
+    font-size: 13px;
+}
+
+.zalozky {
+    display: flex;
+    gap: 4px;
+    padding: 0 24px;
+    border-bottom: 1px solid var(--border);
+}
+
+.zalozka {
+    background: transparent;
+    border: none;
+    color: var(--text-tlmeny);
+    padding: 10px 16px;
+    font-size: 14px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+}
+
+.zalozka:hover {
+    color: var(--text-hlavny);
+}
+
+.zalozka.aktivna {
+    color: var(--akcent);
+    border-bottom-color: var(--akcent);
+}
+
+main {
+    padding: 20px 24px 28px;
+}
+
+.panel h2 {
+    margin-top: 0;
+    font-size: 17px;
+}
+
+.skryte {
+    display: none !important;
+}
+
+.vysvetlivka {
+    color: var(--text-tlmeny);
+    font-size: 14px;
+    line-height: 1.5;
+    max-width: 640px;
+}
+
+code {
+    background: rgba(255, 255, 255, 0.1);
+    padding: 2px 4px;
+    border-radius: 4px;
+    font-family: monospace;
+}
+
+.zoznam-planovane {
+    color: var(--text-tlmeny);
+    font-size: 14px;
+    line-height: 1.7;
+    max-width: 560px;
+}
+
+.karta-solver {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-bottom: 10px;
+    max-width: 420px;
+}
+
+.karta-solver.karta-planovana {
+    opacity: 0.6;
+}
+
+button.btn-hlavny {
+    cursor: pointer;
+    font-family: inherit;
+    border-radius: 6px;
+    border: none;
+    font-weight: 600;
+    background: var(--akcent);
+    color: #000;
+    padding: 10px 18px;
+    font-size: 14px;
+    transition: background 0.2s, transform 0.1s;
+}
+
+button.btn-hlavny:hover {
+    background: var(--akcent-hover);
+}
+
+button.btn-hlavny:active {
+    transform: scale(0.98);
+}

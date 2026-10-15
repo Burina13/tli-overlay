@@ -2,6 +2,27 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.6.0 — 15.10.2026
+
+Kostra hlavného okna so záložkami Tracker/Solvery/Guide/Nastavenia (TLI 11, krok 1/5).
+
+- Nové okno `hlavne` (`ui/hlavne.html`), otvára sa novou položkou **„Otvoriť"** v menu
+  tray ikony (nad existujúcou „Nastavenia"). Štyri záložky: **Tracker** (zoznam
+  plánovaných metrík, dáta pridá krok 2 — parser `UE_game.log`), **Solvery** (len
+  prehľad — Tartarus aj Frozen Canvas bežia ďalej presne tak, ako doteraz, na F8/F9,
+  táto záložka im nič nemení), **Guide** (placeholder, obsah pridá krok 4) a
+  **Nastavenia** (zatiaľ len tlačidlo, ktoré otvorí existujúce samostatné okno
+  nastavení — zlúčenie je mimo rozsahu tohto kroku).
+- Nový príkaz `otvor_nastavenia` (zdieľaný s tray handlerom cez `ukaz_a_zaostri`) —
+  žiadna zmena správania existujúceho okna nastavení ani jeho príkazov.
+- F8/F9 hotkey, overlay, screenshot, posielanie na server — **nič z toho sa nemenilo**.
+- Analýza troch cudzích trackerov (TLI 10,
+  `docs/fakty/hry/torchlight-infinite/addony-analyza.md` v repe `ops`) potvrdila, že
+  dáta sa dajú čítať bezpečne (len z `UE_game.log` na disku, žiadna pamäť procesu,
+  injekcia ani pakety) a že kód žiadneho z nich sa nedá legálne prevziať (chýbajúca
+  alebo neoverená licencia) — ďalšie kroky preto stavajú vlastný parser od nuly,
+  inšpirovaný len vizuálom a zoznamom metrík.
+
 ## 0.5.0 — 15.10.2026
 
 Oprava farieb/názvov rarity v paneli s dôvodom (TLI 9b).
