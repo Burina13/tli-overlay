@@ -1,4 +1,4 @@
-use super::log::{Cas, Smer, Udalost, parsuj_riadok};
+use super::log::{Cas, Smer, Udalost, parsuj_riadok, parsuj_telo};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -66,6 +66,58 @@ pub struct Zmena {
     pub cas: Option<Cas>,
 }
 
+/// Jeden spawn monštra na mape (TLI 13, `log-format-katalog.md` §A).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MonstrumZaznam {
+    pub npc_id: u64,
+    pub rarita: u8,
+    pub affix: Option<u64>,
+    pub cas: Option<Cas>,
+}
+
+/// Jeden textový modifikátor mapy (§A).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ModifikatorZaznam {
+    pub danger: Option<i64>,
+    pub kind: Option<i64>,
+    pub skupina: Option<i64>,
+    pub seat: Option<i64>,
+    pub rand_affix_id: Option<i64>,
+    pub cas: Option<Cas>,
+}
+
+/// Prepnutie stavu boss fightu (§A).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BossZaznam {
+    pub aktivny: bool,
+    pub cas: Option<Cas>,
+}
+
+/// Frozen Canvas akcia čítaná priamo z logu (§E).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CanvasZaznam {
+    pub typ: String,
+    pub cas: Option<Cas>,
+}
+
+/// Snímka hráčovej identity a buildu z voľne stojaceho bloku `+player+...`
+/// (§B/§F) — tento blok stojí MIMO rámca `----Socket STT/End----`, preto ho
+/// nevidí bežné spracovanie `SpravaKoniec` a potreboval vlastný mechanizmus
+/// (`volny_blok`, TLI 12 bod 4 v `BACKLOG.md`). Nesie identitu postavy
+/// (`player_id` + `season_id`, potrebné na rozlíšenie líg v DB) aj kúsok
+/// buildu (aktívne talentové stromy).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct HracSnimka {
+    pub name: Option<String>,
+    pub player_id: Option<String>,
+    pub season_id: Option<String>,
+    pub hero_id: Option<String>,
+    pub death_count: Option<i64>,
+    pub exp: Option<i64>,
+    pub genius_career_ids: Vec<String>,
+    pub cas: Option<Cas>,
+}
+
 /// Jeden beh mapy.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Beh {
@@ -83,6 +135,14 @@ pub struct Beh {
     pub vstupy: BTreeMap<u32, i64>,
     /// Všetky zmeny v poradí, aj tie nezapočítané — kvôli dohľadateľnosti.
     pub vsetky_zmeny: Vec<Zmena>,
+    /// Monštrá spawnuté počas tohto behu (TLI 13).
+    pub monstra: Vec<MonstrumZaznam>,
+    /// Textové modifikátory mapy aktívne počas tohto behu (TLI 13).
+    pub modifikatory: Vec<ModifikatorZaznam>,
+    /// Boss fighty v tomto behu (TLI 13).
+    pub bossovia: Vec<BossZaznam>,
+    /// Frozen Canvas akcie v tomto behu (TLI 13).
+    pub canvas_akcie: Vec<CanvasZaznam>,
 }
 
 impl Beh {
@@ -143,6 +203,23 @@ pub struct Sledovac {
     /// kľúč je `nazov` z `Udalost::VykonPostavy`. TLI 12: nástroj na porovnanie
     /// buildov („koľko DPS mal pred a po zmene výbavy/talentov/paktu").
     posledne_staty_postavy: BTreeMap<String, (f64, Option<Cas>)>,
+    /// Zostatky mien/počítadiel (`ConsumMgr:ResreshConsumData`), v poradí, ako
+    /// prišli — podobne ako `ceny`, odoberá sa `odober_zostatky()` (TLI 13).
+    zostatky: Vec<(String, i64, Option<Cas>)>,
+    /// Posledná pact konfigurácia, na ktorú hráč prepol (TLI 13).
+    posledna_pact_konfiguracia: Option<(String, Option<Cas>)>,
+    /// Posledná spracovaná snímka hráčovej identity z voľne stojaceho bloku
+    /// `+player+...` (TLI 12 bod 4, TLI 13) — `None`, kým sa taký blok ešte
+    /// nevyskytol a nebol uzavretý nasledujúcou udalosťou.
+    hrac_snimka: Option<HracSnimka>,
+    /// Čas PRVÉHO riadku vo `telo_spravy`, keď bol buffer naplnený MIMO
+    /// aktívnej správy (teda ide o voľný blok, nie telo `STT/End` správy).
+    volny_blok_cas: Option<Cas>,
+    /// Riadky, ktoré katalóg označil za zaujímavé, ale parser ich nevie
+    /// rozobrať na polia — čakajú na uloženie do `raw` tabuľky v DB
+    /// (`Option<u64>` je ID behu, počas ktorého riadok prišiel, ak nejaký
+    /// beží). Odoberá sa `odober_raw()` (TLI 13 §1).
+    raw_udalosti: Vec<(Option<u64>, String, Option<Cas>)>,
 }
 
 impl Sledovac {
@@ -186,8 +263,67 @@ impl Sledovac {
         self.posledne_staty_postavy.get(nazov).cloned()
     }
 
+    /// Odoberie nazbierané zostatky mien/počítadiel od posledného volania.
+    pub fn odober_zostatky(&mut self) -> Vec<(String, i64, Option<Cas>)> {
+        std::mem::take(&mut self.zostatky)
+    }
+
+    /// Posledná pact konfigurácia, na ktorú hráč prepol (`None`, kým sa riadok
+    /// nenašiel).
+    pub fn posledna_pact_konfiguracia(&self) -> Option<(String, Option<Cas>)> {
+        self.posledna_pact_konfiguracia.clone()
+    }
+
+    /// Posledná spracovaná snímka hráčovej identity (`+player+...` blok).
+    pub fn hrac_snimka(&self) -> Option<&HracSnimka> {
+        self.hrac_snimka.as_ref()
+    }
+
+    /// Odoberie nazbierané „zaujímavé, ale nerozobrané" riadky (`raw`) od
+    /// posledného volania — `(beh_id, text, cas)`.
+    pub fn odober_raw(&mut self) -> Vec<(Option<u64>, String, Option<Cas>)> {
+        std::mem::take(&mut self.raw_udalosti)
+    }
+
+    /// Spracuje nazbierané riadky voľne stojaceho tela (`+player+...`, mimo
+    /// rámca `----Socket STT/End----`) cez `parsuj_telo` a uloží výsledok ako
+    /// `hrac_snimka`, ak blok naozaj niesol hráčske polia. Volá sa VŽDY, keď
+    /// príde iná udalosť než `TeloSpravy`, zatiaľ čo nie je otvorená žiadna
+    /// socket správa a buffer nie je prázdny (TLI 12 bod 4 v `BACKLOG.md`) —
+    /// inak by sa tieto riadky len ticho zahodili pri najbližšom
+    /// `SpravaZaciatok`.
+    fn flush_volny_blok(&mut self) {
+        let riadky = std::mem::take(&mut self.telo_spravy);
+        let cas = self.volny_blok_cas.take();
+        let mapa = parsuj_telo(&riadky);
+        if !mapa.keys().any(|k| k.starts_with("player.")) {
+            return;
+        }
+        let genius_career_ids = mapa
+            .get("player.GeniusCareerIdStr")
+            .map(|v| v.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect())
+            .unwrap_or_default();
+        self.hrac_snimka = Some(HracSnimka {
+            name: mapa.get("player.Name").cloned(),
+            player_id: mapa.get("player.PlayerId").cloned(),
+            season_id: mapa.get("player.SeasonId").cloned(),
+            hero_id: mapa.get("player.HeroId").cloned(),
+            death_count: mapa.get("player.DeathCount").and_then(|v| v.parse().ok()),
+            exp: mapa.get("player.Exp").and_then(|v| v.parse().ok()),
+            genius_career_ids,
+            cas,
+        });
+    }
+
     /// Interná metóda na spracovanie konkrétnej udalosti (užitočné aj pre testy)
     pub fn spracuj_udalost(&mut self, cas: Option<Cas>, udalost: Udalost) -> Option<Beh> {
+        if !matches!(udalost, Udalost::TeloSpravy { .. })
+            && self.aktivna_sprava.is_none()
+            && !self.telo_spravy.is_empty()
+        {
+            self.flush_volny_blok();
+        }
+
         match udalost {
             Udalost::Kontext { proto, zaciatok } => {
                 if zaciatok {
@@ -253,6 +389,10 @@ impl Sledovac {
                     dropy: BTreeMap::new(),
                     vstupy: BTreeMap::new(),
                     vsetky_zmeny: Vec::new(),
+                    monstra: Vec::new(),
+                    modifikatory: Vec::new(),
+                    bossovia: Vec::new(),
+                    canvas_akcie: Vec::new(),
                 };
                 self.dalsi_id_behu += 1;
 
@@ -285,6 +425,9 @@ impl Sledovac {
                 None
             }
             Udalost::TeloSpravy { surovy } => {
+                if self.aktivna_sprava.is_none() && self.telo_spravy.is_empty() {
+                    self.volny_blok_cas = cas;
+                }
                 self.telo_spravy.push(surovy);
                 None
             }
@@ -306,6 +449,43 @@ impl Sledovac {
             }
             Udalost::VykonPostavy { nazov, nova, .. } => {
                 self.posledne_staty_postavy.insert(nazov, (nova, cas));
+                None
+            }
+            Udalost::MonsterSpawn { npc_id, rarita, affix } => {
+                if let Some(beh) = &mut self.aktualny_beh {
+                    beh.monstra.push(MonstrumZaznam { npc_id, rarita, affix, cas });
+                }
+                None
+            }
+            Udalost::ModifikatorMapy { danger, kind, skupina, seat, rand_affix_id } => {
+                if let Some(beh) = &mut self.aktualny_beh {
+                    beh.modifikatory.push(ModifikatorZaznam { danger, kind, skupina, seat, rand_affix_id, cas });
+                }
+                None
+            }
+            Udalost::ZostatokMeny { nazov, hodnota } => {
+                self.zostatky.push((nazov, hodnota, cas));
+                None
+            }
+            Udalost::BossStatus { aktivny } => {
+                if let Some(beh) = &mut self.aktualny_beh {
+                    beh.bossovia.push(BossZaznam { aktivny, cas });
+                }
+                None
+            }
+            Udalost::PactKonfiguracia { nazov } => {
+                self.posledna_pact_konfiguracia = Some((nazov, cas));
+                None
+            }
+            Udalost::CanvasAkcia { typ } => {
+                if let Some(beh) = &mut self.aktualny_beh {
+                    beh.canvas_akcie.push(CanvasZaznam { typ: typ.to_string(), cas });
+                }
+                None
+            }
+            Udalost::Raw { text } => {
+                let beh_id = self.aktualny_beh.as_ref().map(|b| b.id);
+                self.raw_udalosti.push((beh_id, text, cas));
                 None
             }
         }
@@ -623,7 +803,8 @@ mod testy {
     fn test_podpis_vstupov() {
         let mut beh = Beh {
             id: 1, zona: "X".into(), je_hub: false, level_uid: None, level_typ: None, level_id: None,
-            zaciatok: None, koniec: None, dropy: BTreeMap::new(), vstupy: BTreeMap::new(), vsetky_zmeny: Vec::new()
+            zaciatok: None, koniec: None, dropy: BTreeMap::new(), vstupy: BTreeMap::new(), vsetky_zmeny: Vec::new(),
+            monstra: Vec::new(), modifikatory: Vec::new(), bossovia: Vec::new(), canvas_akcie: Vec::new(),
         };
         assert_eq!(beh.podpis_vstupov(), "bez-vstupu");
         beh.vstupy.insert(400, 1);
@@ -760,5 +941,134 @@ mod testy {
             },
         );
         assert_eq!(sledovac.posledny_stat_postavy("DPS").unwrap().0, 250.0);
+    }
+
+    // ─── TLI 13: monštrá, modifikátory, zostatky, boss, pact, canvas, raw ──
+
+    #[test]
+    fn test_monstra_a_modifikatory_sa_pripisu_aktualnemu_behu() {
+        let mut sledovac = Sledovac::novy();
+        sledovac.spracuj_udalost(None, Udalost::Zona { cesta: "Mapa".to_string() });
+        sledovac.spracuj_udalost(
+            cas(1),
+            Udalost::MonsterSpawn { npc_id: 111, rarita: 2, affix: None },
+        );
+        sledovac.spracuj_udalost(
+            cas(2),
+            Udalost::ModifikatorMapy { danger: Some(1), kind: Some(2), skupina: None, seat: None, rand_affix_id: None },
+        );
+        let beh = sledovac.aktualny().unwrap();
+        assert_eq!(beh.monstra.len(), 1);
+        assert_eq!(beh.monstra[0].rarita, 2);
+        assert_eq!(beh.modifikatory.len(), 1);
+        assert_eq!(beh.modifikatory[0].danger, Some(1));
+    }
+
+    #[test]
+    fn test_monstra_mimo_behu_sa_nezapocitavaju() {
+        let mut sledovac = Sledovac::novy();
+        // Žiadny aktuálny beh (appka ešte nevidela prvý prechod zóny).
+        let vysledok = sledovac.spracuj_udalost(
+            None,
+            Udalost::MonsterSpawn { npc_id: 1, rarita: 1, affix: None },
+        );
+        assert!(vysledok.is_none());
+        assert!(sledovac.aktualny().is_none());
+    }
+
+    #[test]
+    fn test_zostatky_sa_odoberaju() {
+        let mut sledovac = Sledovac::novy();
+        sledovac.spracuj_udalost(cas(1), Udalost::ZostatokMeny { nazov: "Coin_810".to_string(), hodnota: 500 });
+        let z = sledovac.odober_zostatky();
+        assert_eq!(z, vec![("Coin_810".to_string(), 500, cas(1))]);
+        assert!(sledovac.odober_zostatky().is_empty());
+    }
+
+    #[test]
+    fn test_pact_konfiguracia_sa_pamata() {
+        let mut sledovac = Sledovac::novy();
+        assert!(sledovac.posledna_pact_konfiguracia().is_none());
+        sledovac.spracuj_udalost(cas(1), Udalost::PactKonfiguracia { nazov: "DROPPS".to_string() });
+        assert_eq!(sledovac.posledna_pact_konfiguracia().unwrap().0, "DROPPS");
+    }
+
+    #[test]
+    fn test_boss_a_canvas_sa_pripisuju_behu() {
+        let mut sledovac = Sledovac::novy();
+        sledovac.spracuj_udalost(None, Udalost::Zona { cesta: "Mapa".to_string() });
+        sledovac.spracuj_udalost(cas(1), Udalost::BossStatus { aktivny: true });
+        sledovac.spracuj_udalost(cas(2), Udalost::CanvasAkcia { typ: "level_up_start" });
+        let beh = sledovac.aktualny().unwrap();
+        assert_eq!(beh.bossovia.len(), 1);
+        assert!(beh.bossovia[0].aktivny);
+        assert_eq!(beh.canvas_akcie.len(), 1);
+        assert_eq!(beh.canvas_akcie[0].typ, "level_up_start");
+    }
+
+    #[test]
+    fn test_raw_sa_odobera_s_id_behu() {
+        let mut sledovac = Sledovac::novy();
+        sledovac.spracuj_udalost(None, Udalost::Zona { cesta: "Mapa".to_string() });
+        sledovac.spracuj_udalost(cas(1), Udalost::Raw { text: "čosi zaujímavé".to_string() });
+        let raw = sledovac.odober_raw();
+        assert_eq!(raw.len(), 1);
+        assert_eq!(raw[0].0, Some(1));
+        assert_eq!(raw[0].1, "čosi zaujímavé");
+    }
+
+    // ─── TLI 12 bod 4 / TLI 13: voľný blok `+player+...` (mimo STT/End) ─────
+
+    #[test]
+    fn test_volny_blok_sa_spracuje_az_pri_dalsej_udalosti() {
+        let mut sledovac = Sledovac::novy();
+        for r in [
+            "+player+Name [Burina]",
+            "+player+PlayerId [811111111111111]",
+            "+player+SeasonId [1501]",
+            "+player+HeroId [1800]",
+            "+player+DeathCount [3]",
+            "+player+Exp [12345]",
+            "+player+GeniusCareerIdStr [a,b,c]",
+        ] {
+            let (cas, ud) = super::super::log::parsuj_riadok(r).unwrap();
+            sledovac.spracuj_udalost(cas, ud);
+        }
+        assert!(sledovac.hrac_snimka().is_none(), "kým nepríde ďalšia udalosť, blok ešte nie je spracovaný");
+
+        sledovac.spracuj_udalost(None, Udalost::Zona { cesta: "Zona1".to_string() });
+
+        let snimka = sledovac.hrac_snimka().expect("blok sa mal spracovať pri príchode Zona");
+        assert_eq!(snimka.name.as_deref(), Some("Burina"));
+        assert_eq!(snimka.player_id.as_deref(), Some("811111111111111"));
+        assert_eq!(snimka.season_id.as_deref(), Some("1501"));
+        assert_eq!(snimka.hero_id.as_deref(), Some("1800"));
+        assert_eq!(snimka.death_count, Some(3));
+        assert_eq!(snimka.exp, Some(12345));
+        assert_eq!(snimka.genius_career_ids, vec!["a".to_string(), "b".to_string(), "c".to_string()]);
+    }
+
+    #[test]
+    fn test_volny_blok_bez_player_poli_sa_ticho_zahodi() {
+        let mut sledovac = Sledovac::novy();
+        // Telo bez "player." kľúča (napr. zvyšok inej, nesprávne uzavretej správy).
+        sledovac.spracuj_udalost(None, Udalost::TeloSpravy { surovy: "+ineco+hodnota [42]".to_string() });
+        sledovac.spracuj_udalost(None, Udalost::Zona { cesta: "Zona1".to_string() });
+        assert!(sledovac.hrac_snimka().is_none());
+    }
+
+    #[test]
+    fn test_telo_spravy_v_aktivnej_sprave_nespusti_volny_blok() {
+        // Bežné telo STT/End správy (aktivna_sprava je Some) sa flush-om
+        // voľného bloku nesmie dotknúť — spracuje ho až SpravaKoniec.
+        let mut sledovac = Sledovac::novy();
+        sledovac.spracuj_udalost(
+            None,
+            Udalost::SpravaZaciatok { smer: Smer::Odoslana, akcia: "XchgSearchPrice".to_string(), syn_id: 1 },
+        );
+        sledovac.spracuj_udalost(None, Udalost::TeloSpravy { surovy: "+player+Name [Nieco]".to_string() });
+        // Ďalšia udalosť uprostred otvorenej správy nesmie vyvolať flush.
+        sledovac.spracuj_udalost(None, Udalost::Uroven { uid: 1, typ: 1, id: 1 });
+        assert!(sledovac.hrac_snimka().is_none());
     }
 }

@@ -155,7 +155,7 @@ jobs:
             "C:\Program Files\Microsoft\Edge\Application\msedge.exe"
           ) | Where-Object { Test-Path $_ } | Select-Object -First 1
           if (-not $edge) { Write-Warning "Edge sa nenašiel, náhľad preskakujem."; exit 0 }
-          $zalozky = @("panel-tracker", "panel-solvery", "panel-guide", "panel-nastavenia")
+          $zalozky = @("panel-tracker", "panel-solvery", "panel-analyza", "panel-guide", "panel-nastavenia")
           # Témy sa fotia OBE: od 0.7.0 je predvolená svetlá a tmavá je prepínač
           # v hlavičke — na screenshote musí byť vidieť, že obe naozaj fungujú.
           $temy = @("svetla", "tmava")

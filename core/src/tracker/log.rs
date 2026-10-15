@@ -97,6 +97,40 @@ pub enum Udalost {
     /// pactu. `nazov` je zámerne `String`, nie enum: hra môže časom logovať aj
     /// iné štatistiky týmto istým tvarom (TLI 12, `log-format.md` §10).
     VykonPostavy { base_id: u64, gold_id: u64, nazov: String, stara: f64, nova: f64 },
+    /// `Monster Created: npc id ### rarity #` a `create monster npc id ### rarity # affix #`
+    /// (TLI 12/13, `log-format-katalog.md` §A, obe „overené"). `affix` je `None`,
+    /// keď riadok nesie `affix: null` alebo žiadny `affix` vôbec.
+    MonsterSpawn { npc_id: u64, rarita: u8, affix: Option<u64> },
+    /// `outside monster affix danger D kind K group G seat S, randAffixId A`
+    /// (§A, „pravdepodobné") — textový modifikátor nebezpečenstva na mape.
+    /// Každé pole je samostatne voliteľné: riadok nesmie zahodiť celý záznam
+    /// len preto, že mu chýba jedna hodnota.
+    ModifikatorMapy {
+        danger: Option<i64>,
+        kind: Option<i64>,
+        skupina: Option<i64>,
+        seat: Option<i64>,
+        rand_affix_id: Option<i64>,
+    },
+    /// `ConsumMgr:ResreshConsumData <Nazov> Value <V>` (§B, „overené") — absolútny
+    /// zostatok meny/počítadla (`Coin_NNN`, `SpAreaBossPoint_NNN`, `Promotion_NNN`).
+    ZostatokMeny { nazov: String, hodnota: i64 },
+    /// `FightHunting BossStatus1`/`BossStatus0` (§A, „pravdepodobné") — začiatok/
+    /// koniec boss fightu.
+    BossStatus { aktivny: bool },
+    /// `MsgMgr@:Show MsgValue = Switched to another pact configuration plan (NAZOV)`
+    /// (§F, „overené") — hráč prepol pact konfiguráciu.
+    PactKonfiguracia { nazov: String },
+    /// Animácie na Frozen Canvas priamo z logu (§E): level-up a výber farby,
+    /// plus varovanie pri nesprávnej kombinácii. `typ` je skrátený interný
+    /// názov (`level_up_start`/`level_up_end`/`vyber_start`/`vyber_end`/`chyba_farba`).
+    CanvasAkcia { typ: &'static str },
+    /// Riadok vyzerá hráčsky významný (shortlist zo `log-format-katalog.md`),
+    /// ale nezhoduje sa so žiadnym známym tvarom vyššie — ide do `raw` tabuľky
+    /// v DB (TLI 13 §1 „aj neznáme a nové typy riadkov, aby nič nezmizlo").
+    /// `text` má dlhé číselné sekvencie (16+ cifier, typicky `PlayerId`/UUID)
+    /// nahradené `#`, aby sa osobné ID nedostalo ani do tejto záchrannej siete.
+    Raw { text: String },
 }
 
 /// Helper na vyťahovanie hodnôt formátu Kľúč=Hodnota. Povoľuje chýbajúce aj
@@ -141,10 +175,190 @@ fn parsuj_vykon_postavy(riadok: &str) -> Option<Udalost> {
     Some(Udalost::VykonPostavy { base_id, gold_id, nazov, stara, nova })
 }
 
+/// Nasledujúci číselný token za zadaným slovom/značkou (napr. `"rarity"` →
+/// hodnota za ňou), nie za formátom `kľúč=hodnota`. Používa sa pre riadky typu
+/// `Monster Created: npc id 12345 rarity 3`, kde medzi kľúčom a hodnotou je
+/// len medzera, nie `=`.
+fn extract_num_after(s: &str, label: &str) -> Option<i64> {
+    let i = s.find(label)?;
+    let rest = s[i + label.len()..].trim_start();
+    let end = rest
+        .find(|c: char| !(c.is_ascii_digit() || c == '-'))
+        .unwrap_or(rest.len());
+    if end == 0 {
+        return None;
+    }
+    rest[..end].parse().ok()
+}
+
+/// `Monster Created: npc id ### rarity #` a
+/// `create monster npc id ### rarity # affix #` (log-format-katalog.md §A).
+/// `affix: null` alebo chýbajúci `affix` → `None`.
+fn parsuj_monster_spawn(riadok: &str) -> Option<Udalost> {
+    if !riadok.contains("Monster Created") && !riadok.contains("create monster") {
+        return None;
+    }
+    let npc_id = extract_num_after(riadok, "npc id")?.max(0) as u64;
+    let rarita = extract_num_after(riadok, "rarity")?.clamp(0, 255) as u8;
+    let affix = if riadok.contains("affix: null") {
+        None
+    } else {
+        extract_num_after(riadok, "affix").and_then(|a| if a >= 0 { Some(a as u64) } else { None })
+    };
+    Some(Udalost::MonsterSpawn { npc_id, rarita, affix })
+}
+
+/// `outside monster affix danger D kind K group G seat S, randAffixId A`
+/// (log-format-katalog.md §A). Každé pole je samostatne voliteľné.
+fn parsuj_modifikator_mapy(riadok: &str) -> Option<Udalost> {
+    if !riadok.contains("outside monster affix") {
+        return None;
+    }
+    Some(Udalost::ModifikatorMapy {
+        danger: extract_num_after(riadok, "danger"),
+        kind: extract_num_after(riadok, "kind"),
+        skupina: extract_num_after(riadok, "group"),
+        seat: extract_num_after(riadok, "seat"),
+        rand_affix_id: extract_num_after(riadok, "randAffixId"),
+    })
+}
+
+/// `ConsumMgr:ResreshConsumData <Nazov> Value <V>` (log-format-katalog.md §B).
+fn parsuj_zostatok_meny(riadok: &str) -> Option<Udalost> {
+    let znacka = "ConsumMgr:ResreshConsumData";
+    let i = riadok.find(znacka)? + znacka.len();
+    let rest = riadok[i..].trim_start();
+    let medzera = rest.find(char::is_whitespace)?;
+    let nazov = rest[..medzera].trim();
+    if nazov.is_empty() {
+        return None;
+    }
+    let hodnota = extract_num_after(rest, "Value")?;
+    Some(Udalost::ZostatokMeny { nazov: nazov.to_string(), hodnota })
+}
+
+/// `FightHunting BossStatus1`/`BossStatus0` (log-format-katalog.md §A).
+fn parsuj_boss_status(riadok: &str) -> Option<Udalost> {
+    if !riadok.contains("FightHunting BossStatus") {
+        return None;
+    }
+    if riadok.contains("BossStatus1") {
+        Some(Udalost::BossStatus { aktivny: true })
+    } else if riadok.contains("BossStatus0") {
+        Some(Udalost::BossStatus { aktivny: false })
+    } else {
+        None
+    }
+}
+
+/// `MsgMgr@:Show MsgValue = Switched to another pact configuration plan (NAZOV)`
+/// (log-format-katalog.md §F).
+fn parsuj_pact_konfiguraciu(riadok: &str) -> Option<Udalost> {
+    if !riadok.contains("Switched to another pact configuration plan") {
+        return None;
+    }
+    let zaciatok = riadok.rfind('(')? + 1;
+    let koniec = riadok[zaciatok..].find(')')? + zaciatok;
+    let nazov = riadok[zaciatok..koniec].trim();
+    if nazov.is_empty() {
+        return None;
+    }
+    Some(Udalost::PactKonfiguracia { nazov: nazov.to_string() })
+}
+
+/// Frozen Canvas animácie priamo z logu (log-format-katalog.md §E).
+fn parsuj_canvas_akciu(riadok: &str) -> Option<Udalost> {
+    if riadok.contains("Anim_PutongShengji Start") {
+        Some(Udalost::CanvasAkcia { typ: "level_up_start" })
+    } else if riadok.contains("Anim_PutongShengji End") {
+        Some(Udalost::CanvasAkcia { typ: "level_up_end" })
+    } else if riadok.contains("PaperSelection Loop Start") {
+        Some(Udalost::CanvasAkcia { typ: "vyber_start" })
+    } else if riadok.contains("PaperSelection LoopEnd") {
+        Some(Udalost::CanvasAkcia { typ: "vyber_end" })
+    } else if riadok.contains("The Paint's type is inconsistent with the Color Mixing Objective") {
+        Some(Udalost::CanvasAkcia { typ: "chyba_farba" })
+    } else {
+        None
+    }
+}
+
+/// Krátky, zámerne úzky zoznam podreťazcov pre riadky, ktoré katalóg
+/// (`log-format-katalog.md`) označil za herne zaujímavé, ale ich presný
+/// význam/tvar sa ešte nedá spoľahlivo rozobrať na polia (`source` pri drope,
+/// `BossChallengeResult`, konfigurácia spawnera, Steam achievementy). Idú do
+/// `raw` tabuľky nezmenené (okrem masky dlhých čísel), aby „nič nezmizlo".
+/// **Zámerne krátky** — bežný enginový/UI šum (asset loading, zvuk, telemetria)
+/// sem nepatrí, inak by raw tabuľka zaplavila DB aj import (TLI 12 ho pri
+/// katalogizácii vedome vylúčil).
+const RAW_ZAUJIMAVE: &[&str] = &[
+    "Drop Prop Debug",
+    "BossChallengeResult",
+    "MonsterSpawner:",
+    "GetSteamStatInt LevelUp_",
+];
+
+fn je_raw_zaujimavy(riadok: &str) -> bool {
+    RAW_ZAUJIMAVE.iter().any(|vzor| riadok.contains(vzor))
+}
+
+/// Nahradí sekvencie 15 a viac cifier znakom `#` — `PlayerId`/`ownerPlayerId`/
+/// UUID sú v logu vždy takéto dlhé 64-bitové čísla, bežné herné ID (napr.
+/// `ConfigBaseId`, `npc id`) majú rádovo menej cifier. Používa sa pred
+/// uložením akéhokoľvek textu do `raw` tabuľky (TLI 13 § Súkromie).
+pub fn zamaskuj_dlhe_cisla(text: &str) -> String {
+    let mut vysledok = String::with_capacity(text.len());
+    let mut bezici_beh: Vec<char> = Vec::new();
+
+    let vyprazdni = |vysledok: &mut String, beh: &mut Vec<char>| {
+        if beh.len() >= 15 {
+            vysledok.push('#');
+        } else {
+            vysledok.extend(beh.iter());
+        }
+        beh.clear();
+    };
+
+    for c in text.chars() {
+        if c.is_ascii_digit() {
+            bezici_beh.push(c);
+        } else {
+            vyprazdni(&mut vysledok, &mut bezici_beh);
+            vysledok.push(c);
+        }
+    }
+    vyprazdni(&mut vysledok, &mut bezici_beh);
+    vysledok
+}
+
 /// Izoluje logiku parsovania jedného riadku kvôli testovateľnosti a čistote.
 /// V prípade, že formát nepatrí medzi známe, bezpečne ignoruje riadok.
 pub fn parsuj_riadok(riadok: &str) -> Option<(Option<Cas>, Udalost)> {
     let cas = parsuj_cas(riadok);
+
+    if let Some(u) = parsuj_monster_spawn(riadok) {
+        return Some((cas, u));
+    }
+
+    if let Some(u) = parsuj_modifikator_mapy(riadok) {
+        return Some((cas, u));
+    }
+
+    if let Some(u) = parsuj_zostatok_meny(riadok) {
+        return Some((cas, u));
+    }
+
+    if let Some(u) = parsuj_boss_status(riadok) {
+        return Some((cas, u));
+    }
+
+    if let Some(u) = parsuj_pact_konfiguraciu(riadok) {
+        return Some((cas, u));
+    }
+
+    if let Some(u) = parsuj_canvas_akciu(riadok) {
+        return Some((cas, u));
+    }
 
     if riadok.contains("BagMgr@:Modfy BagItem") || riadok.contains("BagMgr@:InitBagData") {
         let je_init = riadok.contains("InitBagData");
@@ -253,6 +467,10 @@ pub fn parsuj_riadok(riadok: &str) -> Option<(Option<Cas>, Udalost)> {
 
     if telo.starts_with('+') || telo.starts_with('|') {
         return Some((cas, Udalost::TeloSpravy { surovy: telo.trim_end().to_string() }));
+    }
+
+    if je_raw_zaujimavy(telo) {
+        return Some((cas, Udalost::Raw { text: zamaskuj_dlhe_cisla(telo.trim_end()) }));
     }
 
     None
@@ -546,5 +764,123 @@ mod testy {
         assert_eq!(novy.rozdiel_ms(&stary), 2000);
     }
 
+    // ─── TLI 12/13: nové typy udalostí z log-format-katalog.md ─────────────
 
+    #[test]
+    fn test_monster_created_bez_affixu() {
+        let r = "[Game] Monster Created: npc id 123456 rarity 1";
+        let (_, ud) = parsuj_riadok(r).unwrap();
+        assert_eq!(ud, Udalost::MonsterSpawn { npc_id: 123456, rarita: 1, affix: None });
+    }
+
+    #[test]
+    fn test_create_monster_s_affixom() {
+        let r = "[Game] create monster npc id 777 rarity 3 affix 42";
+        let (_, ud) = parsuj_riadok(r).unwrap();
+        assert_eq!(ud, Udalost::MonsterSpawn { npc_id: 777, rarita: 3, affix: Some(42) });
+    }
+
+    #[test]
+    fn test_create_monster_affix_null() {
+        let r = "[Game] create monster npc id 777 rarity 3 affix: null";
+        let (_, ud) = parsuj_riadok(r).unwrap();
+        assert_eq!(ud, Udalost::MonsterSpawn { npc_id: 777, rarita: 3, affix: None });
+    }
+
+    #[test]
+    fn test_modifikator_mapy() {
+        let r = "[Game] outside monster affix danger 2 kind 5 group 1 seat 0, randAffixId 900";
+        let (_, ud) = parsuj_riadok(r).unwrap();
+        assert_eq!(
+            ud,
+            Udalost::ModifikatorMapy {
+                danger: Some(2),
+                kind: Some(5),
+                skupina: Some(1),
+                seat: Some(0),
+                rand_affix_id: Some(900),
+            }
+        );
+    }
+
+    #[test]
+    fn test_zostatok_meny_coin() {
+        let r = "[Game] ConsumMgr:ResreshConsumData Coin_810 Value 34032";
+        let (_, ud) = parsuj_riadok(r).unwrap();
+        assert_eq!(ud, Udalost::ZostatokMeny { nazov: "Coin_810".to_string(), hodnota: 34032 });
+    }
+
+    #[test]
+    fn test_zostatok_meny_boss_point() {
+        let r = "[Game] ConsumMgr:ResreshConsumData SpAreaBossPoint_3 Value 7";
+        let (_, ud) = parsuj_riadok(r).unwrap();
+        assert_eq!(ud, Udalost::ZostatokMeny { nazov: "SpAreaBossPoint_3".to_string(), hodnota: 7 });
+    }
+
+    #[test]
+    fn test_boss_status_aktivny_a_koniec() {
+        let (_, zac) = parsuj_riadok("[Game] FightHunting BossStatus1").unwrap();
+        assert_eq!(zac, Udalost::BossStatus { aktivny: true });
+        let (_, kon) = parsuj_riadok("[Game] FightHunting BossStatus0").unwrap();
+        assert_eq!(kon, Udalost::BossStatus { aktivny: false });
+    }
+
+    #[test]
+    fn test_pact_konfiguracia() {
+        let r = "[Game] MsgMgr@:Show MsgValue = Switched to another pact configuration plan (DROPPS)";
+        let (_, ud) = parsuj_riadok(r).unwrap();
+        assert_eq!(ud, Udalost::PactKonfiguracia { nazov: "DROPPS".to_string() });
+    }
+
+    #[test]
+    fn test_canvas_akcie() {
+        assert_eq!(
+            parsuj_riadok("[Game] 12_S8SnowField Anim_PutongShengji Start").unwrap().1,
+            Udalost::CanvasAkcia { typ: "level_up_start" }
+        );
+        assert_eq!(
+            parsuj_riadok("[Game] 12_S8SnowField Anim_PutongShengji End").unwrap().1,
+            Udalost::CanvasAkcia { typ: "level_up_end" }
+        );
+        assert_eq!(
+            parsuj_riadok("[Game] 12_S8PaperSelection Loop Start").unwrap().1,
+            Udalost::CanvasAkcia { typ: "vyber_start" }
+        );
+        assert_eq!(
+            parsuj_riadok("[Game] 12_S8PaperSelection LoopEnd").unwrap().1,
+            Udalost::CanvasAkcia { typ: "vyber_end" }
+        );
+        assert_eq!(
+            parsuj_riadok(
+                "[Game] The Paint's type is inconsistent with the Color Mixing Objective. Continue?"
+            )
+            .unwrap()
+            .1,
+            Udalost::CanvasAkcia { typ: "chyba_farba" }
+        );
+    }
+
+    #[test]
+    fn test_raw_zachyti_zaujimave_ale_nerozobrane_riadky() {
+        let r = "[Game] Drop Prop Debug:create monster NpcId=400021,eId=5, source=602";
+        let (_, ud) = parsuj_riadok(r).unwrap();
+        assert_eq!(ud, Udalost::Raw { text: "Drop Prop Debug:create monster NpcId=400021,eId=5, source=602".to_string() });
+    }
+
+    #[test]
+    fn test_raw_neukladá_bezny_sum() {
+        // Enginový/UI šum (nič z katalógu §A–§F) sa do raw nemá dostať vôbec.
+        let r = "[Game] AssetLoader: Loading texture foo.uasset";
+        assert!(parsuj_riadok(r).is_none());
+    }
+
+    #[test]
+    fn test_zamaskuj_dlhe_cisla() {
+        assert_eq!(
+            zamaskuj_dlhe_cisla("worldInitArgs+ownerPlayerId [814971382814871552]"),
+            "worldInitArgs+ownerPlayerId [#]"
+        );
+        // Krátke herné ID (ConfigBaseId, npc id) ostávajú nedotknuté.
+        assert_eq!(zamaskuj_dlhe_cisla("ConfigBaseId=400021 Num=5"), "ConfigBaseId=400021 Num=5");
+    }
 }

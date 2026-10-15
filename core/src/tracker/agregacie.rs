@@ -242,6 +242,10 @@ mod testy {
             dropy: BTreeMap::new(),
             vstupy: BTreeMap::new(),
             vsetky_zmeny: vec![],
+            monstra: vec![],
+            modifikatory: vec![],
+            bossovia: vec![],
+            canvas_akcie: vec![],
         }
     }
 

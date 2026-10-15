@@ -448,6 +448,67 @@ fn tracker_csv(
     Ok(tracker::csv(&prehlad.behy))
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Záložka „Analýza" (TLI 13)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Vyhľadá behy v lokálnej databáze podľa filtra zo záložky Analýza.
+#[tauri::command]
+fn analyza_vyhladaj(
+    tracker: tauri::State<tracker::Tracker>,
+    filter: tli_overlay_core::tracker::db::FilterBehov,
+) -> Result<Vec<tli_overlay_core::tracker::db::BehRiadok>, String> {
+    let t = tracker.0.lock().unwrap();
+    tracker::analyza_vyhladaj(&t, &filter)
+}
+
+/// Monštrá podľa rarity pre jeden beh — detail behu v záložke Analýza.
+#[tauri::command]
+fn analyza_monstra_podla_rarity(
+    tracker: tauri::State<tracker::Tracker>,
+    beh_id: i64,
+) -> Result<Vec<(u8, i64)>, String> {
+    let t = tracker.0.lock().unwrap();
+    tracker::analyza_monstra_podla_rarity(&t, beh_id)
+}
+
+/// Export vyhľadaných behov do CSV. Vracia obsah súboru — uloženie rieši UI
+/// (rovnaký vzor ako `tracker_csv`).
+#[tauri::command]
+fn analyza_export_csv(
+    tracker: tauri::State<tracker::Tracker>,
+    filter: tli_overlay_core::tracker::db::FilterBehov,
+) -> Result<String, String> {
+    let t = tracker.0.lock().unwrap();
+    let riadky = tracker::analyza_vyhladaj(&t, &filter)?;
+    Ok(tli_overlay_core::tracker::db::export_csv(&riadky))
+}
+
+/// Export vyhľadaných behov do JSON.
+#[tauri::command]
+fn analyza_export_json(
+    tracker: tauri::State<tracker::Tracker>,
+    filter: tli_overlay_core::tracker::db::FilterBehov,
+) -> Result<String, String> {
+    let t = tracker.0.lock().unwrap();
+    let riadky = tracker::analyza_vyhladaj(&t, &filter)?;
+    Ok(tli_overlay_core::tracker::db::export_json(&riadky))
+}
+
+/// Tlačidlo „Načítať staré logy" — spätný import aktuálneho aj
+/// `UE_game-backup-*.log` súborov z priečinka aktuálneho logu.
+#[tauri::command]
+fn tracker_nacitaj_stare_logy(
+    stav: tauri::State<Stav>,
+    tracker: tauri::State<tracker::Tracker>,
+) -> Result<tli_overlay_core::tracker::import::VysledokImportu, String> {
+    let n = stav.nastavenia.lock().unwrap().clone();
+    let cesta = tracker::najdi_log(&n.cesta_logu)
+        .ok_or_else(|| "Herný log sa nenašiel — nastav cestu v záložke Tracker.".to_string())?;
+    let mut t = tracker.0.lock().unwrap();
+    tracker::nacitaj_stare_logy(&mut t, &cesta)
+}
+
 /// Cesta, ktorú appka navrhne do poľa „Cesta k logu" v záložke Tracker, keď
 /// je uložená hodnota prázdna — Steam register/vdf, inak krátky zoznam
 /// známych miest (TLI 11c). Nič nezapisuje, to urobí `uloz_cestu_logu`.
@@ -911,6 +972,11 @@ fn main() {
             guide_sync,
             tracker_sync_teraz,
             uloz_prepinac,
+            analyza_vyhladaj,
+            analyza_monstra_podla_rarity,
+            analyza_export_csv,
+            analyza_export_json,
+            tracker_nacitaj_stare_logy,
             ukaz_pripomienku
         ])
         .setup(move |app| {

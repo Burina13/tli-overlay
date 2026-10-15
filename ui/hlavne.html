@@ -19,6 +19,7 @@
     <nav class="zalozky" id="zalozky">
         <button type="button" class="zalozka aktivna" data-panel="panel-tracker">Tracker</button>
         <button type="button" class="zalozka" data-panel="panel-solvery">Solvery</button>
+        <button type="button" class="zalozka" data-panel="panel-analyza">Analýza</button>
         <button type="button" class="zalozka" data-panel="panel-guide">Guide</button>
         <button type="button" class="zalozka" data-panel="panel-nastavenia">Nastavenia</button>
     </nav>
@@ -128,6 +129,58 @@
             <div class="karta-solver karta-planovana">
                 <strong>Artistry</strong>
                 <span>Plánované, zatiaľ nepridané.</span>
+            </div>
+        </section>
+
+        <section id="panel-analyza" class="panel skryte">
+            <div class="riadok-akcii">
+                <h2>Analýza</h2>
+                <button type="button" class="btn-vedlajsi" id="btn-analyza-stare-logy">Načítať staré logy</button>
+            </div>
+            <p class="vysvetlivka" id="analyza-import-stav"></p>
+
+            <div class="riadok-prepinacov analyza-filter">
+                <label>
+                    Mapa (časť cesty)
+                    <input type="text" id="analyza-f-mapa" placeholder="napr. XueYuRongLu">
+                </label>
+                <label>
+                    Minimálny čistý zisk (FE)
+                    <input type="number" id="analyza-f-min-zisk" placeholder="napr. 50">
+                </label>
+                <button type="button" class="btn-hlavny" id="btn-analyza-hladaj">Hľadať</button>
+            </div>
+
+            <div class="riadok-akcii">
+                <h3 class="nadpis-tabulky">Výsledky</h3>
+                <span>
+                    <button type="button" class="btn-vedlajsi" id="btn-analyza-csv">Export CSV</button>
+                    <button type="button" class="btn-vedlajsi" id="btn-analyza-json">Export JSON</button>
+                </span>
+            </div>
+            <table class="tabulka" id="tabulka-analyza">
+                <thead>
+                    <tr>
+                        <th>Mapa</th>
+                        <th>Chart a kompasy</th>
+                        <th>Začiatok</th>
+                        <th class="cislo">Trvanie</th>
+                        <th class="cislo">Čistý zisk</th>
+                        <th class="cislo">FE/h</th>
+                        <th class="cislo">Monštrá</th>
+                        <th class="cislo">Rares/boss</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+            <p class="prazdne" id="analyza-prazdne">Zatiaľ nič — klikni „Hľadať" alebo najprv „Načítať staré logy".</p>
+
+            <div id="analyza-detail" class="skryte">
+                <h3 class="nadpis-tabulky">Monštrá podľa rarity — <span id="analyza-detail-mapa"></span></h3>
+                <table class="tabulka" id="tabulka-analyza-detail">
+                    <thead><tr><th>Rarita</th><th class="cislo">Počet</th></tr></thead>
+                    <tbody></tbody>
+                </table>
             </div>
         </section>
 

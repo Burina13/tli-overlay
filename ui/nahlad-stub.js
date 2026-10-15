@@ -118,6 +118,18 @@ const ODPOVEDE = {
   },
   tracker_vyber_subor: CESTA_LOGU_UKAZKA,
   uloz_cestu_logu: CESTA_LOGU_UKAZKA,
+  // Záložka Analýza (TLI 13) — rovnaké dve mapy ako vyššie, len z pohľadu DB.
+  analyza_vyhladaj: [
+    { id: 1, zona: OAZA, podpis_vstupov: "400021x1+500101x2", zaciatok_cas: "2026-10-16 10:00:00",
+      trvanie_ms: 300000, cisty_zisk_fe: 464.9, fe_za_hodinu: 5578.8, pocet_monster: 42, pocet_rares_a_bossov: 5 },
+    { id: 2, zona: LAVA, podpis_vstupov: "400021x1+500102x1", zaciatok_cas: "2026-10-16 09:55:00",
+      trvanie_ms: 240000, cisty_zisk_fe: 302.9, fe_za_hodinu: 4543.5, pocet_monster: 31, pocet_rares_a_bossov: 3 },
+  ],
+  analyza_monstra_podla_rarity: [[1, 25], [2, 12], [3, 4], [4, 1]],
+  analyza_export_csv: "id;zona\n1;YunDuanLvZhou\n",
+  analyza_export_json: "[]",
+  tracker_nacitaj_stare_logy: { pocet_riadkov: 163339, pocet_novych_behov: 9, pocet_preskocenych_behov: 0,
+                                pocet_monster: 4168, pocet_cien: 1, pocet_zostatkov: 374, neznamych_riadkov: 148724 },
 };
 
 window.__TAURI__ = {

@@ -649,3 +649,123 @@ document.addEventListener("DOMContentLoaded", async () => {
         window.__TAURI__.event.listen("tracker-zmena", () => obnovTracker());
     }
 });
+
+// ─── Analýza (TLI 13) ───────────────────────────────────────────────────────
+
+function analyzaFilter() {
+    const mapa = document.getElementById("analyza-f-mapa").value.trim();
+    const minZiskTxt = document.getElementById("analyza-f-min-zisk").value.trim();
+    const filter = { limit: 500 };
+    // Appka hľadá PODREŤAZEC cesty mapy (napr. "XueYuRongLu" nájde všetky mapy
+    // Frozen Canvas bez toho, aby hráč poznal presnú internú cestu), kým
+    // `db::vyhladaj_behy` porovnáva `zona` na presnú zhodu — filtrovanie podľa
+    // podreťazca sa preto robí tu v JS nad výsledkom, nie na serveri.
+    if (minZiskTxt !== "") {
+        const cislo = Number(minZiskTxt);
+        if (!Number.isNaN(cislo)) {
+            filter.min_zisk_fe = cislo;
+        }
+    }
+    return { filter, mapaPodretazec: mapa.toLowerCase() };
+}
+
+function vykresliAnalyzu(riadky) {
+    const telo = document.querySelector("#tabulka-analyza tbody");
+    document.getElementById("analyza-prazdne").classList.toggle("skryte", riadky.length > 0);
+    document.getElementById("tabulka-analyza").classList.toggle("skryte", riadky.length === 0);
+
+    telo.innerHTML = riadky
+        .map(
+            (r) => `<tr data-beh-id="${r.id}" data-zona="${nazovMapy(r.zona)}" class="riadok-klikatelny">
+                <td>${nazovMapy(r.zona)}</td>
+                <td>${odznakyVstupov(r.podpis_vstupov)}</td>
+                <td>${r.zaciatok_cas || "—"}</td>
+                <td class="cislo">${cas(r.trvanie_ms)}</td>
+                <td class="cislo ${triedaZnamienka(r.cisty_zisk_fe || 0)}">${fe(r.cisty_zisk_fe)}</td>
+                <td class="cislo">${fe(r.fe_za_hodinu)}</td>
+                <td class="cislo">${r.pocet_monster}</td>
+                <td class="cislo">${r.pocet_rares_a_bossov}</td>
+            </tr>`
+        )
+        .join("");
+
+    telo.querySelectorAll("tr[data-beh-id]").forEach((riadok) => {
+        riadok.addEventListener("click", () => zobrazDetailBehu(Number(riadok.dataset.behId), riadok.dataset.zona));
+    });
+}
+
+async function zobrazDetailBehu(behId, nazovZony) {
+    try {
+        const podlaRarity = await invoke("analyza_monstra_podla_rarity", { behId });
+        const detail = document.getElementById("analyza-detail");
+        document.getElementById("analyza-detail-mapa").textContent = nazovZony;
+        const telo = document.querySelector("#tabulka-analyza-detail tbody");
+        const MENA_RARIT = { 1: "White", 2: "Blue", 3: "Purple", 4: "Orange", 5: "Chromatic" };
+        telo.innerHTML = (podlaRarity || [])
+            .map(([rarita, pocet]) => `<tr><td>${MENA_RARIT[rarita] || rarita}</td><td class="cislo">${pocet}</td></tr>`)
+            .join("");
+        detail.classList.remove("skryte");
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+async function analyzaHladaj() {
+    try {
+        const { filter, mapaPodretazec } = analyzaFilter();
+        let riadky = await invoke("analyza_vyhladaj", { filter });
+        if (mapaPodretazec) {
+            riadky = riadky.filter((r) => r.zona.toLowerCase().includes(mapaPodretazec));
+        }
+        vykresliAnalyzu(riadky);
+    } catch (e) {
+        console.error(e);
+        document.getElementById("analyza-import-stav").textContent = `Vyhľadávanie zlyhalo: ${e}`;
+    }
+}
+
+function stiahni(obsah, typ, nazovSuboru) {
+    const odkaz = document.createElement("a");
+    odkaz.href = URL.createObjectURL(new Blob([obsah], { type: typ }));
+    odkaz.download = nazovSuboru;
+    odkaz.click();
+    URL.revokeObjectURL(odkaz.href);
+}
+
+document.getElementById("btn-analyza-hladaj").addEventListener("click", analyzaHladaj);
+
+document.getElementById("btn-analyza-csv").addEventListener("click", async () => {
+    try {
+        const { filter } = analyzaFilter();
+        const csv = await invoke("analyza_export_csv", { filter });
+        stiahni(csv, "text/csv;charset=utf-8", "tli-analyza.csv");
+    } catch (e) {
+        console.error(e);
+    }
+});
+
+document.getElementById("btn-analyza-json").addEventListener("click", async () => {
+    try {
+        const { filter } = analyzaFilter();
+        const json = await invoke("analyza_export_json", { filter });
+        stiahni(json, "application/json;charset=utf-8", "tli-analyza.json");
+    } catch (e) {
+        console.error(e);
+    }
+});
+
+document.getElementById("btn-analyza-stare-logy").addEventListener("click", async () => {
+    const stavEl = document.getElementById("analyza-import-stav");
+    stavEl.textContent = "Načítavam staré logy… (môže to chvíľu trvať pri väčších súboroch)";
+    try {
+        const r = await invoke("tracker_nacitaj_stare_logy");
+        stavEl.textContent =
+            `Hotovo: ${r.pocet_novych_behov} nových behov, ${r.pocet_preskocenych_behov} už bolo uložených, ` +
+            `${r.pocet_monster} monštier, ${r.pocet_cien} cien, ${r.pocet_zostatkov} zostatkov ` +
+            `(${r.pocet_riadkov} riadkov spolu).`;
+        await analyzaHladaj();
+    } catch (e) {
+        stavEl.textContent = `Import zlyhal: ${e}`;
+        console.error(e);
+    }
+});

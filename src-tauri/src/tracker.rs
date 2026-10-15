@@ -24,11 +24,58 @@ use tauri::{AppHandle, Emitter, Manager};
 use tli_overlay_core::tracker::agregacie::{ocen_beh, prehlad, Prehlad, VysledokBehu};
 use tli_overlay_core::tracker::ceny::{vek_text, Cena, Cennik, Nastavenie, Zdroj};
 use tli_overlay_core::tracker::chvost::StavChvosta;
+use tli_overlay_core::tracker::db::{self, OceneneHodnoty};
 use tli_overlay_core::tracker::pripomienka::{klasifikuj, SledovacPripomienky};
 use tli_overlay_core::tracker::stav::{Beh, Sledovac};
 use tli_overlay_core::tracker::steam;
 
 use crate::stav::Stav;
+
+/// Spočíta hodnoty na uloženie do DB (TLI 13) — zámerne BEZ dane: `polozky`
+/// tabuľka má surové počty za každú položku a daň je len zobrazovacia
+/// preferencia (`tracker_dan` v nastaveniach), ktorá sa dá dopočítať kedykoľvek
+/// neskôr z uložených surových dát. Ukladať ju rovno by znamenalo, že zmena
+/// prepínača „Daň z predaja" v nastaveniach tíško rozíde živý prehľad
+/// s tým, čo appka už natrvalo zapísala.
+fn ocenenie_pre_db(beh: &Beh, cennik: &Cennik) -> OceneneHodnoty {
+    let Some(v) = ocen_beh(beh, cennik, &Nastavenie { dan: false }) else {
+        return OceneneHodnoty::default();
+    };
+    let fe_za_hodinu = if v.trvanie_ms > 0 {
+        Some(v.cisty_zisk / (v.trvanie_ms as f64 / 3_600_000.0))
+    } else {
+        None
+    };
+    OceneneHodnoty {
+        hodnota_dropov_fe: Some(v.hodnota_dropov),
+        hodnota_vstupov_fe: Some(v.hodnota_vstupov),
+        cisty_zisk_fe: Some(v.cisty_zisk),
+        fe_za_hodinu,
+    }
+}
+
+/// Uloží jeden uzavretý beh (aj monštrá/modifikátory/bossovia/canvas, ktoré
+/// nazbieral) do lokálnej DB. Chyba zápisu sa len zaloguje do `StavTrackera`
+/// — appka nesmie prestať trackovať naživo len preto, že sa jeden riadok
+/// nepodarilo zapísať na disk (DB môže byť napr. práve otvorená iným
+/// procesom počas kopírovania).
+fn uloz_beh_do_db(stav: &mut StavTrackera, beh: &Beh) {
+    let Some(conn) = &mut stav.db else { return };
+    let ocenenie = ocenenie_pre_db(beh, &stav.cennik);
+    let identita = stav.sledovac.hrac_snimka().cloned().unwrap_or_default();
+    match db::uloz_beh(conn, beh, &identita, &ocenenie) {
+        Ok((beh_id, _)) => {
+            if let Some((nazov, cas)) = stav.sledovac.posledna_pact_konfiguracia() {
+                let dps = stav.sledovac.posledny_stat_postavy("DPS").map(|(v, _)| v);
+                let def = stav.sledovac.posledny_stat_postavy("DEF").map(|(v, _)| v);
+                let _ = db::uloz_build_snapshot(conn, beh_id, &identita, Some(&nazov), dps, def, cas.as_ref());
+            }
+        }
+        Err(e) => {
+            stav.chyba_db = Some(format!("Zápis do lokálnej databázy zlyhal: {e}"));
+        }
+    }
+}
 
 /// Koľko najviac bajtov prečítame naraz. Pri prvom spustení je log kľudne
 /// stomegový a natiahnuť ho celý do pamäte by appku na pár sekúnd zmrazilo.
@@ -68,10 +115,19 @@ pub struct StavTrackera {
     /// Pripomienka „Enable Log" (TLI 11d) — žije tu, nie vedľa, lebo rotáciu
     /// aj riadky vidí práve táto funkcia (`precitaj`) ako prvá.
     pub pripomienka: SledovacPripomienky,
+    /// Lokálna databáza (TLI 13) — `None`, keď sa pri štarte nepodarilo
+    /// otvoriť/zmigrovať (napr. poškodený súbor); appka vtedy ďalej traja
+    /// naživo, len bez trvalého ukladania (`chyba_db` nesie dôvod pre UI).
+    db: Option<rusqlite::Connection>,
+    pub chyba_db: Option<String>,
 }
 
 impl Default for StavTrackera {
     fn default() -> Self {
+        let (db, chyba_db) = match db::otvor(&crate::stav::cesta_db_suboru()) {
+            Ok(c) => (Some(c), None),
+            Err(e) => (None, Some(format!("Lokálna databáza sa nedá otvoriť: {e}"))),
+        };
         Self {
             sledovac: Sledovac::novy(),
             cennik: Cennik::novy(),
@@ -80,6 +136,8 @@ impl Default for StavTrackera {
             cesta: None,
             chyba: None,
             pripomienka: SledovacPripomienky::novy(false),
+            db,
+            chyba_db,
         }
     }
 }
@@ -146,6 +204,48 @@ fn steam_cesta_z_registra() -> Option<PathBuf> {
     None
 }
 
+/// Tlačidlo „Načítať staré logy" (TLI 13 §1). Nájde v priečinku aktuálneho
+/// logu VŠETKY súbory `UE_game*.log` (teda aj aktuálny, aj
+/// `UE_game-backup-*.log` zálohy) a spracuje ich cez spätný import.
+/// Bezpečné spustiť opakovane — `import::importuj_subory` je idempotentný,
+/// takže by/ani by nemalo vadiť, že živé čítanie (`precitaj`) do DB medzitým
+/// mohlo uložiť časť tej istej histórie.
+pub fn nacitaj_stare_logy(
+    stav: &mut StavTrackera,
+    cesta_aktualneho_logu: &Path,
+) -> Result<tli_overlay_core::tracker::import::VysledokImportu, String> {
+    let Some(conn) = &mut stav.db else {
+        return Err("Lokálna databáza nie je dostupná.".to_string());
+    };
+    let priecinok = cesta_aktualneho_logu
+        .parent()
+        .ok_or_else(|| "Log nemá nadradený priečinok.".to_string())?;
+
+    let mut subory: Vec<PathBuf> = std::fs::read_dir(priecinok)
+        .map_err(|e| format!("Priečinok s logmi sa nedá prečítať: {e}"))?
+        .filter_map(|z| z.ok())
+        .map(|z| z.path())
+        .filter(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .map(|n| n.starts_with("UE_game") && n.ends_with(".log"))
+                .unwrap_or(false)
+        })
+        .collect();
+    subory.sort();
+
+    let mut obsahy = Vec::new();
+    for cesta in &subory {
+        match std::fs::read(cesta) {
+            Ok(b) => obsahy.push(b),
+            Err(e) => return Err(format!("Súbor {} sa nedá prečítať: {e}", cesta.display())),
+        }
+    }
+
+    tli_overlay_core::tracker::import::importuj_subory(conn, &obsahy)
+        .map_err(|e| format!("Import do databázy zlyhal: {e}"))
+}
+
 /// Prečíta nové bajty a pretlačí ich cez `Sledovac`.
 ///
 /// Rotáciu logu (hra pri štarte súbor skráti alebo premenuje) spoznáme podľa
@@ -195,17 +295,37 @@ pub fn precitaj(stav: &mut StavTrackera, cesta: &Path) -> Result<usize, String> 
     crate::stav::uloz_chvost(cesta, &stav.chvost);
 
     let mut novych = 0;
+    let mut uzavrete_behy = Vec::new();
     for riadok in &riadky {
         stav.pripomienka.spracuj_riadok(teraz, klasifikuj(riadok));
         if let Some(beh) = stav.sledovac.riadok(riadok) {
-            stav.behy.push(beh);
+            uzavrete_behy.push(beh);
             novych += 1;
         }
     }
 
     for (polozka, fe, _) in stav.sledovac.odober_ceny() {
         stav.cennik.vloz(Cena { polozka, fe, zdroj: Zdroj::VlastnyTrh, kedy: teraz });
+        if let Some(conn) = &stav.db {
+            let _ = db::uloz_cenu(conn, polozka, fe, None);
+        }
     }
+    if let Some(conn) = &stav.db {
+        for (nazov, hodnota, cas) in stav.sledovac.odober_zostatky() {
+            let _ = db::uloz_zostatok(conn, &nazov, hodnota, cas.as_ref());
+        }
+        for (_, text, cas) in stav.sledovac.odober_raw() {
+            let _ = db::uloz_raw(conn, None, &text, cas.as_ref());
+        }
+    }
+
+    // Beh sa do DB ukladá AŽ TERAZ (nie priamo v slučke vyššie) — ceny
+    // nájdené v TEJTO ISTEJ dávke (vyššie) sú tak už v cenníku a ocenenie
+    // uloženého behu z nich profituje, nie len z cien zo starších dávok.
+    for beh in &uzavrete_behy {
+        uloz_beh_do_db(stav, beh);
+    }
+    stav.behy.extend(uzavrete_behy);
 
     Ok(novych)
 }
@@ -318,6 +438,25 @@ impl Default for Tracker {
     fn default() -> Self {
         Tracker(Mutex::new(StavTrackera::default()))
     }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Záložka „Analýza" (TLI 13 §2) — vyhľadávanie, detail, export
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Vyhľadá behy podľa filtra. `None`/chyba otvorenej DB vráti prázdny zoznam
+/// (záložka Analýza má zostať použiteľná aj keď DB zlyhala pri štarte —
+/// `stav.chyba_db` nesie dôvod, UI ho zobrazí vedľa prázdneho zoznamu).
+pub fn analyza_vyhladaj(stav: &StavTrackera, filter: &db::FilterBehov) -> Result<Vec<db::BehRiadok>, String> {
+    let Some(conn) = &stav.db else { return Ok(Vec::new()) };
+    db::vyhladaj_behy(conn, filter).map_err(|e| e.to_string())
+}
+
+/// Súhrn monštier podľa rarity pre jeden beh — priamy podklad pre Richardov
+/// príkladný dotaz „koľko monštier a akej rarity mala ktorá mapa".
+pub fn analyza_monstra_podla_rarity(stav: &StavTrackera, beh_id: i64) -> Result<Vec<(u8, i64)>, String> {
+    let Some(conn) = &stav.db else { return Ok(Vec::new()) };
+    db::monstra_podla_rarity(conn, beh_id).map_err(|e| e.to_string())
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

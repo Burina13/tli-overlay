@@ -95,6 +95,15 @@ fn cesta_chvosta_suboru() -> PathBuf {
     c
 }
 
+/// Cesta k lokálnej SQLite databáze trackera (TLI 13) — vedľa `nastavenia.json`,
+/// z rovnakého dôvodu ako `tracker-pozicia.json`: je to prevádzkový stav/dáta,
+/// nie nastavenie od hráča.
+pub fn cesta_db_suboru() -> PathBuf {
+    let mut c = cesta_suboru();
+    c.set_file_name("tracker.sqlite3");
+    c
+}
+
 /// Načíta uloženú pozíciu v logu — ale LEN keď uložená cesta sedí s tou, čo
 /// sa práve číta. Inak by appka po zmene cesty (iná hra, iný disk) omylom
 /// „pokračovala" v súbore, ktorý vôbec nečíta, a buď preskočila jeho

@@ -649,3 +649,34 @@ table.tabulka {
 #stav-cesty-logu.stav-cesty-varovanie {
     color: var(--farba-upozornenie);
 }
+
+/* ── Analýza (TLI 13) ────────────────────────────────────────────────────── */
+.analyza-filter {
+    align-items: flex-end;
+}
+
+.analyza-filter label {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-weight: 600;
+    font-size: 0.85rem;
+}
+
+.analyza-filter input {
+    padding: 6px 10px;
+    border: 1px solid var(--farba-okraj);
+    border-radius: 6px;
+    background-color: var(--farba-pozadie);
+    color: var(--farba-text-hlavny);
+    font-size: 0.85rem;
+    min-width: 180px;
+}
+
+tr.riadok-klikatelny {
+    cursor: pointer;
+}
+
+#analyza-detail {
+    margin: 18px 24px 24px;
+}

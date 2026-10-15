@@ -1,6 +1,6 @@
 [package]
 name = "tli-overlay"
-version = "0.11.0"
+version = "0.12.0"
 edition = "2021"
 description = "Tvoj Tatko TLI Overlay"
 authors = ["Tvoj Tatko"]
@@ -26,6 +26,9 @@ ureq = "2"
 # Živé sledovanie logu (TLI 11c) — primárne cez udalosti FS, 1s polling je
 # len záložka pre prípad, že by sa udalosť stratila (notify to pripúšťa samo).
 notify = "8"
+# Lokálna databáza trackera (TLI 13) — `bundled` kompiluje sqlite priamo (cez
+# `cc`/MSVC na Windows), žiadna systémová DLL navyše.
+rusqlite = { version = "0.40.2", features = ["bundled"] }
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "=0.58.0", features = [
