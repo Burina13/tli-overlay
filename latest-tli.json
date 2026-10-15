@@ -1,6 +1,6 @@
 {
-  "version": "0.3.0",
-  "notes": "Frozen Canvas — zber dát a priznanie neoverených pravidiel (TLI 4c). Nové nastavenie \"Zber dát\" (vypnuté predvolene): keď je zapnuté, hotkey Frozen Canvas (F9) nevykreslí radu — len odfotí, pošle na server (ten uloží vždy, bez ohľadu na istotu) a ukáže počítadlo \"Uložené #N\". Rada pre smer, ktorý ešte nemá dosť potvrdených párov pred/po, má v nadpise prefix ⚠️. Tartarus (F8) sa nemení.",
-  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.3.0/Tvoj-Tatko-TLI-Overlay_0.3.0_x64_en-US.msi",
-  "msiSha256": "d657064727617b5c06420cf6ff8c9fddc9bf30525b21ed869a2097d9eb10799c"
+  "version": "0.4.0",
+  "notes": "Ikony v paneli s dôvodom (TLI 8). Nad textom dôvodu je nový riadok: ikona toho, koho sa ťah týka (portrét väzňa vo farbe jeho rarity pri Tartarus, štvorček paintu s levelom pri Frozen Canvas), a malá ikona cieľovej akcie (patrola, požretie, výmena, nástroj, dar, položenie na plátno). Ikony sú kreslené priamo v appke, nesťahujú sa — panel sa vykreslí aj vtedy, keď server nie je dostupný. Zelené rámiky a čísla krokov sa nemenia.",
+  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.4.0/Tvoj-Tatko-TLI-Overlay_0.4.0_x64_en-US.msi",
+  "msiSha256": "9626e5888a9553475abec290fcbd7685346f0bd23576be8b097bb006090e7918"
 }
