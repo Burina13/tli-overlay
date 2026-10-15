@@ -18,9 +18,20 @@ jobs:
     steps:
       - name: Stiahnuť MSI a kontrolný súčet
         shell: pwsh
+        env:
+          # Bez tokenu ide volanie API anonymne, teda proti limitu 60 dotazov za
+          # hodinu NA IP — a tú IP zdieľajú všetky GitHub runnery. 15.10.2026 to
+          # zhodilo overenie `tli-v0.5.0` hneď na prvom riadku („API rate limit
+          # exceeded for 104.209.12.64"), hoci MSI aj súčet boli v poriadku.
+          # S tokenom je limit 1000/h na repozitár a tento zdroj zlyhania mizne.
+          GH_TOKEN: ${{ github.token }}
         run: |
           $tag = "${{ inputs.tag }}"
-          $rel = Invoke-RestMethod "https://api.github.com/repos/Burina13/tli-overlay/releases/tags/$tag"
+          $hlavicky = @{
+            Authorization = "Bearer $env:GH_TOKEN"
+            Accept        = "application/vnd.github+json"
+          }
+          $rel = Invoke-RestMethod "https://api.github.com/repos/Burina13/tli-overlay/releases/tags/$tag" -Headers $hlavicky
           $msi = $rel.assets | Where-Object name -like "*.msi" | Select-Object -First 1
           $sums = $rel.assets | Where-Object name -eq "SHA256SUMS.txt" | Select-Object -First 1
           Invoke-WebRequest $msi.browser_download_url -OutFile overlay.msi
