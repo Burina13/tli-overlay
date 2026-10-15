@@ -1,6 +1,6 @@
 {
-  "version": "0.5.0",
-  "notes": "Oprava farieb a názvov rarity v paneli s dôvodom (TLI 9b). Video SS14 a Richardov screenshot ukázali, že hra má päť stupňov rarity (White/Blue/Purple/Orange/Chromatic), nie šesť — panel preto pri stredných stupňoch zobrazoval posunuté, nesprávne farby a mená. Siluety väzňov zostávajú kreslené priamo v appke, aby sa panel vykreslil aj bez servera. Zelené rámiky, čísla krokov ani žiadna iná funkcia sa nemenia.",
-  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.5.0/Tvoj-Tatko-TLI-Overlay_0.5.0_x64_en-US.msi",
-  "msiSha256": "f1affdda54055bf64fc506a4d96ec0bdf1d43c928c289cfa7b7aef5dcbc1c0a1"
+  "version": "0.6.0",
+  "notes": "Nové hlavné okno so záložkami Tracker/Solvery/Guide/Nastavenia (TLI 11, krok 1/5) — otvára sa položkou „Otvoriť\" v menu tray ikony. Zatiaľ kostra: Tracker a Guide sú placeholder, Solvery je informačný prehľad (Tartarus/Frozen Canvas bežia ďalej presne tak, ako doteraz, na F8/F9), Nastavenia zatiaľ len otvára existujúce okno. F8/F9 hotkey, overlay ani odosielanie na server sa nemenili.",
+  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.6.0/Tvoj-Tatko-TLI-Overlay_0.6.0_x64_en-US.msi",
+  "msiSha256": "116551bb743f9324ab63fee3b0381b0f4aafc24db7a9ab4cd75414395d42566b"
 }
