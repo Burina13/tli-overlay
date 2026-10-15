@@ -140,73 +140,46 @@ jobs:
           name: overlay-nahlad-canvas
           path: overlay-nahlad-canvas.png
           if-no-files-found: warn
-      - name: Náhľad hlavného okna — vygenerovať z ostrého hlavne.html
+      - name: Náhľady — vygenerovať z ostrých súborov UI
         shell: bash
-        run: |
-          # Do 0.8.0 ležala v repe RUČNÁ kópia `ui/nahlad-hlavne.html` a rozišla sa
-          # s originálom hneď, ako pribudla záložka Guide — screenshot z CI potom
-          # ukazoval staré okno. Generuje sa preto z ostrého súboru; jediný rozdiel
-          # oproti appke je podstrčený `nahlad-stub.js` namiesto Tauri.
-          python3 - <<'PY'
-          import pathlib
-          t = pathlib.Path("ui/hlavne.html").read_text(encoding="utf-8")
-          k = '<link rel="stylesheet" href="hlavne.css">'
-          assert t.count(k) == 1, "v hlavne.html sa zmenil odkaz na CSS"
-          t = t.replace(k, '<script src="nahlad-stub.js"></script>\n    ' + k, 1)
-          t = t.replace("<title>Tvoj Tatko TLI Overlay</title>",
-                        "<title>Náhľad hlavného okna</title>", 1)
-          pathlib.Path("ui/nahlad-hlavne.html").write_text(t, encoding="utf-8")
-          print("nahlad hlavneho okna vygenerovany")
-          PY
+        run: python3 ui/nahlad-generuj.py
 
       - name: Náhľad hlavného okna so záložkami (TLI 11) ako obrázky
         shell: pwsh
         run: |
-          # Rovnaký mechanizmus ako vyššie, nad `nahlad-hlavne.html` (= hlavne.html
-          # + nahlad-stub.js, ten istý vzor ako nahlad.html pre overlay). Ktorá
-          # záložka je aktívna pri vykreslení, rieši query parameter `?tab=…`
-          # (len pre tento náhľad — appka ho nikde sama nepoužíva).
+          # Rovnaký mechanizmus ako pri overlayi: vygenerované `nahlad-hlavne-*.html`
+          # (= hlavne.html + nahlad-stub.js + prepnutá záložka) sa vykreslia v Edge,
+          # ktorý je na runneri predinštalovaný.
           $edge = @(
             "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
             "C:\Program Files\Microsoft\Edge\Application\msedge.exe"
           ) | Where-Object { Test-Path $_ } | Select-Object -First 1
           if (-not $edge) { Write-Warning "Edge sa nenašiel, náhľad preskakujem."; exit 0 }
-          $cesta = (Resolve-Path "ui/nahlad-hlavne.html").Path
           $zalozky = @("panel-tracker", "panel-solvery", "panel-guide", "panel-nastavenia")
           # Témy sa fotia OBE: od 0.7.0 je predvolená svetlá a tmavá je prepínač
           # v hlavičke — na screenshote musí byť vidieť, že obe naozaj fungujú.
           $temy = @("svetla", "tmava")
           foreach ($panel in $zalozky) {
+            # Aktívna záložka je už prepnutá v HTML (`ui/nahlad-generuj.py`) —
+            # `?tab=` sa na Windows runneri neprejavilo a všetky štyri snímky
+            # z 0.9.0 ukazovali Tracker. `?tema=` tam funguje, to ostáva.
+            $cesta = (Resolve-Path "ui/nahlad-hlavne-$panel.html").Path
             foreach ($tema in $temy) {
               $p = Start-Process -FilePath $edge -ArgumentList @(
                 "--headless", "--disable-gpu", "--screenshot=$PWD\hlavne-$panel-$tema.png",
-                "--window-size=1100,900", "--virtual-time-budget=4000",
-                "file:///$($cesta -replace '\\','/')?tab=$panel&tema=$tema"
+                "--window-size=1100,1400", "--virtual-time-budget=4000",
+                "file:///$($cesta -replace '\\','/')?tema=$tema"
               ) -NoNewWindow -Wait -PassThru
               Write-Host "$panel/$tema — Edge exit code: $($p.ExitCode)"
             }
           }
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: hlavne-nahlad
           path: hlavne-panel-*.png
           if-no-files-found: warn
-
-      - name: Náhľad mini-overlayu (TLI 11, krok 5) ako obrázok
-        shell: bash
-        run: |
-          # Mini-panel je obyčajná stránka ako overlay — stačí mu podstrčiť stub
-          # namiesto Tauri a dá sa odfotiť v Edge rovnako ako ostatné.
-          python3 - <<'PY'
-          import pathlib
-          t = pathlib.Path("ui/mini.html").read_text(encoding="utf-8")
-          k = '<link rel="stylesheet" href="mini.css">'
-          assert t.count(k) == 1, "v mini.html sa zmenil odkaz na CSS"
-          t = t.replace(k, '<script src="nahlad-stub.js"></script>\n    ' + k, 1)
-          pathlib.Path("ui/nahlad-mini.html").write_text(t, encoding="utf-8")
-          print("nahlad mini-overlayu vygenerovany")
-          PY
 
       - name: Náhľad mini-overlayu — snímka
         shell: pwsh

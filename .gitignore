@@ -5,5 +5,5 @@ src-tauri/gen/
 
 # Náhľad hlavného okna pre CI sa GENERUJE z `ui/hlavne.html` (ci.yml) — v repe
 # ležala jeho ručná kópia a po TLI 11 kroku 4 sa rozišla s originálom.
-ui/nahlad-hlavne.html
+ui/nahlad-hlavne-*.html
 ui/nahlad-mini.html
