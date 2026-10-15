@@ -2,6 +2,29 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.11.0 — 16.10.2026
+
+Pripomienka „Enable Log" na začiatku každej session (TLI 11d, doplnok k TLI 11c).
+
+- Hra si nastavenie Settings → Other Settings → „Enable Log" NEPAMÄTÁ medzi
+  spusteniami — appka teraz na to sama upozorní namiesto toho, aby sa to
+  zistilo až spätne, keď je neskoro.
+- **Nová session** sa pozná podľa rotácie `UE_game.log` (hra ho pri reštarte
+  premenuje/skráti) — vtedy sa lehota na zapnutie logovania počíta odznova.
+- **Do 60 sekúnd** má appka vidieť aspoň jeden riadok, ktorý sa v logu objaví
+  LEN keď je logovanie zapnuté (zmena batohu, `ItemChange@`/`Spv3Open`).
+  Prechod medzi mapami (`SceneLevelMgr@`) sa loguje nezávisle od tohto
+  nastavenia — appka to využíva na **druhé pripomenutie presne pri vstupe
+  do prvej mapy**, keď hráč prvé upozornenie prehliadol.
+- **Tri súbežné upozornenia**: toast priamo nad hrou (zelený/oranžový rámik
+  podľa stavu), Windows notifikácia a červený stav v záložke Tracker — ten
+  istý „živý pás", čo inak ukazuje bežiacu mapu. Všetky zmiznú samé, len čo
+  začnú prichádzať herné riadky („✅ Logovanie beží").
+- Nový prepínač **„Pripomínať Enable Log"** v záložke Tracker, predvolene
+  zapnutý (na rozdiel od ostatných prepínačov tejto záložky).
+- Nový core modul `tracker::pripomienka` — celý stavový automat nad
+  injektovaným unixovým časom, žiadne reálne čakanie v testoch.
+
 ## 0.10.0 — 15.10.2026
 
 Tracker si sám nájde log a číta ho naživo (TLI 11c).

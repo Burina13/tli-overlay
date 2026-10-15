@@ -33,6 +33,17 @@ const HLAVNE: &str = "hlavne";
 /// Mini-overlay počas mapy (TLI 11, krok 5): malý panel vždy navrchu s FE tejto
 /// mapy, časom a FE/h. Predvolene vypnutý, zapína sa v záložke Tracker.
 const MINI: &str = "mini";
+/// Toast pripomienky „Enable Log" (TLI 11d): malé priehľadné okno navrchu,
+/// ktoré sa ukáže len na pár sekúnd, keď appka zistí, že logovanie evidentne
+/// nebeží (alebo keď sa práve rozbehlo po predošlom upozornení).
+const PRIPOMIENKA: &str = "pripomienka";
+/// Ako dlho ostane toast upozornenia viditeľný, kým ho prípadný ďalší herný
+/// riadok nezhasne skôr (TLI 11d, bod 3: „upozornenie zmizne samo, keď začnú
+/// prichádzať riadky").
+const PRIPOMIENKA_UPOZORNENIE_S: u64 = 12;
+/// „Beží OK" je len krátke potvrdenie, nie treba ho držať tak dlho ako samotné
+/// upozornenie.
+const PRIPOMIENKA_OK_S: u64 = 4;
 
 /// Keď sa okno hry nenájde, chybová hláška sa aj tak musí mať kde zobraziť —
 /// overlay sa preto postaví na túto veľkosť do stredu hornej časti obrazovky.
@@ -608,6 +619,7 @@ fn uloz_prepinac(
             "mini_overlay" => n.mini_overlay = zapnuty,
             "tracker_zapnuty" => n.tracker_zapnuty = zapnuty,
             "tracker_dan" => n.tracker_dan = zapnuty,
+            "pripominat_enable_log" => n.pripominat_enable_log = zapnuty,
             ine => return Err(format!("Neznámy prepínač: {ine}")),
         }
         n.normalizuj();
@@ -632,6 +644,87 @@ fn nastav_mini(app: &AppHandle, zapnuty: bool) {
             let _ = okno.hide();
         }
     }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Pripomienka „Enable Log" (TLI 11d)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Postaví toast nad okno hry (keď sa dá nájsť) alebo hore na stred hlavného
+/// monitora (rovnaký fallback ako `ukaz_chybu`), ukáže ho s textom pripomienky
+/// a naplánuje jeho skrytie po `sekund` sekundách — pokiaľ dovtedy neprišiel
+/// NOVŠÍ toast (vtedy by starší časovač zhasol ten nový).
+fn ukaz_pripomienku_toast(app: &AppHandle, text: &str, trieda: &str, sekund: u64) {
+    let Some(okno) = app.get_webview_window(PRIPOMIENKA) else { return };
+
+    let _ = app.emit_to(
+        PRIPOMIENKA,
+        "pripomienka-obsah",
+        json!({ "text": text, "trieda": trieda }),
+    );
+
+    let sirka = 480u32;
+    let vyska = 110u32;
+    let poloha = najdi_okno_hry_pre_pripomienku(app);
+    let (x, y) = match poloha {
+        Some(obd) => (obd.x + (obd.sirka as i32 - sirka as i32) / 2, obd.y + 40),
+        None => okno
+            .primary_monitor()
+            .ok()
+            .flatten()
+            .map(|m| {
+                (
+                    m.position().x + (m.size().width as i32 - sirka as i32) / 2,
+                    m.position().y + 60,
+                )
+            })
+            .unwrap_or((80, 80)),
+    };
+
+    let _ = okno.set_position(PhysicalPosition::new(x, y));
+    let _ = okno.set_size(PhysicalSize::new(sirka, vyska));
+    let _ = okno.set_ignore_cursor_events(true);
+    let _ = okno.show();
+
+    let znacka = Instant::now();
+    *app.state::<Stav>().pripomienka_zobrazena_od.lock().unwrap() = Some(znacka);
+    naplanuj_skrytie_pripomienky(app.clone(), znacka, sekund);
+}
+
+#[cfg(windows)]
+fn najdi_okno_hry_pre_pripomienku(app: &AppHandle) -> Option<OknoFyz> {
+    let proces_hry = app.state::<Stav>().nastavenia.lock().unwrap().proces_hry.clone();
+    okno::najdi_hru(&proces_hry).map(|o| o.obdlznik)
+}
+
+#[cfg(not(windows))]
+fn najdi_okno_hry_pre_pripomienku(_app: &AppHandle) -> Option<OknoFyz> {
+    None
+}
+
+/// Rovnaký vzor ako `naplanuj_skrytie` pri hlavnom overlayi — porovnáva sa
+/// značka, kedy bol TENTO toast zobrazený.
+fn naplanuj_skrytie_pripomienky(app: AppHandle, znacka: Instant, sekundy: u64) {
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_secs(sekundy));
+        let drzi = *app.state::<Stav>().pripomienka_zobrazena_od.lock().unwrap();
+        if drzi == Some(znacka) {
+            if let Some(okno) = app.get_webview_window(PRIPOMIENKA) {
+                let _ = okno.hide();
+            }
+        }
+    });
+}
+
+/// Volá ho vlákno trackera na pozadí (`tracker::spusti_vlakno`) cez udalosť
+/// `tracker-pripomienka` — JS v okne `pripomienka` ju zachytí a hneď zavolá
+/// tento príkaz späť, nech sa umiestnenie a časovač riešia na jednom mieste
+/// (v Ruste), nie duplicitne aj v JS.
+#[tauri::command]
+fn ukaz_pripomienku(app: AppHandle, text: String, trieda: String) -> Result<(), String> {
+    let sekund = if trieda == "ok" { PRIPOMIENKA_OK_S } else { PRIPOMIENKA_UPOZORNENIE_S };
+    ukaz_pripomienku_toast(&app, &text, &trieda, sekund);
+    Ok(())
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -785,12 +878,14 @@ fn main() {
     tauri::Builder::default()
         .plugin(skratky)
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .manage(Stav {
             nastavenia: Mutex::new(nacitane),
             beh: Mutex::new(false),
             zobrazene_od: Mutex::new(None),
             pocitadlo_zber: Mutex::new(0),
             poslane_behy: Mutex::new(std::collections::BTreeSet::new()),
+            pripomienka_zobrazena_od: Mutex::new(None),
         })
         .manage(tracker::Tracker::default())
         // Sprievodca sa načíta z disku hneď pri štarte — záložka Guide
@@ -815,7 +910,8 @@ fn main() {
             guide_data,
             guide_sync,
             tracker_sync_teraz,
-            uloz_prepinac
+            uloz_prepinac,
+            ukaz_pripomienku
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -838,6 +934,10 @@ fn main() {
                 let _ = okno.hide();
             }
             if let Some(okno) = app.get_webview_window(HLAVNE) {
+                let _ = okno.hide();
+            }
+            if let Some(okno) = app.get_webview_window(PRIPOMIENKA) {
+                let _ = okno.set_ignore_cursor_events(true);
                 let _ = okno.hide();
             }
             // Mini-overlay sa pri štarte ukáže len vtedy, keď si ho hráč zapol.

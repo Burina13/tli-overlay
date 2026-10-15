@@ -1,0 +1,39 @@
+/* Priehľadné telo — rovnaký vzor ako mini.css, nech okno splynie s hrou tam,
+   kde nie je samotný toast. */
+body {
+    background: transparent;
+    margin: 0;
+    font-family: system-ui, sans-serif;
+    color: #ffffff;
+    user-select: none;
+    overflow: hidden;
+}
+
+.toast {
+    width: 480px;
+    height: 110px;
+    box-sizing: border-box;
+    padding: 16px 20px;
+    border-radius: 10px;
+    background: rgba(18, 16, 24, 0.92);
+    border: 2px solid rgba(255, 150, 44, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    font-size: 1.05rem;
+    font-weight: 600;
+    line-height: 1.4;
+    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+/* Upozornenie — vypnuté „Enable Log" (predvolená farba, zhoduje sa s
+   --farba-upozornenie v hlavne.css). */
+.toast.varovanie {
+    border-color: #f5a524;
+}
+
+/* Logovanie sa práve rozbehlo — krátke potvrdenie. */
+.toast.ok {
+    border-color: #4ade80;
+}

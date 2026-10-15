@@ -24,6 +24,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use tli_overlay_core::tracker::agregacie::{ocen_beh, prehlad, Prehlad, VysledokBehu};
 use tli_overlay_core::tracker::ceny::{vek_text, Cena, Cennik, Nastavenie, Zdroj};
 use tli_overlay_core::tracker::chvost::StavChvosta;
+use tli_overlay_core::tracker::pripomienka::{klasifikuj, SledovacPripomienky};
 use tli_overlay_core::tracker::stav::{Beh, Sledovac};
 use tli_overlay_core::tracker::steam;
 
@@ -64,6 +65,9 @@ pub struct StavTrackera {
     chvost: StavChvosta,
     cesta: Option<PathBuf>,
     pub chyba: Option<String>,
+    /// Pripomienka „Enable Log" (TLI 11d) — žije tu, nie vedľa, lebo rotáciu
+    /// aj riadky vidí práve táto funkcia (`precitaj`) ako prvá.
+    pub pripomienka: SledovacPripomienky,
 }
 
 impl Default for StavTrackera {
@@ -75,6 +79,7 @@ impl Default for StavTrackera {
             chvost: StavChvosta::novy(),
             cesta: None,
             chyba: None,
+            pripomienka: SledovacPripomienky::novy(false),
         }
     }
 }
@@ -155,10 +160,21 @@ pub fn precitaj(stav: &mut StavTrackera, cesta: &Path) -> Result<usize, String> 
     let velkost = meta.len();
 
     if stav.cesta.as_deref() != Some(cesta) {
+        // Cesta sa zmenila (alebo appka práve prvý raz číta) — `StavTrackera`
+        // sa stavia nanovo, ale nastavenie „Pripomínať Enable Log" (ktoré sem
+        // volajúci zapísal PRED týmto volaním, viď `spusti_vlakno`) sa pritom
+        // nesmie stratiť.
+        let pripominat = stav.pripomienka.zapnute();
         let chvost = crate::stav::nacitaj_chvost(cesta);
         *stav = StavTrackera { cesta: Some(cesta.to_path_buf()), chvost, ..Default::default() };
+        stav.pripomienka.nastav_zapnute(pripominat);
     }
-    stav.chvost.over_rotaciu(velkost);
+    let teraz = unixovy_cas();
+    if stav.chvost.over_rotaciu(velkost) {
+        // Hra pri reštarte premenovala/skrátila log — nová session, aj pre
+        // pripomienku „Enable Log" (TLI 11d).
+        stav.pripomienka.nova_session(teraz);
+    }
     if velkost == stav.chvost.pozicia {
         return Ok(0);
     }
@@ -180,13 +196,13 @@ pub fn precitaj(stav: &mut StavTrackera, cesta: &Path) -> Result<usize, String> 
 
     let mut novych = 0;
     for riadok in &riadky {
+        stav.pripomienka.spracuj_riadok(teraz, klasifikuj(riadok));
         if let Some(beh) = stav.sledovac.riadok(riadok) {
             stav.behy.push(beh);
             novych += 1;
         }
     }
 
-    let teraz = unixovy_cas();
     for (polozka, fe, _) in stav.sledovac.odober_ceny() {
         stav.cennik.vloz(Cena { polozka, fe, zdroj: Zdroj::VlastnyTrh, kedy: teraz });
     }
@@ -225,6 +241,9 @@ pub struct PrehladProUi {
     /// Vek každej known ceny v ľudskej podobe (`"400021" -> "pred 4 min"`).
     pub vek_cien: BTreeMap<String, String>,
     pub pocet_cien: usize,
+    /// Pripomienka „Enable Log" (TLI 11d): keď je `true`, záložka Tracker má
+    /// ukázať červený stav — logovanie v tejto session evidentne nebeží.
+    pub pripomienka_aktivna: bool,
 }
 
 /// Zostaví prehľad z aktuálneho stavu. Nič nečíta — to robí `precitaj`.
@@ -267,6 +286,7 @@ pub fn prehlad_pre_ui(stav: &StavTrackera, zapnuty: bool, dan: bool) -> PrehladP
         behy: vysledky,
         vek_cien,
         pocet_cien: stav.cennik.pocet(),
+        pripomienka_aktivna: stav.pripomienka.aktivne(),
     }
 }
 
@@ -382,6 +402,50 @@ fn obsahuje_ocakavane_znacky(cesta: &Path) -> bool {
 /// (ten ostáva ako záložka, keby appka udalosť prepočula).
 pub const UDALOST_ZMENA: &str = "tracker-zmena";
 
+/// Udalosť pripomienky „Enable Log" (TLI 11d) — počúva ju toast nad hrou aj
+/// hlavné okno (červený/zelený stav v záložke Tracker). Payload: `{ "typ":
+/// "upozornenie" | "ok", "text": "…" }`.
+pub const UDALOST_PRIPOMIENKA: &str = "tracker-pripomienka";
+
+/// Text toastu/notifikácie presne podľa zadania (TLI 11d, bod 3).
+const TEXT_UPOZORNENIA: &str =
+    "⚠️ Zapni v hre Settings → Other Settings → Enable Log — inak sa táto session netrackuje";
+const TEXT_OK: &str = "✅ Logovanie beží";
+
+#[derive(Clone, Serialize)]
+struct PripomienkaPayload {
+    typ: &'static str,
+    text: &'static str,
+}
+
+/// Pretlačí udalosti z `SledovacPripomienky` do appky: Tauri udalosť (ju
+/// počúva toast aj Tracker tab) a pri upozornení aj Windows notifikáciu.
+fn oznam_pripomienku(app: &AppHandle, udalost: tli_overlay_core::tracker::pripomienka::UdalostPripomienky) {
+    use tli_overlay_core::tracker::pripomienka::UdalostPripomienky as U;
+    let payload = match udalost {
+        U::ZobrazUpozornenie | U::ZopakujUpozornenie => {
+            posli_windows_notifikaciu(app);
+            PripomienkaPayload { typ: "upozornenie", text: TEXT_UPOZORNENIA }
+        }
+        U::LogovanieBeziOk => PripomienkaPayload { typ: "ok", text: TEXT_OK },
+    };
+    let _ = app.emit(UDALOST_PRIPOMIENKA, payload);
+}
+
+#[cfg(windows)]
+fn posli_windows_notifikaciu(app: &AppHandle) {
+    use tauri_plugin_notification::NotificationExt;
+    let _ = app
+        .notification()
+        .builder()
+        .title("Tvoj Tatko TLI Overlay")
+        .body(TEXT_UPOZORNENIA)
+        .show();
+}
+
+#[cfg(not(windows))]
+fn posli_windows_notifikaciu(_app: &AppHandle) {}
+
 /// Spustí vlákno na pozadí, ktoré sleduje log nezávisle od toho, či je
 /// niektoré okno otvorené — appka má fungovať aj schovaná v tray.
 ///
@@ -409,10 +473,10 @@ pub fn spusti_vlakno(app: AppHandle) {
         loop {
             // Daň (`tracker_dan`) sa uplatňuje až pri zostavovaní prehľadu pre
             // UI (`prehlad_pre_ui`), tu sa zámerne nepoužíva.
-            let (zapnuty, rucna) = {
+            let (zapnuty, rucna, pripominat) = {
                 let stav = app.state::<Stav>();
                 let n = stav.nastavenia.lock().unwrap();
-                (n.tracker_zapnuty, n.cesta_logu.clone())
+                (n.tracker_zapnuty, n.cesta_logu.clone(), n.pripominat_enable_log)
             };
 
             let cesta = if zapnuty { najdi_log(&rucna) } else { None };
@@ -451,8 +515,9 @@ pub fn spusti_vlakno(app: AppHandle) {
             let Some(cesta) = cesta else { continue };
 
             let tracker = app.state::<Tracker>();
-            let novych = {
+            let (novych, pripomienka_udalosti) = {
                 let mut t = tracker.0.lock().unwrap();
+                t.pripomienka.nastav_zapnute(pripominat);
                 let vysledok = precitaj(&mut t, &cesta);
                 let novych = match &vysledok {
                     Ok(n) => *n,
@@ -464,10 +529,17 @@ pub fn spusti_vlakno(app: AppHandle) {
                 if vysledok.is_ok() {
                     t.chyba = None;
                 }
-                novych
+                // Tik beží KAŽDÚ iteráciu (á najviac 1 s), nezávisle od toho,
+                // či `precitaj` našlo nové bajty — lehota sa počíta aj vtedy,
+                // keď sa v logu nedeje ÚPLNE NIČ.
+                t.pripomienka.tik(unixovy_cas());
+                (novych, t.pripomienka.odober_udalosti())
             };
             if novych > 0 {
                 let _ = app.emit(UDALOST_ZMENA, novych);
+            }
+            for udalost in pripomienka_udalosti {
+                oznam_pripomienku(&app, udalost);
             }
         }
     });
@@ -538,6 +610,88 @@ mod testy {
         let cesta = docasny_subor(); // nikdy sa nezapísal
         let mut stav = StavTrackera::default();
         assert!(precitaj(&mut stav, &cesta).is_err());
+    }
+
+    // ─── Pripomienka „Enable Log" (TLI 11d) — wiring cez precitaj ──────────
+
+    #[test]
+    fn precitaj_bez_hernych_riadkov_necha_pripomienku_cakat_na_tik() {
+        // Samotné `precitaj` nad logom bez enable-log značiek NIČ nespustí —
+        // lehota sa vyhodnocuje v `tik`, ktorý volá vlákno na pozadí, nie
+        // `precitaj`. Toto len overuje, že čítanie riadkov, ktoré appka
+        // nepozná, pripomienku neaktivuje predčasne.
+        let cesta = docasny_subor();
+        napis(&cesta, "nič užitočné tu nie je, len výplň.\n");
+
+        let mut stav = StavTrackera::default();
+        stav.pripomienka.nastav_zapnute(true);
+        precitaj(&mut stav, &cesta).unwrap();
+
+        assert!(!stav.pripomienka.aktivne());
+        assert!(stav.pripomienka.odober_udalosti().is_empty());
+        let _ = std::fs::remove_file(&cesta);
+    }
+
+    #[test]
+    fn nahly_prichod_bagmgr_riadku_po_upozorneni_vypne_cerveny_stav() {
+        // Simuluje presne to, čo zadanie žiada overiť: „nový log bez herných
+        // riadkov → upozornenie; po pridaní riadkov → upozornenie zmizne."
+        // Lehotu simuluje priamy `tik` s posunutým (nie reálne odčakaným) časom.
+        let cesta = docasny_subor();
+        napis(&cesta, "nič užitočné tu nie je, len výplň.\n");
+
+        let mut stav = StavTrackera::default();
+        stav.pripomienka.nastav_zapnute(true);
+        precitaj(&mut stav, &cesta).unwrap();
+
+        let teraz = unixovy_cas();
+        stav.pripomienka.tik(teraz + tli_overlay_core::tracker::pripomienka::LEHOTA_S);
+        assert!(stav.pripomienka.aktivne(), "po vypršaní lehoty má byť aktívne upozornenie");
+
+        pripis(&cesta, "BagMgr@:InitBagData PageId = 1 SlotId=1 ConfigBaseId=1 Num=1\n");
+        precitaj(&mut stav, &cesta).unwrap();
+
+        assert!(!stav.pripomienka.aktivne(), "enable-log značka má upozornenie zrušiť");
+        let _ = std::fs::remove_file(&cesta);
+    }
+
+    #[test]
+    fn rotacia_logu_spusti_pre_pripomienku_novu_session() {
+        use tli_overlay_core::tracker::pripomienka::LEHOTA_S;
+
+        let cesta = docasny_subor();
+        napis(&cesta, "BagMgr@:InitBagData PageId = 1 SlotId=1 ConfigBaseId=1 Num=1\n");
+
+        let mut stav = StavTrackera::default();
+        stav.pripomienka.nastav_zapnute(true);
+        precitaj(&mut stav, &cesta).unwrap();
+        assert!(!stav.pripomienka.aktivne(), "enable-log značka hneď na začiatku je v poriadku");
+
+        // Rotácia: hra log skráti/nahradí menším súborom bez enable-log značky.
+        napis(&cesta, "x\n");
+        precitaj(&mut stav, &cesta).unwrap();
+
+        let teraz = unixovy_cas();
+        stav.pripomienka.tik(teraz + LEHOTA_S);
+        assert!(
+            stav.pripomienka.aktivne(),
+            "nová session (po rotácii) má svoju vlastnú čerstvú lehotu, nemá si pamätať starú značku"
+        );
+        let _ = std::fs::remove_file(&cesta);
+    }
+
+    #[test]
+    fn vypnuta_pripomienka_cez_precitaj_nic_neprodukuje() {
+        let cesta = docasny_subor();
+        napis(&cesta, "nič užitočné tu nie je, len výplň.\n");
+
+        let mut stav = StavTrackera::default(); // pripomienka je predvolene vypnutá
+        precitaj(&mut stav, &cesta).unwrap();
+        stav.pripomienka.tik(unixovy_cas() + tli_overlay_core::tracker::pripomienka::LEHOTA_S);
+
+        assert!(!stav.pripomienka.aktivne());
+        assert!(stav.pripomienka.odober_udalosti().is_empty());
+        let _ = std::fs::remove_file(&cesta);
     }
 
     #[test]

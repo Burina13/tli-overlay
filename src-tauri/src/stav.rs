@@ -20,6 +20,11 @@ pub struct Stav {
     /// kľúča ticho zahodí (`INSERT OR IGNORE`) — druhý zoznam na disku by bol
     /// len ďalšie miesto, ktoré sa vie rozísť s pravdou na serveri.
     pub poslane_behy: Mutex<BTreeSet<String>>,
+    /// Značka času, odkedy je viditeľný toast pripomienky „Enable Log"
+    /// (TLI 11d) — rovnaký vzor ako `zobrazene_od` pri overlayi: časovač na
+    /// automatické skrytie porovná značky, aby novší toast nezhasol starší
+    /// časovač práve zobrazeného okna.
+    pub pripomienka_zobrazena_od: Mutex<Option<Instant>>,
 }
 
 /// Sluzi na bezpecne ziskanie zlozky na ulozenie konfiguracie pre hracie konto z operacneho systemu.

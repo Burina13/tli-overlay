@@ -255,6 +255,18 @@ code {
     animation: none;
 }
 
+/* Pripomienka „Enable Log" (TLI 11d) — červený stav má prednosť pred
+   bežným (zeleným) vzhľadom aj pred `.nekativny`. */
+.zivy-pas.varovanie {
+    border-color: var(--farba-upozornenie);
+    color: var(--farba-upozornenie);
+}
+
+.zivy-pas.varovanie .zivy-bod {
+    background-color: var(--farba-upozornenie);
+    animation: pulzovanie 1s infinite ease-in-out;
+}
+
 table.tabulka {
     width: 100%;
     border-collapse: collapse;

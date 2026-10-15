@@ -185,6 +185,16 @@ function vykresliBehy(p) {
 function vykresliZivo(p) {
     const pas = document.getElementById("zivy-pas");
     const text = document.getElementById("zivy-text");
+
+    // Pripomienka „Enable Log" (TLI 11d) — červený stav má prednosť pred
+    // bežným obsahom pásu, inak by si ho hráč pri bežiacej mape nevšimol.
+    pas.classList.toggle("varovanie", Boolean(p.pripomienka_aktivna));
+    if (p.pripomienka_aktivna) {
+        pas.classList.remove("nekativny");
+        text.textContent = "⚠️ Logovanie evidentne nebeží — zapni v hre Settings → Other Settings → „Enable Log“.";
+        return;
+    }
+
     if (p.zivo) {
         pas.classList.remove("nekativny");
         text.innerHTML = `<strong>${nazovMapy(p.zivo.zona)}</strong> · ${cas(p.zivo.trvanie_ms)}
@@ -535,6 +545,7 @@ if (btnGuideZavriOdkaz) {
 
 const chkMini = document.getElementById("chk-mini");
 const chkSync = document.getElementById("chk-sync");
+const chkPripomienka = document.getElementById("chk-pripomienka");
 const btnSyncTeraz = document.getElementById("btn-sync-teraz");
 const stavSync = document.getElementById("stav-sync");
 
@@ -559,6 +570,7 @@ async function prepni(meno, zapnuty) {
 }
 
 chkMini.addEventListener("change", () => prepni("mini_overlay", chkMini.checked));
+chkPripomienka.addEventListener("change", () => prepni("pripominat_enable_log", chkPripomienka.checked));
 
 chkSync.addEventListener("change", async () => {
     await prepni("tracker_sync", chkSync.checked);
@@ -616,6 +628,9 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
         chkMini.checked = Boolean(nastavenia.mini_overlay);
         chkSync.checked = Boolean(nastavenia.tracker_sync);
+        // Predvolené ZAPNUTÉ — staré uložené nastavenia toto pole nemajú vôbec,
+        // `!== false` preto drží checkbox zaškrtnutý, kým ho hráč výslovne nevypne.
+        chkPripomienka.checked = nastavenia.pripominat_enable_log !== false;
         ukazStavSyncu(chkSync.checked ? "Posiela sa automaticky každé tri minúty."
                                       : "Partii sa neposiela nič.", false);
         await pripravCestuLogu(nastavenia);

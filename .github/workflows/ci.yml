@@ -203,3 +203,26 @@ jobs:
           name: mini-nahlad
           path: mini-nahlad.png
           if-no-files-found: warn
+
+      - name: Náhľad pripomienky Enable Log (TLI 11d) — snímka
+        shell: pwsh
+        run: |
+          $edge = @(
+            "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+            "C:\Program Files\Microsoft\Edge\Application\msedge.exe"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $edge) { Write-Warning "Edge sa nenašiel, náhľad preskakujem."; exit 0 }
+          $cesta = (Resolve-Path "ui/nahlad-pripomienka.html").Path
+          $p = Start-Process -FilePath $edge -ArgumentList @(
+            "--headless", "--disable-gpu", "--screenshot=$PWD\pripomienka-nahlad.png",
+            "--window-size=520,150", "--virtual-time-budget=4000",
+            "file:///$($cesta -replace '\\','/')"
+          ) -NoNewWindow -Wait -PassThru
+          Write-Host "Edge exit code: $($p.ExitCode)"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pripomienka-nahlad
+          path: pripomienka-nahlad.png
+          if-no-files-found: warn

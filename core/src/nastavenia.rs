@@ -39,6 +39,11 @@ pub struct Nastavenia {
     /// Malý panel nad hrou s FE tejto mapy, časom a FE/h (TLI 11, krok 5).
     /// Predvolene vypnutý — overlay nad hrou je rušivý a nie každý ho chce.
     pub mini_overlay: bool,
+    /// Pripomienka „Enable Log" na začiatku každej session (TLI 11d). Hra si
+    /// toto nastavenie nepamätá medzi spusteniami — **predvolene ZAPNUTÉ**,
+    /// na rozdiel od `tracker_sync`/`mini_overlay`: bez pripomienky by sa
+    /// nevytrackovaná session zistila až spätne, keď je neskoro niečo robiť.
+    pub pripominat_enable_log: bool,
 }
 
 impl Default for Nastavenia {
@@ -58,6 +63,7 @@ impl Default for Nastavenia {
             tracker_dan: false,
             tracker_sync: false,
             mini_overlay: false,
+            pripominat_enable_log: true,
         }
     }
 }
@@ -227,6 +233,30 @@ mod testy {
     fn zber_dat_zapnute_je_predvolene_vypnute() {
         let n = Nastavenia::default();
         assert!(!n.zber_dat_zapnute);
+    }
+
+    #[test]
+    fn pripominat_enable_log_je_predvolene_zapnute() {
+        // Na rozdiel od tracker_sync/mini_overlay — bez pripomienky by sa
+        // vypnuté logovanie zistilo až spätne (TLI 11d).
+        let n = Nastavenia::default();
+        assert!(n.pripominat_enable_log);
+    }
+
+    #[test]
+    fn stary_json_bez_pripomienky_sa_nacita_so_zapnutym_predvolenim() {
+        let n = Nastavenia::z_jsonu(r#"{"kluc":"abc","hotkey":"F8"}"#);
+        assert!(n.pripominat_enable_log);
+        assert_eq!(n.kluc, "abc");
+    }
+
+    #[test]
+    fn pripominat_enable_log_sa_da_vypnut_a_prezije_round_trip() {
+        let mut n = Nastavenia::default();
+        n.pripominat_enable_log = false;
+        let json = n.do_jsonu();
+        let n2 = Nastavenia::z_jsonu(&json);
+        assert!(!n2.pripominat_enable_log);
     }
 
     #[test]
