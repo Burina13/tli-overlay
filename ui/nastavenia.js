@@ -27,6 +27,47 @@ const btnStiahnut = document.getElementById("btn-stiahnut");
 
 let urlAktualizacie = null;
 
+// --- TLI 21 — Rozloženie okien nad hrou ---
+const btnRezimUpravy = document.getElementById("btn-rezim-upravy");
+const btnObnovPredvolene = document.getElementById("btn-obnov-predvolene");
+const inpPriehladnost = document.getElementById("inp-priehladnost");
+
+function nastavTlacidloRezimu(aktivny) {
+    btnRezimUpravy.textContent = aktivny ? "Hotovo (uložiť rozloženie)" : "Upraviť rozloženie (Ctrl+F8)";
+    btnObnovPredvolene.classList.toggle("skryte", !aktivny);
+}
+
+btnRezimUpravy.addEventListener("click", async () => {
+    const aktivny = await invoke("rezim_upravy_je_aktivny");
+    try {
+        if (aktivny) {
+            await invoke("rezim_upravy_hotovo");
+            nastavTlacidloRezimu(false);
+        } else {
+            await invoke("rezim_upravy_zapni");
+            nastavTlacidloRezimu(true);
+        }
+    } catch (chyba) {
+        console.error("Prepnutie režimu úpravy rozloženia zlyhalo:", chyba);
+    }
+});
+
+btnObnovPredvolene.addEventListener("click", async () => {
+    try {
+        await invoke("rezim_upravy_obnov_predvolene");
+    } catch (chyba) {
+        console.error("Obnovenie predvoleného rozloženia zlyhalo:", chyba);
+    }
+});
+
+inpPriehladnost.addEventListener("input", async () => {
+    try {
+        await invoke("uloz_priehladnost", { hodnota: parseFloat(inpPriehladnost.value) });
+    } catch (chyba) {
+        console.error("Uloženie priehľadnosti zlyhalo:", chyba);
+    }
+});
+
 // --- Inicializácia ---
 document.addEventListener("DOMContentLoaded", async () => {
     try {
@@ -40,6 +81,12 @@ document.addEventListener("DOMContentLoaded", async () => {
         inpAutoskrytie.value = nastavenia.autoskrytie_s || 0;
         inpZvuk.checked = !!nastavenia.zvuk;
         inpZberDat.checked = !!nastavenia.zber_dat_zapnute;
+        const priehladnost = nastavenia.rozlozenie && nastavenia.rozlozenie.priehladnost;
+        inpPriehladnost.value = typeof priehladnost === "number" ? priehladnost : 1;
+
+        // Keď hráč zavrie Nastavenia uprostred úpravy rozloženia a znova ich
+        // otvorí, tlačidlo musí ukázať aktuálny stav, nie vždy „Upraviť".
+        nastavTlacidloRezimu(await invoke("rezim_upravy_je_aktivny"));
 
         // Načítanie verzie
         const verzia = await invoke("verzia");

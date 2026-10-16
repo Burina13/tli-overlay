@@ -21,8 +21,8 @@ html, body {
 /* --- Indikátor načítavania --- */
 #indikator {
     position: absolute;
-    top: 24px;
-    left: 24px;
+    top: var(--panel-top, 24px);
+    left: var(--panel-left, 24px);
     display: flex;
     align-items: center;
     gap: 12px;
@@ -50,8 +50,8 @@ html, body {
 /* --- Chybová hláška --- */
 #chyba {
     position: absolute;
-    top: 24px;
-    left: 24px;
+    top: var(--panel-top, 24px);
+    left: var(--panel-left, 24px);
     background: rgba(36, 12, 12, 0.95);
     color: #ff6b6b;
     padding: 16px 24px;
@@ -61,12 +61,19 @@ html, body {
     max-width: 460px;
 }
 
-/* --- Hlavný informačný panel --- */
+/* --- Hlavný informačný panel ---
+   Poloha/veľkosť/priehľadnosť idú cez CSS premenné (TLI 21, „Upraviť
+   rozloženie“) — bez uloženej hodnoty platia pôvodné pevné hodnoty (24px od
+   rohu, max-width 460px, auto výška) presne ako pred TLI 21. */
 #panel {
     position: absolute;
-    top: 24px;
-    left: 24px;
-    max-width: 460px;
+    top: var(--panel-top, 24px);
+    left: var(--panel-left, 24px);
+    width: var(--panel-width, auto);
+    max-width: var(--panel-maxwidth, 460px);
+    height: var(--panel-height, auto);
+    opacity: var(--panel-opacity, 1);
+    overflow-y: auto;
     background: rgba(18, 16, 24, 0.88);
     backdrop-filter: blur(2px);
     padding: 20px;
@@ -76,6 +83,52 @@ html, body {
     display: flex;
     flex-direction: column;
     gap: 12px;
+    box-sizing: border-box;
+}
+
+/* --- Režim „Upraviť rozloženie“ (TLI 21) ---
+   Mimo tohto režimu je celé okno priechodné pre myš na úrovni OS
+   (`set_ignore_cursor_events`) a `pointer-events: none` na <body> je len
+   druhá poistka. V režime úpravy appka priechodnosť vypne a tu treba myš
+   vrátiť panelu — inak by uchyty nikdy nedostali žiadnu udalosť. */
+body.rezim-upravy #panel,
+body.rezim-upravy #panel * {
+    pointer-events: auto;
+}
+
+#panel-uchyt-presun {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    margin: -20px -20px 4px -20px;
+    padding: 6px;
+    background: rgba(255, 150, 44, 0.25);
+    border-bottom: 1px solid rgba(255, 150, 44, 0.4);
+    border-radius: 12px 12px 0 0;
+    font-size: 12px;
+    color: #ffd9b3;
+    cursor: move;
+    user-select: none;
+}
+
+#panel-uchyt-velkost {
+    display: none;
+    position: absolute;
+    right: 2px;
+    bottom: 2px;
+    width: 16px;
+    height: 16px;
+    cursor: nwse-resize;
+    background: linear-gradient(135deg, transparent 50%, rgba(255, 150, 44, 0.7) 50%);
+    border-radius: 0 0 10px 0;
+}
+
+body.rezim-upravy #panel-uchyt-presun,
+body.rezim-upravy #panel-uchyt-velkost {
+    display: flex;
+}
+body.rezim-upravy #panel-uchyt-velkost {
+    display: block;
 }
 
 #panel-nadpis {

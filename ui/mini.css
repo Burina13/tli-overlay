@@ -1,4 +1,8 @@
 /* Zakladne nastavenie tela - priehladne, bez okrajov, aby okno splnulo s hrou */
+html, body {
+    width: 100%;
+    height: 100%;
+}
 body {
     background: transparent;
     margin: 0;
@@ -9,10 +13,12 @@ body {
     overflow: hidden;
 }
 
-/* Hlavny obal - presne pozadovane rozmery a vzhlad */
+/* Hlavny obal — od TLI 21 vypĺňa CELÉ natívne okno (predtým pevných
+   260×92 px), lebo okno sa teraz dá v režime úpravy zväčšiť/zmenšiť. */
 .mini {
-    width: 260px;
-    height: 92px;
+    position: relative;
+    width: 100%;
+    height: 100%;
     background: rgba(18, 16, 24, 0.82);
     border: 1px solid rgba(255, 150, 44, 0.45);
     border-radius: 8px;
@@ -24,6 +30,44 @@ body {
     /* Jemny tien pre vyssiu citatelnost nad jasnymi prvkami v hre */
     text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
     transition: opacity 0.3s ease;
+    opacity: var(--panel-opacity, 1);
+}
+
+/* --- TLI 21: úchyty viditeľné len v režime „Upraviť rozloženie" --- */
+.rozlozenie-uchyt {
+    display: none;
+    position: absolute;
+    pointer-events: none;
+}
+body.rezim-upravy .rozlozenie-uchyt {
+    display: flex;
+    pointer-events: auto;
+}
+#mini-uchyt-presun {
+    top: 0;
+    left: 0;
+    right: 0;
+    align-items: center;
+    justify-content: center;
+    height: 18px;
+    font-size: 10px;
+    background: rgba(255, 150, 44, 0.35);
+    border-radius: 8px 8px 0 0;
+    cursor: move;
+}
+#mini-uchyt-velkost {
+    right: 1px;
+    bottom: 1px;
+    width: 14px;
+    height: 14px;
+    cursor: nwse-resize;
+    background: linear-gradient(135deg, transparent 50%, rgba(255, 150, 44, 0.8) 50%);
+    border-radius: 0 0 7px 0;
+}
+body.rezim-upravy .mini {
+    opacity: 1 !important;
+    outline: 2px dashed rgba(255, 150, 44, 0.8);
+    outline-offset: 2px;
 }
 
 /* Znizenie vyraznosti, ked ziadna mapa nebezi */

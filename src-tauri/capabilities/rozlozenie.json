@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "rozlozenie",
+  "description": "Mini-panel a toast pripomienky potrebujú v režime „Upraviť rozloženie“ (TLI 21) natívne presúvanie a zmenu veľkosti myšou — `startDragging`/`startResizeDragging` z JavaScriptu, volané len keď hráč ťahá za uchyt v tele okna (žiadny titulok, žiadne dekorácie).",
+  "windows": ["mini", "pripomienka"],
+  "permissions": ["core:window:allow-start-dragging", "core:window:allow-start-resize-dragging"]
+}

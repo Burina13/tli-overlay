@@ -1,5 +1,6 @@
 // Získame nástroje Tauri (musí byť withGlobalTauri: true)
 const { listen } = window.__TAURI__.event;
+const { invoke } = window.__TAURI__.core;
 
 // Referencie na DOM prvky
 const elIndikator = document.getElementById("indikator");
@@ -8,6 +9,8 @@ const elVrstva = document.getElementById("vrstva");
 const elPanel = document.getElementById("panel");
 const elSipka = document.getElementById("sipka");
 const elSipkaCiara = document.getElementById("sipka-ciara");
+const elUchytPresun = document.getElementById("panel-uchyt-presun");
+const elUchytVelkost = document.getElementById("panel-uchyt-velkost");
 
 const pNadpis = document.getElementById("panel-nadpis");
 const pIstota = document.getElementById("panel-istota");
@@ -48,6 +51,135 @@ listen("stav", (event) => {
     else if (payload.faza === "zber_ulozene") {
         vykresliZberUlozene(payload);
     }
+});
+
+// ── TLI 21 — uložená poloha/veľkosť/priehľadnosť panela (mimo režimu úpravy).
+// `poloha` je `null`, keď preň nie je nič uložené — vtedy sa vráti na pôvodné
+// CSS hodnoty (24px od rohu, auto výška) odstránením inline štýlu.
+listen("panel-poloha", (event) => {
+    const p = event.payload || {};
+    nastavPriehladnost(p.priehladnost);
+    if (p.poloha) {
+        aplikujPolohuPanela(p.poloha);
+    } else {
+        vymazPolohuPanela();
+    }
+});
+
+listen("priehladnost", (event) => {
+    nastavPriehladnost((event.payload || {}).priehladnost);
+});
+
+function nastavPriehladnost(hodnota) {
+    if (typeof hodnota === "number" && isFinite(hodnota)) {
+        document.documentElement.style.setProperty("--panel-opacity", String(hodnota));
+    }
+}
+
+function aplikujPolohuPanela(r) {
+    elPanel.style.left = r.x + "px";
+    elPanel.style.top = r.y + "px";
+    elPanel.style.width = r.w + "px";
+    elPanel.style.height = r.h + "px";
+    document.documentElement.style.setProperty("--panel-maxwidth", "none");
+}
+
+function vymazPolohuPanela() {
+    elPanel.style.removeProperty("left");
+    elPanel.style.removeProperty("top");
+    elPanel.style.removeProperty("width");
+    elPanel.style.removeProperty("height");
+    document.documentElement.style.removeProperty("--panel-maxwidth");
+}
+
+// ── TLI 21 — režim „Upraviť rozloženie“ ─────────────────────────────────────
+// Kým je zapnutý, overlay prestane byť priechodný pre myš (rieši appka na
+// úrovni OS) a panel sa dá ťahať/zväčšovať priamo tu v DOM-e — Rust pozná len
+// okno hry a monitor, živú polohu panela počas úpravy drží výhradne JS.
+let rezimUpravy = false;
+let rezimOkno = { sirka: 1920, vyska: 1080 };
+
+listen("rezim-upravy", (event) => {
+    const p = event.payload || {};
+    rezimUpravy = !!p.zapnute;
+    document.body.classList.toggle("rezim-upravy", rezimUpravy);
+
+    if (!rezimUpravy) {
+        return;
+    }
+
+    skryVsetko();
+    if (p.okno) {
+        rezimOkno = p.okno;
+    }
+    nastavPriehladnost(p.priehladnost);
+    if (p.panel) {
+        aplikujPolohuPanela(p.panel);
+    }
+
+    pNadpis.textContent = "Upraviť rozloženie";
+    pIstota.textContent = "";
+    pDovod.textContent = "Ťahaj za pásik hore — presunieš panel. Ťahaj za pravý dolný roh — " +
+        "zmeníš veľkosť. Enter alebo Esc uloží a vráti hru.";
+    if (pIkony) pIkony.classList.add("skryte");
+    pSkontroluj.classList.add("skryte");
+    pAlternativy.classList.add("skryte");
+    elPanel.classList.remove("skryte");
+});
+
+// Rust požiada o nahlásenie živej polohy tesne pred uložením (Esc/Enter alebo
+// tlačidlo „Hotovo“ v Nastaveniach) — JS je jediné miesto, ktoré ju pozná.
+listen("rezim-upravy-nahlas", () => {
+    const r = elPanel.getBoundingClientRect();
+    invoke("rezim_upravy_ulozit_panel", { x: r.left, y: r.top, w: r.width, h: r.height })
+        .catch((e) => console.error("Uloženie rozloženia zlyhalo:", e));
+});
+
+let tahaniePresunu = null;
+let tahanieVelkosti = null;
+
+elUchytPresun.addEventListener("mousedown", (e) => {
+    if (!rezimUpravy) return;
+    const r = elPanel.getBoundingClientRect();
+    tahaniePresunu = { dx: e.clientX - r.left, dy: e.clientY - r.top };
+    e.preventDefault();
+});
+
+elUchytVelkost.addEventListener("mousedown", (e) => {
+    if (!rezimUpravy) return;
+    const r = elPanel.getBoundingClientRect();
+    tahanieVelkosti = { sirka: r.width, vyska: r.height, px: e.clientX, py: e.clientY };
+    e.preventDefault();
+});
+
+window.addEventListener("mousemove", (e) => {
+    if (tahaniePresunu) {
+        const sirkaOkna = rezimOkno.sirka || window.innerWidth;
+        const vyskaOkna = rezimOkno.vyska || window.innerHeight;
+        let x = e.clientX - tahaniePresunu.dx;
+        let y = e.clientY - tahaniePresunu.dy;
+        x = Math.max(0, Math.min(x, sirkaOkna - elPanel.offsetWidth));
+        y = Math.max(0, Math.min(y, vyskaOkna - elPanel.offsetHeight));
+        elPanel.style.left = x + "px";
+        elPanel.style.top = y + "px";
+    } else if (tahanieVelkosti) {
+        const MIN_SIRKA = 220;
+        const MIN_VYSKA = 90;
+        const sirkaOkna = rezimOkno.sirka || window.innerWidth;
+        const vyskaOkna = rezimOkno.vyska || window.innerHeight;
+        const r = elPanel.getBoundingClientRect();
+        let w = tahanieVelkosti.sirka + (e.clientX - tahanieVelkosti.px);
+        let h = tahanieVelkosti.vyska + (e.clientY - tahanieVelkosti.py);
+        w = Math.max(MIN_SIRKA, Math.min(w, sirkaOkna - r.left));
+        h = Math.max(MIN_VYSKA, Math.min(h, vyskaOkna - r.top));
+        elPanel.style.width = w + "px";
+        elPanel.style.height = h + "px";
+    }
+});
+
+window.addEventListener("mouseup", () => {
+    tahaniePresunu = null;
+    tahanieVelkosti = null;
 });
 
 // ── Zber dát (TLI 4c) — žiadna rada, len potvrdenie že sa snímka odoslala

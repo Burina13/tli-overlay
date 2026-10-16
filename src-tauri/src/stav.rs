@@ -25,6 +25,23 @@ pub struct Stav {
     /// automatické skrytie porovná značky, aby novší toast nezhasol starší
     /// časovač práve zobrazeného okna.
     pub pripomienka_zobrazena_od: Mutex<Option<Instant>>,
+    /// Režim „Upraviť rozloženie" (TLI 21) — kým je zapnutý, F8/F9 analýzu
+    /// nespúšťajú a Esc/Enter namiesto skrytia overlayu uloží polohu panelov.
+    pub rezim_upravy: Mutex<bool>,
+    /// Okno hry a monitor, nad ktorými sa režim úpravy rozloženia spustil —
+    /// uloženie na konci (`rezim_upravy_ulozit_panel`) musí počítať s PRESNE
+    /// tým istým oknom/monitorom, nie ho zisťovať znova (hráč mohol medzitým
+    /// prepnúť okno alebo presunúť myš na iný monitor).
+    pub rezim_upravy_kontext: Mutex<Option<RezimUpravyKontext>>,
+}
+
+/// Kontext jedného behu režimu úpravy rozloženia (TLI 21) — pozri
+/// `Stav::rezim_upravy_kontext`.
+#[derive(Debug, Clone)]
+pub struct RezimUpravyKontext {
+    pub okno_hry: tli_overlay_core::suradnice::OknoFyz,
+    pub mierka: f64,
+    pub monitor_sig: String,
 }
 
 /// Sluzi na bezpecne ziskanie zlozky na ulozenie konfiguracie pre hracie konto z operacneho systemu.

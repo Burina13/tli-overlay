@@ -85,6 +85,24 @@
 
         <hr>
 
+        <div class="skupina">
+            <label>Rozloženie okien nad hrou</label>
+            <p class="vysvetlivka">
+                Panel s radou (F8/F9), mini-panel trackera a toast pripomienky sa dajú
+                posunúť a zmeniť im veľkosť — stlač <code>Ctrl+F8</code> (alebo tlačidlo
+                nižšie), ťahaj za pásik hore (presun) alebo za pravý dolný roh (veľkosť),
+                a ulož Enterom alebo Esc.
+            </p>
+            <div class="akcia-riadok">
+                <button type="button" id="btn-rezim-upravy" class="btn-sekundarny">Upraviť rozloženie (Ctrl+F8)</button>
+                <button type="button" id="btn-obnov-predvolene" class="btn-sekundarny skryte">Obnoviť predvolené</button>
+            </div>
+            <label for="inp-priehladnost" class="mt-8">Priehľadnosť panelov</label>
+            <input type="range" id="inp-priehladnost" min="0.3" max="1" step="0.05" value="1">
+        </div>
+
+        <hr>
+
         <div class="odkazy">
             <button type="button" id="odkaz-kluc" class="btn-sekundarny">Vydať si kľúč</button>
             <button type="button" id="odkaz-sprievodca" class="btn-sekundarny">Sprievodca Tartarus</button>

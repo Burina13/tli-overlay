@@ -117,4 +117,43 @@ document.addEventListener("DOMContentLoaded", () => {
     if (window.__TAURI__.event) {
         window.__TAURI__.event.listen("tracker-zmena", () => obnov());
     }
+
+    // TLI 21 — posúvanie/zmena veľkosti tohto okna v režime „Upraviť rozloženie".
+    invoke("nacitaj_nastavenia")
+        .then((n) => nastavPriehladnost(n && n.rozlozenie && n.rozlozenie.priehladnost))
+        .catch(() => {});
+
+    if (window.__TAURI__.event) {
+        window.__TAURI__.event.listen("rezim-upravy", (udalost) => {
+            const p = udalost.payload || {};
+            document.body.classList.toggle("rezim-upravy", !!p.zapnute);
+            nastavPriehladnost(p.priehladnost);
+        });
+        window.__TAURI__.event.listen("priehladnost", (udalost) => {
+            nastavPriehladnost((udalost.payload || {}).priehladnost);
+        });
+    }
+
+    if (window.__TAURI__.window) {
+        const okno = window.__TAURI__.window.getCurrentWindow();
+        const uchytPresun = document.getElementById("mini-uchyt-presun");
+        const uchytVelkost = document.getElementById("mini-uchyt-velkost");
+        if (uchytPresun) {
+            uchytPresun.addEventListener("mousedown", () => {
+                okno.startDragging().catch((e) => console.error("Presun mini-panela zlyhal:", e));
+            });
+        }
+        if (uchytVelkost) {
+            uchytVelkost.addEventListener("mousedown", () => {
+                okno.startResizeDragging("SouthEast")
+                    .catch((e) => console.error("Zmena veľkosti mini-panela zlyhala:", e));
+            });
+        }
+    }
 });
+
+function nastavPriehladnost(hodnota) {
+    if (typeof hodnota === "number" && isFinite(hodnota)) {
+        document.documentElement.style.setProperty("--panel-opacity", String(hodnota));
+    }
+}

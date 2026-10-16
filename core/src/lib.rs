@@ -9,6 +9,7 @@ pub mod api;
 pub mod aktualizacia;
 pub mod nastavenia;
 pub mod obraz;
+pub mod rozlozenie;
 pub mod suradnice;
 pub mod zmensenie;
 

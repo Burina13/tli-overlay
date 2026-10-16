@@ -155,6 +155,31 @@ jobs:
           name: overlay-nahlad-canvas
           path: overlay-nahlad-canvas.png
           if-no-files-found: warn
+      - name: Náhľad režimu „Upraviť rozloženie“ (TLI 21) ako obrázok (artefakt behu)
+        shell: pwsh
+        run: |
+          # Rovnaký mechanizmus ako vyššie, len `nahlad-rezim-upravy.html`/.js
+          # podsunie udalosť `rezim-upravy` — panel s úchytmi na presun/zmenu
+          # veľkosti presne tak, ako appka vyzerá po Ctrl+F8.
+          $edge = @(
+            "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+            "C:\Program Files\Microsoft\Edge\Application\msedge.exe"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $edge) { Write-Warning "Edge sa nenašiel, náhľad preskakujem."; exit 0 }
+          $cesta = (Resolve-Path "ui/nahlad-rezim-upravy.html").Path
+          $p = Start-Process -FilePath $edge -ArgumentList @(
+            "--headless", "--disable-gpu", "--screenshot=$PWD\overlay-nahlad-rezim-upravy.png",
+            "--window-size=1600,900", "--virtual-time-budget=4000",
+            "file:///$($cesta -replace '\\','/')"
+          ) -NoNewWindow -Wait -PassThru
+          Write-Host "Edge exit code: $($p.ExitCode)"
+          if (-not (Test-Path "overlay-nahlad-rezim-upravy.png")) { Write-Warning "Edge obrázok nevytvoril." }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: overlay-nahlad-rezim-upravy
+          path: overlay-nahlad-rezim-upravy.png
+          if-no-files-found: warn
       - name: Náhľady — vygenerovať z ostrých súborov UI
         shell: bash
         run: python3 ui/nahlad-generuj.py

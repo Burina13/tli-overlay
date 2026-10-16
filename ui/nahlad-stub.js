@@ -55,6 +55,11 @@ const UKAZKA_TRACKER = {
   // TLI 20 — výzva „vyhľadaj na Exchange". V náhľade je zámerne vyplnená,
   // nech je na screenshote z CI vidieť, ako vyzerá, keď sa zobrazí.
   vyzva_ceny: { pocet: 4, polozky: [999999, 140005, 5080] },
+  // TLI 21 bod 4 — appka naposledy skúsila kolo uploadu pred chvíľou a prešlo
+  // bez chyby; náhľad tak ukazuje, ako appka vyzerá v BEŽNOM (fungujúcom)
+  // stave, nielen po chybe.
+  posledna_kontrola_uploadu_pred: "pred 2 min",
+  posledna_chyba_uploadu: null,
 };
 
 // Mená položiek pre náhľad (TLI 20 bod 7). Náhľad beží z `file://`, kde

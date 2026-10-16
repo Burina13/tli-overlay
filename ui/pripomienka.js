@@ -16,7 +16,17 @@ function vykresli(text, trieda) {
     toast.classList.add(trieda === "ok" ? "ok" : "varovanie");
 }
 
+function nastavPriehladnost(hodnota) {
+    if (typeof hodnota === "number" && isFinite(hodnota)) {
+        document.documentElement.style.setProperty("--panel-opacity", String(hodnota));
+    }
+}
+
 document.addEventListener("DOMContentLoaded", () => {
+    invoke("nacitaj_nastavenia")
+        .then((n) => nastavPriehladnost(n && n.rozlozenie && n.rozlozenie.priehladnost))
+        .catch(() => {});
+
     if (!window.__TAURI__ || !window.__TAURI__.event) {
         return;
     }
@@ -33,4 +43,36 @@ document.addEventListener("DOMContentLoaded", () => {
             console.error("Pripomienka Enable Log sa nedala zobraziť:", e);
         });
     });
+
+    // TLI 21 — posúvanie/zmena veľkosti tohto okna v režime „Upraviť rozloženie".
+    // V edit móde ukazuje appka NÁHĽAD (nie skutočný toast, ten zmizne sám).
+    window.__TAURI__.event.listen("rezim-upravy", (udalost) => {
+        const p = udalost.payload || {};
+        const zapnute = !!p.zapnute;
+        document.body.classList.toggle("rezim-upravy", zapnute);
+        nastavPriehladnost(p.priehladnost);
+        if (zapnute) {
+            vykresli("Náhľad pripomienky „Enable Log" — presuň ma a stlač Enter alebo Esc.", "varovanie");
+        }
+    });
+    window.__TAURI__.event.listen("priehladnost", (udalost) => {
+        nastavPriehladnost((udalost.payload || {}).priehladnost);
+    });
+
+    if (window.__TAURI__.window) {
+        const okno = window.__TAURI__.window.getCurrentWindow();
+        const uchytPresun = document.getElementById("toast-uchyt-presun");
+        const uchytVelkost = document.getElementById("toast-uchyt-velkost");
+        if (uchytPresun) {
+            uchytPresun.addEventListener("mousedown", () => {
+                okno.startDragging().catch((e) => console.error("Presun pripomienky zlyhal:", e));
+            });
+        }
+        if (uchytVelkost) {
+            uchytVelkost.addEventListener("mousedown", () => {
+                okno.startResizeDragging("SouthEast")
+                    .catch((e) => console.error("Zmena veľkosti pripomienky zlyhala:", e));
+            });
+        }
+    }
 });

@@ -103,6 +103,40 @@ pub fn pole_na_css(pole: &Pole, okno: &OknoFyz, mierka: f64) -> ObdlznikCss {
     box01_na_css(pole.x, pole.y, pole.w, pole.h, okno, mierka)
 }
 
+/// Inverzná funkcia k `box01_na_css` — TLI 21 (posúvanie okien nad hrou): JS
+/// v okne `overlay` pozná len CSS pixely, kde hráč panel pretiahol/zväčšil,
+/// ale ukladať sa musí zlomok okna hry (nech to sedí aj po zmene rozlíšenia
+/// či DPI). Prepočet robí JEDNO miesto v jadre, nie druhá kópia matematiky
+/// v JavaScripte, ktorá by sa s touto časom rozišla.
+pub fn css_na_box01(css: &ObdlznikCss, okno: &OknoFyz, mierka: f64) -> Pole {
+    let m = if mierka <= 0.0 { 1.0 } else { mierka };
+    let w_log = okno.sirka as f64 / m;
+    let h_log = okno.vyska as f64 / m;
+
+    let x = if w_log > 0.0 { css.x / w_log } else { 0.0 };
+    let y = if h_log > 0.0 { css.y / h_log } else { 0.0 };
+    let w = if w_log > 0.0 { css.w / w_log } else { 0.0 };
+    let h = if h_log > 0.0 { css.h / h_log } else { 0.0 };
+
+    Pole {
+        index: 0,
+        x: x.clamp(0.0, 1.0),
+        y: y.clamp(0.0, 1.0),
+        w: w.max(0.0),
+        h: h.max(0.0),
+    }
+}
+
+/// Stabilný textový kľúč monitora (rozlíšenie + mierka) — TLI 21 (posúvanie
+/// overlay okien) ním rozlišuje uložené rozloženia medzi monitormi. Fyzické
+/// rozmery (nie logické) sú súčasťou kľúča zámerne: dva monitory s rovnakým
+/// rozlíšením, ale rôznou mierkou (zriedkavé, ale možné pri ručnom nastavení
+/// Windows), by inak zdieľali jedno uložené rozloženie, hoci CSS pixely na
+/// nich vychádzajú inak.
+pub fn monitor_signatura(m: &Monitor) -> String {
+    format!("{}x{}@{}", m.sirka, m.vyska, (m.mierka * 100.0).round() as i64)
+}
+
 /// Nájdenie stredu potrebujeme pre presné smerovanie navigačných vizualizácií (šípky),
 /// ktoré ukazujú hráčovi, kam má presunúť myš.
 pub fn stred_css(r: &ObdlznikCss) -> (f64, f64) {
@@ -224,5 +258,61 @@ mod testy {
         let (w, h) = logicka_velkost(&o, 1.5);
         assert!(takmer(w, 1280.0));
         assert!(takmer(h, 720.0));
+    }
+
+    #[test]
+    fn monitor_signatura_rozlisuje_rozlisenie_aj_mierku() {
+        let a = Monitor { x: 0, y: 0, sirka: 1920, vyska: 1080, mierka: 1.0 };
+        let b = Monitor { x: 0, y: 0, sirka: 1920, vyska: 1080, mierka: 1.25 };
+        let c = Monitor { x: 0, y: 0, sirka: 2560, vyska: 1440, mierka: 1.0 };
+        assert_eq!(monitor_signatura(&a), "1920x1080@100");
+        assert_eq!(monitor_signatura(&b), "1920x1080@125");
+        assert_eq!(monitor_signatura(&c), "2560x1440@100");
+        assert_ne!(monitor_signatura(&a), monitor_signatura(&b));
+        assert_ne!(monitor_signatura(&a), monitor_signatura(&c));
+    }
+
+    #[test]
+    fn css_na_box01_je_inverzna_k_box01_na_css_pri_100_125_150() {
+        let okno = OknoFyz { x: 0, y: 0, sirka: 1920, vyska: 1080 };
+        let povodne = Pole { index: 0, x: 0.3, y: 0.4, w: 0.2, h: 0.15 };
+        for mierka in [1.0, 1.25, 1.5] {
+            let css = pole_na_css(&povodne, &okno, mierka);
+            let spat = css_na_box01(&css, &okno, mierka);
+            assert!(takmer(spat.x, povodne.x), "mierka {mierka}: x {} != {}", spat.x, povodne.x);
+            assert!(takmer(spat.y, povodne.y), "mierka {mierka}: y");
+            assert!(takmer(spat.w, povodne.w), "mierka {mierka}: w");
+            assert!(takmer(spat.h, povodne.h), "mierka {mierka}: h");
+        }
+    }
+
+    #[test]
+    fn css_na_box01_oreze_zaporne_aj_nadrozmerne_hodnoty() {
+        let okno = OknoFyz { x: 0, y: 0, sirka: 1000, vyska: 1000 };
+        let css = ObdlznikCss { x: -50.0, y: 1500.0, w: 300.0, h: 300.0 };
+        let p = css_na_box01(&css, &okno, 1.0);
+        assert_eq!(p.x, 0.0);
+        assert_eq!(p.y, 1.0);
+        assert!(takmer(p.w, 0.3));
+        assert!(takmer(p.h, 0.3));
+    }
+
+    #[test]
+    fn css_na_box01_nulova_mierka_nepadne() {
+        let okno = OknoFyz { x: 0, y: 0, sirka: 1000, vyska: 1000 };
+        let css = ObdlznikCss { x: 500.0, y: 500.0, w: 100.0, h: 100.0 };
+        let p = css_na_box01(&css, &okno, 0.0);
+        assert!(takmer(p.x, 0.5));
+        assert!(takmer(p.w, 0.1));
+    }
+
+    #[test]
+    fn monitor_signatura_rovnaky_monitor_da_rovnaky_kluc() {
+        // Pozícia monitora (x/y) nie je súčasťou kľúča zámerne — rovnaký fyzický
+        // monitor môže mať iné súradnice po prepnutí primárneho displeja vo
+        // Windows, no rozloženie panelov na ňom má zostať to isté.
+        let a = Monitor { x: 0, y: 0, sirka: 1920, vyska: 1080, mierka: 1.5 };
+        let b = Monitor { x: -1920, y: 200, sirka: 1920, vyska: 1080, mierka: 1.5 };
+        assert_eq!(monitor_signatura(&a), monitor_signatura(&b));
     }
 }

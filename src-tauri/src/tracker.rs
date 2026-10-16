@@ -140,6 +140,16 @@ pub struct StavTrackera {
     /// Serverový čas poslednej úspešne stiahnutej dávky cien partie
     /// (`?od=` pri ďalšom sťahovaní).
     pub ceny_stiahnute_do: i64,
+    /// Denný upload logov (TLI 14, dotiahnuté úlohou `2026-10-16-1528-mcp.md`
+    /// bod 4): kedy appka naposledy SKÚSILA kolo uploadu (úspešne aj
+    /// neúspešne) — predtým sa chyba siete/servera v tomto vlákne vždy ticho
+    /// zahodila (`let _ = upload_kolo(&app);`) a `tracker_upload_stav` v DB
+    /// ostávala navždy prázdna bez AKEJKOĽVEK stopy, že sa o niečo pokúsila.
+    pub posledna_kontrola_uploadu: Option<u64>,
+    /// Text poslednej chyby uploadu, `None` keď posledný pokus prešiel (alebo
+    /// sa ešte nestal) — zobrazuje sa v záložke Tracker vedľa „Nahrať log
+    /// teraz", nielen po ručnom kliku na to tlačidlo.
+    pub posledna_chyba_uploadu: Option<String>,
 }
 
 impl Default for StavTrackera {
@@ -169,6 +179,8 @@ impl Default for StavTrackera {
             chyba_db,
             ceny_poslane_do: 0,
             ceny_stiahnute_do: 0,
+            posledna_kontrola_uploadu: None,
+            posledna_chyba_uploadu: None,
         }
     }
 }
@@ -458,6 +470,13 @@ pub struct PrehladProUi {
     pub pripomienka_aktivna: bool,
     /// Výzva na vyhľadanie cien na Exchange (TLI 20) — `None`, keď netreba nič.
     pub vyzva_ceny: Option<VyzvaCeny>,
+    /// Vek poslednej kontroly denného uploadu logov v ľudskej podobe
+    /// (TLI 14/21), `None` kým appka ešte ani raz neskúsila. Na rozdiel od
+    /// `stav-upload` po ručnom kliku „Nahrať log teraz" toto ukazuje stav AJ
+    /// z tichého behu na pozadí (`2026-10-16-1528-mcp.md` bod 4).
+    pub posledna_kontrola_uploadu_pred: Option<String>,
+    /// Text poslednej chyby uploadu, `None` keď posledný pokus prešiel.
+    pub posledna_chyba_uploadu: Option<String>,
 }
 
 /// Koľko položiek najviac vypíše výzva „vyhľadaj na Exchange". Viac než tri
@@ -555,6 +574,10 @@ pub fn prehlad_pre_ui(stav: &StavTrackera, zapnuty: bool, dan: bool) -> PrehladP
         pocet_cien: stav.cennik.pocet(),
         pripomienka_aktivna: stav.pripomienka.aktivne(),
         vyzva_ceny,
+        posledna_kontrola_uploadu_pred: stav
+            .posledna_kontrola_uploadu
+            .map(|kedy| vek_text(teraz.saturating_sub(kedy))),
+        posledna_chyba_uploadu: stav.posledna_chyba_uploadu.clone(),
     }
 }
 
@@ -924,6 +947,24 @@ fn upload_kolo_pre_subor(
 /// zámku nad trackerom, chyba siete sa nehlási ako chyba appky (hráč môže
 /// hrať offline), len sa ticho skúsi nabudúce.
 pub fn upload_kolo(app: &AppHandle) -> Result<String, String> {
+    let vysledok = upload_kolo_vnutorne(app);
+
+    // TLI 21 (`2026-10-16-1528-mcp.md` bod 4): predtým sa chyba tu zahodila
+    // (`let _ = upload_kolo(&app);` vo `spusti_vlakno`) a appka nikde
+    // nenechala stopu, ŽE sa o upload vôbec pokúsila — `tracker_upload_stav`
+    // v DB ostávala prázdna, akoby sa trigger nikdy nespustil, hoci reálne
+    // bežal a len padal na chybe HTTP/servera. Teraz sa VŽDY zapíše aspoň
+    // čas posledného pokusu a prípadná chyba, nech záložka Tracker vie
+    // ukázať stav, aj keď je upload ticho (na pozadí, bez vyvolania UI).
+    let tracker = app.state::<Tracker>();
+    let mut t = tracker.0.lock().unwrap();
+    t.posledna_kontrola_uploadu = Some(unixovy_cas());
+    t.posledna_chyba_uploadu = vysledok.as_ref().err().cloned();
+
+    vysledok
+}
+
+fn upload_kolo_vnutorne(app: &AppHandle) -> Result<String, String> {
     let n = {
         let stav = app.state::<Stav>();
         let n = stav.nastavenia.lock().unwrap().clone();
@@ -1364,5 +1405,63 @@ mod testy {
             .query_row("SELECT player_id FROM behy WHERE zona = 'Mapa2'", [], |r| r.get(0))
             .unwrap();
         assert_eq!(player_id, "NOVA");
+    }
+
+    // TLI 21 (`2026-10-16-1528-mcp.md` bod 4) — predtým sa chyba uploadu
+    // vždy ticho zahodila (`let _ = upload_kolo(&app);`) a appka nikde
+    // nenechala stopu, že sa o to vôbec pokúsila; `prehlad_pre_ui` teraz musí
+    // vedieť vrátiť stav aj bez skutočného HTTP volania/AppHandle.
+
+    #[test]
+    fn prehlad_bez_pokusu_o_upload_nema_ani_kontrolu_ani_chybu() {
+        let stav = StavTrackera::default();
+        let p = prehlad_pre_ui(&stav, true, false);
+        assert_eq!(p.posledna_kontrola_uploadu_pred, None);
+        assert_eq!(p.posledna_chyba_uploadu, None);
+    }
+
+    #[test]
+    fn prehlad_ukazuje_cas_poslednej_kontroly_a_chybu() {
+        let mut stav = StavTrackera::default();
+        stav.posledna_kontrola_uploadu = Some(unixovy_cas());
+        stav.posledna_chyba_uploadu = Some("server vrátil 500".to_string());
+
+        let p = prehlad_pre_ui(&stav, true, false);
+        assert_eq!(p.posledna_kontrola_uploadu_pred.as_deref(), Some("teraz"));
+        assert_eq!(p.posledna_chyba_uploadu.as_deref(), Some("server vrátil 500"));
+    }
+
+    #[test]
+    fn prehlad_bez_chyby_po_uspesnom_pokuse_je_none() {
+        let mut stav = StavTrackera::default();
+        stav.posledna_kontrola_uploadu = Some(unixovy_cas());
+        stav.posledna_chyba_uploadu = None;
+
+        let p = prehlad_pre_ui(&stav, true, false);
+        assert!(p.posledna_kontrola_uploadu_pred.is_some());
+        assert_eq!(p.posledna_chyba_uploadu, None);
+    }
+
+    #[test]
+    fn zmena_cesty_logu_resetuje_stav_uploadu() {
+        // `precitaj` prestavia `StavTrackera` nanovo, keď sa zmení sledovaná
+        // cesta (nová session/iný súbor) — stav uploadu patrí k TOMUTO súboru,
+        // takže reset je správny, nie strata dát.
+        let cesta_a = docasny_subor();
+        napis(&cesta_a, "a\n");
+        let mut stav = StavTrackera::default();
+        precitaj(&mut stav, &cesta_a).unwrap();
+        stav.posledna_kontrola_uploadu = Some(unixovy_cas());
+        stav.posledna_chyba_uploadu = Some("chyba pre starý súbor".to_string());
+
+        let cesta_b = docasny_subor();
+        napis(&cesta_b, "b\n");
+        precitaj(&mut stav, &cesta_b).unwrap();
+
+        assert_eq!(stav.posledna_kontrola_uploadu, None);
+        assert_eq!(stav.posledna_chyba_uploadu, None);
+
+        let _ = std::fs::remove_file(&cesta_a);
+        let _ = std::fs::remove_file(&cesta_b);
     }
 }

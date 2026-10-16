@@ -12,13 +12,14 @@ mod stav;
 mod tracker;
 
 use serde_json::json;
-use stav::Stav;
+use stav::{RezimUpravyKontext, Stav};
 use std::str::FromStr;
 use std::sync::Mutex;
 use std::time::Instant;
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize};
-use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Shortcut, ShortcutState};
+use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 use tli_overlay_core::nastavenia::Nastavenia;
+use tli_overlay_core::rozlozenie::{Obdlznik01, PANEL_HLAVNY, PANEL_MINI, PANEL_PRIPOMIENKA};
 use tli_overlay_core::suradnice::OknoFyz;
 use tli_overlay_core::{api, suradnice, zmensenie};
 
@@ -61,6 +62,21 @@ fn esc() -> Shortcut {
     Shortcut::new(None, Code::Escape)
 }
 
+/// Enter — registruje sa LEN počas režimu „Upraviť rozloženie" (TLI 21), z
+/// rovnakého dôvodu ako `esc()`: globálna skratka by inak hre zobrala klávesu,
+/// ktorú v Torchlighte bežne používa na potvrdenie v dialógoch.
+fn enter() -> Shortcut {
+    Shortcut::new(None, Code::Enter)
+}
+
+/// Ctrl+F8 — „Upraviť rozloženie" (TLI 21, `2026-10-16-1528-mcp.md` bod 1).
+/// Na rozdiel od `esc()`/`enter()` je zaregistrovaná TRVALO (nemení sa podľa
+/// toho, čo je práve viditeľné) — hráč ju musí vedieť stlačiť kedykoľvek, aj
+/// keď nad hrou práve nič nie je.
+fn ctrl_f8() -> Shortcut {
+    Shortcut::new(Some(Modifiers::CONTROL), Code::F8)
+}
+
 /// Prepíše globálnu skratku na novú (Tartarus — hlavná, historicky jediná).
 /// Pri nezmyselnom zápise sa vracia k F8, nech appka neostane bez jedinej
 /// ovládacej klávesy. Zruší VŠETKY skratky vrátane canvas — volajúci preto
@@ -100,13 +116,13 @@ alebo kolíduje s hlavnou skratkou). Vraciam sa k F9."
 // Overlay
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Mierka monitora, na ktorom leží okno hry. Počíta sa cez `suradnice::monitor_okna`,
+/// Monitor, na ktorom leží okno hry. Počíta sa cez `suradnice::monitor_okna`,
 /// teda cez tú istú funkciu, ktorú pokrývajú jednotkové testy — nie zvlášť „naostro“
-/// a zvlášť „v teste“.
-fn mierka_okna(app: &AppHandle, obd: &OknoFyz) -> f64 {
-    let Some(overlay) = app.get_webview_window(OVERLAY) else {
-        return 1.0;
-    };
+/// a zvlášť „v teste“. Vracia `None`, keď sa monitor nedá určiť (napr. appka
+/// beží v CI bez skutočnej obrazovky) — volajúci si vtedy poradí predvolenou
+/// hodnotou, presne ako doteraz `mierka_okna`.
+fn monitor_okna_app(app: &AppHandle, obd: &OknoFyz) -> Option<suradnice::Monitor> {
+    let overlay = app.get_webview_window(OVERLAY)?;
     let monitory: Vec<suradnice::Monitor> = overlay
         .available_monitors()
         .unwrap_or_default()
@@ -119,15 +135,60 @@ fn mierka_okna(app: &AppHandle, obd: &OknoFyz) -> f64 {
             mierka: m.scale_factor(),
         })
         .collect();
+    suradnice::monitor_okna(obd, &monitory).copied()
+}
 
-    suradnice::monitor_okna(obd, &monitory)
-        .map(|m| m.mierka)
-        .unwrap_or_else(|| overlay.scale_factor().unwrap_or(1.0))
+/// Mierka monitora, na ktorom leží okno hry — tenký obal nad `monitor_okna_app`
+/// pre volania, ktorým stačí samotné číslo (CSS prepočet políčok solvera).
+fn mierka_okna(app: &AppHandle, obd: &OknoFyz) -> f64 {
+    monitor_okna_app(app, obd).map(|m| m.mierka).unwrap_or_else(|| {
+        app.get_webview_window(OVERLAY)
+            .and_then(|o| o.scale_factor().ok())
+            .unwrap_or(1.0)
+    })
+}
+
+/// Stabilný textový kľúč monitora pre uložené rozloženie (TLI 21) — keď sa
+/// monitor nedá určiť (napr. appka beží bez reálnej obrazovky), padá sa na
+/// kľúč odvodený priamo z rozmerov okna hry pri mierke 100 %, nech appka vie
+/// aspoň niečo uložiť namiesto toho, aby úpravu rozloženia odmietla celkom.
+fn monitor_signatura_app(app: &AppHandle, obd: &OknoFyz) -> String {
+    monitor_okna_app(app, obd)
+        .map(|m| suradnice::monitor_signatura(&m))
+        .unwrap_or_else(|| format!("{}x{}@100", obd.sirka, obd.vyska))
+}
+
+/// Predvolená poloha/veľkosť panela, keď preň ešte nie je nič uložené (TLI 21)
+/// — vyjadrené ako zlomok okna hry pri referenčnom rozlíšení 1920×1080, aby sa
+/// pri inom rozlíšení držal rovnaký POMER, nie rovnaký počet pixelov. Hlavný
+/// panel (F8/Tartarus aj F9/Canvas — zdieľajú jeden DOM prvok) v BEŽNOM behu
+/// predvolenú hodnotu vôbec nepoužíva (necháva sa na CSS, pozri `ukaz_overlay_nad`)
+/// — slúži len ako štartovací obdĺžnik pri prvom vstupe do režimu úpravy.
+fn predvolena_poloha(panel: &str) -> Obdlznik01 {
+    match panel {
+        PANEL_MINI => Obdlznik01 { x: 1640.0 / 1920.0, y: 20.0 / 1080.0, w: 260.0 / 1920.0, h: 92.0 / 1080.0 },
+        PANEL_PRIPOMIENKA => {
+            Obdlznik01 { x: 720.0 / 1920.0, y: 40.0 / 1080.0, w: 480.0 / 1920.0, h: 110.0 / 1080.0 }
+        }
+        _ => Obdlznik01 { x: 24.0 / 1920.0, y: 24.0 / 1080.0, w: 460.0 / 1920.0, h: 260.0 / 1080.0 },
+    }
+}
+
+/// Uloženú polohu panela pre daný monitor, alebo predvolenú, keď nič uložené
+/// nie je — používa režim úpravy, kde VŽDY treba konkrétny obdĺžnik (na rozdiel
+/// od bežného zobrazenia panela, ktoré bez uloženej hodnoty necháva CSS default).
+fn poloha_alebo_predvolena(n: &Nastavenia, panel: &str, monitor_sig: &str) -> Obdlznik01 {
+    n.rozlozenie.poloha(panel, monitor_sig).unwrap_or_else(|| predvolena_poloha(panel))
 }
 
 /// Postaví overlay presne nad okno hry a ukáže ho. Pozícia aj veľkosť idú vo
 /// FYZICKÝCH pixeloch — logické by sa na monitore so 150 % DPI rozišli s hrou.
-fn ukaz_overlay_nad(app: &AppHandle, obd: &OknoFyz) {
+///
+/// `s_rozlozenim` rozlišuje skutočné okno hry od núdzového nahradného
+/// obdĺžnika v `ukaz_chybu` (keď sa hra vôbec nenašla) — uložené rozloženie
+/// (TLI 21) je zlomok SKUTOČNÉHO okna hry, aplikovať ho na malý núdzový box by
+/// dalo nezmyselné súradnice.
+fn ukaz_overlay_nad(app: &AppHandle, obd: &OknoFyz, s_rozlozenim: bool) {
     if let Some(overlay) = app.get_webview_window(OVERLAY) {
         let _ = overlay.set_position(PhysicalPosition::new(obd.x, obd.y));
         let _ = overlay.set_size(PhysicalSize::new(obd.sirka, obd.vyska));
@@ -135,6 +196,23 @@ fn ukaz_overlay_nad(app: &AppHandle, obd: &OknoFyz) {
         let _ = overlay.show();
         let _ = app.global_shortcut().register(esc());
         *app.state::<Stav>().zobrazene_od.lock().unwrap() = Some(Instant::now());
+
+        let priehladnost = app.state::<Stav>().nastavenia.lock().unwrap().rozlozenie.priehladnost;
+        let poloha = if s_rozlozenim {
+            let mierka = mierka_okna(app, obd);
+            let sig = monitor_signatura_app(app, obd);
+            app.state::<Stav>()
+                .nastavenia
+                .lock()
+                .unwrap()
+                .rozlozenie
+                .poloha(PANEL_HLAVNY, &sig)
+                .map(|o| suradnice::box01_na_css(o.x, o.y, o.w, o.h, obd, mierka))
+                .map(|css| json!({"x": css.x, "y": css.y, "w": css.w, "h": css.h}))
+        } else {
+            None
+        };
+        let _ = app.emit_to(OVERLAY, "panel-poloha", json!({ "poloha": poloha, "priehladnost": priehladnost }));
     }
 }
 
@@ -142,7 +220,7 @@ fn ukaz_overlay_nad(app: &AppHandle, obd: &OknoFyz) {
 /// kam overlay postaviť, tak sa dá navrch hlavného monitora.
 fn ukaz_chybu(app: &AppHandle, obd: Option<&OknoFyz>, sprava: &str) {
     match obd {
-        Some(o) => ukaz_overlay_nad(app, o),
+        Some(o) => ukaz_overlay_nad(app, o, true),
         None => {
             if let Some(overlay) = app.get_webview_window(OVERLAY) {
                 let (x, y) = overlay
@@ -159,6 +237,7 @@ fn ukaz_chybu(app: &AppHandle, obd: Option<&OknoFyz>, sprava: &str) {
                 ukaz_overlay_nad(
                     app,
                     &OknoFyz { x, y, sirka: CHYBA_SIRKA, vyska: CHYBA_VYSKA },
+                    false,
                 );
             }
         }
@@ -205,6 +284,13 @@ pub enum Modul {
 
 #[cfg(windows)]
 fn spusti_analyzu(app: AppHandle, modul: Modul) {
+    // Kým hráč posúva/zväčšuje panely (TLI 21), F8/F9 nemajú spustiť analýzu
+    // nad práve upravovaným rozložením — zmazalo by to náhľad aj vrátilo
+    // priechodnosť myši uprostred ťahania.
+    if *app.state::<Stav>().rezim_upravy.lock().unwrap() {
+        return;
+    }
+
     let nastavenia = {
         let stav = app.state::<Stav>();
         let mut n = stav.nastavenia.lock().unwrap();
@@ -273,7 +359,7 @@ V hre prepni Nastavenia → Zobrazenie → Režim okna na „Okno bez okrajov“
     }
 
     let mierka = mierka_okna(&app, &obdlznik);
-    ukaz_overlay_nad(&app, &obdlznik);
+    ukaz_overlay_nad(&app, &obdlznik, true);
     let _ = app.emit("stav", json!({ "faza": "analyzujem" }));
 
     // Kódovanie JPEGu aj sieť idú mimo hlavného vlákna — inak by sa na tých
@@ -790,9 +876,22 @@ fn uloz_prepinac(
 
 /// Ukáže alebo schová mini-overlay. Keď okno neexistuje (nemalo by sa stať),
 /// appka sa nezhodí — panel je doplnok, nie podmienka chodu.
+///
+/// Pri zapnutí sa umiestni nad okno hry (TLI 21) — uloženou polohou pre
+/// aktuálny monitor, alebo predvolenou, keď hráč panel ešte nikdy nepresunul.
+/// Keď sa okno hry nenájde, appka polohu nemení (nechá okno tam, kde bolo).
 fn nastav_mini(app: &AppHandle, zapnuty: bool) {
     if let Some(okno) = app.get_webview_window(MINI) {
         if zapnuty {
+            if let Some(okno_hry) = okno_hry_pre_rozlozenie(app) {
+                let sig = monitor_signatura_app(app, &okno_hry);
+                let obd = {
+                    let stav = app.state::<Stav>();
+                    let n = stav.nastavenia.lock().unwrap();
+                    poloha_alebo_predvolena(&n, PANEL_MINI, &sig)
+                };
+                umiestni_native_okno(app, MINI, &okno_hry, obd);
+            }
             let _ = okno.show();
         } else {
             let _ = okno.hide();
@@ -808,6 +907,10 @@ fn nastav_mini(app: &AppHandle, zapnuty: bool) {
 /// monitora (rovnaký fallback ako `ukaz_chybu`), ukáže ho s textom pripomienky
 /// a naplánuje jeho skrytie po `sekund` sekundách — pokiaľ dovtedy neprišiel
 /// NOVŠÍ toast (vtedy by starší časovač zhasol ten nový).
+///
+/// Poloha/veľkosť nad oknom hry rešpektuje uložené rozloženie (TLI 21) — alebo
+/// predvolenú hodnotu (rovnaký stred/odstup ako pred TLI 21, len vyjadrený ako
+/// zlomok okna hry, nie pevný počet pixelov).
 fn ukaz_pripomienku_toast(app: &AppHandle, text: &str, trieda: &str, sekund: u64) {
     let Some(okno) = app.get_webview_window(PRIPOMIENKA) else { return };
 
@@ -817,26 +920,34 @@ fn ukaz_pripomienku_toast(app: &AppHandle, text: &str, trieda: &str, sekund: u64
         json!({ "text": text, "trieda": trieda }),
     );
 
-    let sirka = 480u32;
-    let vyska = 110u32;
-    let poloha = najdi_okno_hry_pre_pripomienku(app);
-    let (x, y) = match poloha {
-        Some(obd) => (obd.x + (obd.sirka as i32 - sirka as i32) / 2, obd.y + 40),
-        None => okno
-            .primary_monitor()
-            .ok()
-            .flatten()
-            .map(|m| {
-                (
-                    m.position().x + (m.size().width as i32 - sirka as i32) / 2,
-                    m.position().y + 60,
-                )
-            })
-            .unwrap_or((80, 80)),
-    };
-
-    let _ = okno.set_position(PhysicalPosition::new(x, y));
-    let _ = okno.set_size(PhysicalSize::new(sirka, vyska));
+    match okno_hry_pre_rozlozenie(app) {
+        Some(okno_hry) => {
+            let sig = monitor_signatura_app(app, &okno_hry);
+            let obd = {
+                let stav = app.state::<Stav>();
+                let n = stav.nastavenia.lock().unwrap();
+                poloha_alebo_predvolena(&n, PANEL_PRIPOMIENKA, &sig)
+            };
+            umiestni_native_okno(app, PRIPOMIENKA, &okno_hry, obd);
+        }
+        None => {
+            let sirka = 480u32;
+            let vyska = 110u32;
+            let (x, y) = okno
+                .primary_monitor()
+                .ok()
+                .flatten()
+                .map(|m| {
+                    (
+                        m.position().x + (m.size().width as i32 - sirka as i32) / 2,
+                        m.position().y + 60,
+                    )
+                })
+                .unwrap_or((80, 80));
+            let _ = okno.set_position(PhysicalPosition::new(x, y));
+            let _ = okno.set_size(PhysicalSize::new(sirka, vyska));
+        }
+    }
     let _ = okno.set_ignore_cursor_events(true);
     let _ = okno.show();
 
@@ -845,15 +956,39 @@ fn ukaz_pripomienku_toast(app: &AppHandle, text: &str, trieda: &str, sekund: u64
     naplanuj_skrytie_pripomienky(app.clone(), znacka, sekund);
 }
 
+/// Okno hry pre umiestnenie panelov nad ňou (TLI 21: mini-panel, toast,
+/// a „seed" pri vstupe do režimu úpravy) — nájde ho podľa nastaveného názvu
+/// procesu, a keď to zlyhá, padá na aktuálne aktívne okno (rovnaký vzor ako
+/// `spusti_analyzu`).
 #[cfg(windows)]
-fn najdi_okno_hry_pre_pripomienku(app: &AppHandle) -> Option<OknoFyz> {
+fn okno_hry_pre_rozlozenie(app: &AppHandle) -> Option<OknoFyz> {
     let proces_hry = app.state::<Stav>().nastavenia.lock().unwrap().proces_hry.clone();
-    okno::najdi_hru(&proces_hry).map(|o| o.obdlznik)
+    okno::najdi_hru(&proces_hry)
+        .or_else(okno::popredie)
+        .map(|o| o.obdlznik)
 }
 
 #[cfg(not(windows))]
-fn najdi_okno_hry_pre_pripomienku(_app: &AppHandle) -> Option<OknoFyz> {
+fn okno_hry_pre_rozlozenie(_app: &AppHandle) -> Option<OknoFyz> {
     None
+}
+
+/// Umiestni natívne okno (mini/pripomienka) nad okno hry podľa uloženého
+/// zlomku (TLI 21) — tá istá matematika ako pri CSS prepočte políčok solvera
+/// (`box01_na_css`), len s mierkou 1.0, lebo natívne okná sa posúvajú vo
+/// FYZICKÝCH pixeloch okna hry, nie v logických CSS pixeloch webview.
+fn umiestni_native_okno(app: &AppHandle, label: &str, okno_hry: &OknoFyz, obd: Obdlznik01) {
+    if let Some(okno) = app.get_webview_window(label) {
+        let fyz = suradnice::box01_na_css(obd.x, obd.y, obd.w, obd.h, okno_hry, 1.0);
+        let _ = okno.set_position(PhysicalPosition::new(
+            okno_hry.x + fyz.x.round() as i32,
+            okno_hry.y + fyz.y.round() as i32,
+        ));
+        let _ = okno.set_size(PhysicalSize::new(
+            fyz.w.round().max(1.0) as u32,
+            fyz.h.round().max(1.0) as u32,
+        ));
+    }
 }
 
 /// Rovnaký vzor ako `naplanuj_skrytie` pri hlavnom overlayi — porovnáva sa
@@ -882,6 +1017,258 @@ fn ukaz_pripomienku(app: AppHandle, text: String, trieda: String) -> Result<(), 
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Režim „Upraviť rozloženie" (TLI 21, `2026-10-16-1528-mcp.md` bod 1)
+//
+// Hráč stlačí Ctrl+F8 (alebo tlačidlo „Upraviť rozloženie" v Nastaveniach):
+// overlay prestane byť priechodný pre myš, nad okno hry sa postaví náhľad
+// panela (F8/F9), mini-panel a toast pripomienky sa ukážu na svojej aktuálnej
+// (uloženej alebo predvolenej) polohe a všetky tri sa dajú ťahaním/za roh
+// posunúť a zväčšiť/zmenšiť. Esc alebo Enter uloží a vráti priechodnosť.
+//
+// Mini a pripomienka sú SAMOSTATNÉ natívne okná — Rust po stlačení Esc/Enter
+// jednoducho prečíta ich aktuálnu polohu (`outer_position`/`outer_size`).
+// Hlavný panel je ale len DOM prvok VNÚTRI okna `overlay` — jeho živú polohu
+// pozná len JavaScript, takže uloženie ide cez krátky výlet tam a späť:
+// Rust požiada JS (`rezim-upravy-nahlas`), JS odpovie príkazom
+// `rezim_upravy_ulozit_panel` a AŽ TEN dokončí zvyšok (mini/toast, zápis na
+// disk, ukončenie režimu).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Postaví/obnoví náhľad všetkých troch panelov v aktuálnej (uloženej alebo
+/// predvolenej) polohe — spoločné pre vstup do režimu úpravy aj pre tlačidlo
+/// „Obnoviť predvolené" (to iba vymaže uložené hodnoty a zavolá toto znova).
+fn posli_seed_rozlozenia(app: &AppHandle, okno_hry: &OknoFyz, mierka: f64, sig: &str) {
+    let n = app.state::<Stav>().nastavenia.lock().unwrap().clone();
+    let priehladnost = n.rozlozenie.priehladnost;
+
+    if let Some(overlay) = app.get_webview_window(OVERLAY) {
+        let _ = overlay.set_position(PhysicalPosition::new(okno_hry.x, okno_hry.y));
+        let _ = overlay.set_size(PhysicalSize::new(okno_hry.sirka, okno_hry.vyska));
+        let _ = overlay.set_ignore_cursor_events(false);
+        let _ = overlay.show();
+
+        let obd = poloha_alebo_predvolena(&n, PANEL_HLAVNY, sig);
+        let css = suradnice::box01_na_css(obd.x, obd.y, obd.w, obd.h, okno_hry, mierka);
+        let (sirka_log, vyska_log) = suradnice::logicka_velkost(okno_hry, mierka);
+        let _ = app.emit_to(
+            OVERLAY,
+            "rezim-upravy",
+            json!({
+                "zapnute": true,
+                "panel": {"x": css.x, "y": css.y, "w": css.w, "h": css.h},
+                "priehladnost": priehladnost,
+                "okno": {"sirka": sirka_log, "vyska": vyska_log},
+            }),
+        );
+    }
+
+    for (label, panel) in [(MINI, PANEL_MINI), (PRIPOMIENKA, PANEL_PRIPOMIENKA)] {
+        let obd = poloha_alebo_predvolena(&n, panel, sig);
+        umiestni_native_okno(app, label, okno_hry, obd);
+        if let Some(okno) = app.get_webview_window(label) {
+            let _ = okno.set_ignore_cursor_events(false);
+            let _ = okno.show();
+            let _ = app.emit_to(label, "rezim-upravy", json!({"zapnute": true, "priehladnost": priehladnost}));
+        }
+    }
+}
+
+/// Vstup do režimu úpravy (Ctrl+F8 z prázdneho stavu, alebo tlačidlo
+/// v Nastaveniach). Bez nájdeného okna hry sa nedá vypočítať zlomok, voči
+/// ktorému sa polohy ukladajú — appka to poctivo povie namiesto tichého
+/// zlyhania.
+fn zapni_rezim_upravy(app: &AppHandle) {
+    let Some(okno_hry) = okno_hry_pre_rozlozenie(app) else {
+        ukaz_chybu(
+            app,
+            None,
+            "Upraviť rozloženie sa dá len s bežiacou hrou — spusti Torchlight: Infinite \
+a nechaj ho otvorené.",
+        );
+        return;
+    };
+    let mierka = mierka_okna(app, &okno_hry);
+    let sig = monitor_signatura_app(app, &okno_hry);
+
+    {
+        let stav = app.state::<Stav>();
+        *stav.rezim_upravy.lock().unwrap() = true;
+        *stav.rezim_upravy_kontext.lock().unwrap() =
+            Some(RezimUpravyKontext { okno_hry, mierka, monitor_sig: sig.clone() });
+    }
+    let _ = app.global_shortcut().register(esc());
+    let _ = app.global_shortcut().register(enter());
+
+    posli_seed_rozlozenia(app, &okno_hry, mierka, &sig);
+}
+
+/// Požiada JS v okne `overlay`, nech nahlási živú polohu panela — Rust vtedy
+/// dokončí uloženie aj ukončenie (`rezim_upravy_ulozit_panel`). Volá sa pri
+/// Esc/Enter (globálna skratka) aj z tlačidla „Hotovo" v Nastaveniach.
+fn poziadaj_o_ulozenie_rozlozenia(app: &AppHandle) {
+    let _ = app.emit_to(OVERLAY, "rezim-upravy-nahlas", json!({}));
+}
+
+/// Vypne režim úpravy: skryje overlay/mini/toast (mini len keď si ho hráč
+/// sám nezapol natrvalo v Nastaveniach), vráti priechodnosť myši a uvoľní
+/// Enter (Esc sa uvoľňuje rovnako ako po bežnom zobrazení analýzy).
+fn ukonci_rezim_upravy(app: &AppHandle) {
+    {
+        let stav = app.state::<Stav>();
+        *stav.rezim_upravy.lock().unwrap() = false;
+        *stav.rezim_upravy_kontext.lock().unwrap() = None;
+    }
+    let _ = app.global_shortcut().unregister(enter());
+    let _ = app.global_shortcut().unregister(esc());
+
+    if let Some(overlay) = app.get_webview_window(OVERLAY) {
+        let _ = overlay.set_ignore_cursor_events(true);
+        let _ = overlay.hide();
+    }
+    *app.state::<Stav>().zobrazene_od.lock().unwrap() = None;
+    let _ = app.emit_to(OVERLAY, "rezim-upravy", json!({"zapnute": false}));
+
+    let mini_zapnuty = app.state::<Stav>().nastavenia.lock().unwrap().mini_overlay;
+    if let Some(okno) = app.get_webview_window(MINI) {
+        let _ = okno.set_ignore_cursor_events(true);
+        let _ = app.emit_to(MINI, "rezim-upravy", json!({"zapnute": false}));
+        if !mini_zapnuty {
+            let _ = okno.hide();
+        }
+    }
+    if let Some(okno) = app.get_webview_window(PRIPOMIENKA) {
+        let _ = okno.set_ignore_cursor_events(true);
+        let _ = okno.hide();
+        let _ = app.emit_to(PRIPOMIENKA, "rezim-upravy", json!({"zapnute": false}));
+    }
+}
+
+/// Ctrl+F8 — mimo režimu ho zapne, v režime je to skratka pre „Hotovo"
+/// (uloženie a ukončenie), nech si hráč nemusí pamätať dve rôzne klávesy.
+fn prepni_rezim_upravy(app: &AppHandle) {
+    let aktivny = *app.state::<Stav>().rezim_upravy.lock().unwrap();
+    if aktivny {
+        poziadaj_o_ulozenie_rozlozenia(app);
+    } else {
+        zapni_rezim_upravy(app);
+    }
+}
+
+/// Tlačidlo „Upraviť rozloženie" v Nastaveniach — rovnaká cesta ako Ctrl+F8,
+/// len vyvolaná z JS namiesto globálnej skratky.
+#[tauri::command]
+fn rezim_upravy_zapni(app: AppHandle) -> Result<(), String> {
+    if !*app.state::<Stav>().rezim_upravy.lock().unwrap() {
+        zapni_rezim_upravy(&app);
+    }
+    Ok(())
+}
+
+/// Tlačidlo „Hotovo" v Nastaveniach.
+#[tauri::command]
+fn rezim_upravy_hotovo(app: AppHandle) -> Result<(), String> {
+    if *app.state::<Stav>().rezim_upravy.lock().unwrap() {
+        poziadaj_o_ulozenie_rozlozenia(&app);
+    }
+    Ok(())
+}
+
+/// Či appka práve je v režime úpravy — Nastavenia si tým pri otvorení obnovia
+/// správny stav tlačidiel, keď hráč okno medzitým zavrel a znova otvoril.
+#[tauri::command]
+fn rezim_upravy_je_aktivny(stav: tauri::State<Stav>) -> bool {
+    *stav.rezim_upravy.lock().unwrap()
+}
+
+/// Tlačidlo „Obnoviť predvolené" — zmaže uložené polohy VŠETKÝCH troch
+/// panelov pre aktuálny monitor (kontext zapamätaný pri vstupe do režimu) a
+/// hneď nanovo pošle predvolený náhľad, nech je zmena vidieť okamžite.
+#[tauri::command]
+fn rezim_upravy_obnov_predvolene(app: AppHandle) -> Result<(), String> {
+    let kontext = app.state::<Stav>().rezim_upravy_kontext.lock().unwrap().clone();
+    let Some(kontext) = kontext else {
+        return Err("Režim úpravy rozloženia nie je zapnutý.".to_string());
+    };
+    {
+        let stav = app.state::<Stav>();
+        let mut n = stav.nastavenia.lock().unwrap();
+        n.rozlozenie.obnov_predvolene_vsetky(&kontext.monitor_sig);
+        let kopia = n.clone();
+        drop(n);
+        stav::uloz(&kopia)?;
+    }
+    posli_seed_rozlozenia(&app, &kontext.okno_hry, kontext.mierka, &kontext.monitor_sig);
+    Ok(())
+}
+
+/// JS v okne `overlay` odpovedá na `rezim-upravy-nahlas` touto hodnotou — CSS
+/// pixely panela PRESNE tak, ako ich hráč naťahal/zmenšil. Dokončí celé
+/// uloženie: prepočíta panel aj prečíta skutočnú polohu mini/toast okien,
+/// zapíše všetko na disk a ukončí režim úpravy.
+#[tauri::command]
+fn rezim_upravy_ulozit_panel(app: AppHandle, x: f64, y: f64, w: f64, h: f64) -> Result<(), String> {
+    let kontext = app.state::<Stav>().rezim_upravy_kontext.lock().unwrap().clone();
+    let Some(kontext) = kontext else {
+        // Druhé hlásenie po už ukončenom režime (napr. dvojité Enter) — nie je
+        // to chyba, jednoducho už niet čo ukladať.
+        return Ok(());
+    };
+
+    {
+        let stav = app.state::<Stav>();
+        let mut n = stav.nastavenia.lock().unwrap();
+
+        let css = suradnice::ObdlznikCss { x, y, w, h };
+        let p = suradnice::css_na_box01(&css, &kontext.okno_hry, kontext.mierka);
+        n.rozlozenie.uloz_polohu(
+            PANEL_HLAVNY,
+            &kontext.monitor_sig,
+            Obdlznik01 { x: p.x, y: p.y, w: p.w, h: p.h },
+        );
+
+        for (label, panel) in [(MINI, PANEL_MINI), (PRIPOMIENKA, PANEL_PRIPOMIENKA)] {
+            if let Some(okno) = app.get_webview_window(label) {
+                if let (Ok(pos), Ok(size)) = (okno.outer_position(), okno.outer_size()) {
+                    let css_fyz = suradnice::ObdlznikCss {
+                        x: (pos.x - kontext.okno_hry.x) as f64,
+                        y: (pos.y - kontext.okno_hry.y) as f64,
+                        w: size.width as f64,
+                        h: size.height as f64,
+                    };
+                    let p = suradnice::css_na_box01(&css_fyz, &kontext.okno_hry, 1.0);
+                    n.rozlozenie.uloz_polohu(panel, &kontext.monitor_sig, Obdlznik01 { x: p.x, y: p.y, w: p.w, h: p.h });
+                }
+            }
+        }
+
+        n.normalizuj();
+        let kopia = n.clone();
+        drop(n);
+        stav::uloz(&kopia)?;
+    }
+
+    ukonci_rezim_upravy(&app);
+    Ok(())
+}
+
+/// Posuvník priehľadnosti v Nastaveniach — jedna hodnota pre všetky tri
+/// panely (0.3–1.0), uplatní sa hneď, aj mimo režimu úpravy.
+#[tauri::command]
+fn uloz_priehladnost(app: AppHandle, hodnota: f64) -> Result<f64, String> {
+    let kopia = {
+        let stav = app.state::<Stav>();
+        let mut n = stav.nastavenia.lock().unwrap();
+        n.rozlozenie.nastav_priehladnost(hodnota);
+        n.clone()
+    };
+    stav::uloz(&kopia)?;
+    for label in [OVERLAY, MINI, PRIPOMIENKA] {
+        let _ = app.emit_to(label, "priehladnost", json!({"priehladnost": kopia.rozlozenie.priehladnost}));
+    }
+    Ok(kopia.rozlozenie.priehladnost)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Príkazy z okna nastavení
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -902,9 +1289,12 @@ fn uloz_nastavenia(
     let hotkey_canvas = nove.hotkey_canvas.clone();
     *stav.nastavenia.lock().unwrap() = nove;
     // `prehlas_hotkey` ruší VŠETKY skratky — canvas sa preto registruje až
-    // po nej, nie súbežne/pred.
+    // po nej, nie súbežne/pred. Ctrl+F8 (TLI 21) z rovnakého dôvodu tiež: inak
+    // by zmena F8/F9 v Nastaveniach appku o „Upraviť rozloženie" nenávratne
+    // pripravila až do reštartu.
     let chyba1 = prehlas_hotkey(&app, &hotkey).err();
     let chyba2 = prehlas_hotkey_canvas(&app, &hotkey_canvas).err();
+    let _ = app.global_shortcut().register(ctrl_f8());
     match (chyba1, chyba2) {
         (None, None) => Ok(()),
         (Some(a), None) => Err(a),
@@ -1005,6 +1395,23 @@ fn main() {
             if udalost.state() != ShortcutState::Pressed {
                 return;
             }
+
+            // Ctrl+F8 (TLI 21) je trvalo zaregistrovaná a funguje nezávisle od
+            // toho, čo je práve viditeľné — vybavuje sa PRED všetkým ostatným.
+            if skratka == &ctrl_f8() {
+                prepni_rezim_upravy(app);
+                return;
+            }
+
+            // Kým hráč upravuje rozloženie, Esc aj Enter znamenajú „ulož a
+            // skonči" namiesto svojho bežného významu (skry overlay / nič).
+            if *app.state::<Stav>().rezim_upravy.lock().unwrap() {
+                if skratka == &esc() || skratka == &enter() {
+                    poziadaj_o_ulozenie_rozlozenia(app);
+                }
+                return;
+            }
+
             let viditelny = app
                 .get_webview_window(OVERLAY)
                 .and_then(|o| o.is_visible().ok())
@@ -1040,6 +1447,8 @@ fn main() {
             pocitadlo_zber: Mutex::new(0),
             poslane_behy: Mutex::new(std::collections::BTreeSet::new()),
             pripomienka_zobrazena_od: Mutex::new(None),
+            rezim_upravy: Mutex::new(false),
+            rezim_upravy_kontext: Mutex::new(None),
         })
         .manage(tracker::Tracker::default())
         // Sprievodca sa načíta z disku hneď pri štarte — záložka Guide
@@ -1077,7 +1486,13 @@ fn main() {
             analyza_taktiky_export_json,
             taktika_pomenuj_alebo_zluc,
             tracker_nacitaj_stare_logy,
-            ukaz_pripomienku
+            ukaz_pripomienku,
+            rezim_upravy_zapni,
+            rezim_upravy_hotovo,
+            rezim_upravy_je_aktivny,
+            rezim_upravy_obnov_predvolene,
+            rezim_upravy_ulozit_panel,
+            uloz_priehladnost
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -1087,6 +1502,13 @@ fn main() {
             // Canvas sa registruje AŽ PO nej (tá ruší všetky skratky).
             let _ = prehlas_hotkey(&handle, &hotkey_pri_starte);
             let _ = prehlas_hotkey_canvas(&handle, &hotkey_canvas_pri_starte);
+            // Ctrl+F8 (TLI 21) — registruje sa AŽ PO oboch predošlých riadkoch,
+            // lebo `prehlas_hotkey` ruší VŠETKY skratky (`unregister_all`) bez
+            // ohľadu na modifikátor. `uloz_nastavenia` volá tú istú dvojicu
+            // znova (zmena skratky v Nastaveniach za behu appky) — preto aj
+            // ona po nich musí Ctrl+F8 zaregistrovať nanovo, inak by po zmene
+            // F8/F9 appka o Ctrl+F8 nenávratne prišla až do reštartu.
+            let _ = handle.global_shortcut().register(ctrl_f8());
 
             // Tracker (TLI 11c): číta log na pozadí nezávisle od toho, či je
             // niektoré okno otvorené, aby appka fungovala aj schovaná v tray.

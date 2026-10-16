@@ -451,6 +451,7 @@ async function obnovTracker() {
         vykresliBehy(p);
         vykresliStav(p);
         vykresliVyzvuCien(p);
+        vykresliStavUploadu(p);
 
         // Automatické odoslanie partii — len keď si to hráč zapol a len raz za
         // SYNC_KAZDYCH_KOL kôl, nech sa pri každom takte nechodí na server.
@@ -757,6 +758,24 @@ btnSyncTeraz.addEventListener("click", async () => {
 function ukazStavUploadu(text, chyba) {
     stavUpload.textContent = text;
     stavUpload.classList.toggle("hodnota-zaporna", Boolean(chyba));
+}
+
+/// Stav uploadu AJ z tichého behu na pozadí (TLI 21, `2026-10-16-1528-mcp.md`
+/// bod 4) — predtým sa `stav-upload` menil len po ručnom kliku na „Nahrať log
+/// teraz" a medzitým bolo vidieť naposledy zobrazenú (často už zastaranú)
+/// hlášku, aj keby upload na pozadí celý čas tichy zlyhával na chybe servera.
+function vykresliStavUploadu(p) {
+    if (!chkUpload.checked) {
+        return; // "Log sa na server nenahráva." z `chkUpload` change zostáva.
+    }
+    if (p.posledna_chyba_uploadu) {
+        const kedy = p.posledna_kontrola_uploadu_pred ? ` (${p.posledna_kontrola_uploadu_pred})` : "";
+        ukazStavUploadu("Chyba uploadu" + kedy + ": " + p.posledna_chyba_uploadu, true);
+    } else if (p.posledna_kontrola_uploadu_pred) {
+        ukazStavUploadu("Upload v poriadku — posledná kontrola " + p.posledna_kontrola_uploadu_pred + ".", false);
+    }
+    // Keď appka ešte ANI RAZ neskúsila (oba `null`), nechaj text tak, ako je
+    // (napr. prázdny, alebo z manuálneho kliku pred chvíľou).
 }
 
 async function nahrajLogTeraz() {

@@ -1,3 +1,4 @@
+use crate::rozlozenie::Rozlozenie;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -57,6 +58,11 @@ pub struct Nastavenia {
     /// logy aj tak posiela, len ručne. Posiela sa len VLASTNÝ log a DB export,
     /// nikdy cudzie dáta.
     pub upload_logov: bool,
+    /// Uložená poloha/veľkosť/priehľadnosť okien nad hrou (TLI 21) — panel
+    /// F8/F9, mini-panel trackera, toast pripomienky. Prázdne pre každý panel
+    /// a monitor, kým ho hráč prvýkrát nepresunie v režime „Upraviť
+    /// rozloženie“ (Ctrl+F8).
+    pub rozlozenie: Rozlozenie,
 }
 
 impl Default for Nastavenia {
@@ -79,6 +85,7 @@ impl Default for Nastavenia {
             pripominat_enable_log: true,
             ceny_sync: true,
             upload_logov: true,
+            rozlozenie: Rozlozenie::default(),
         }
     }
 }
@@ -318,5 +325,25 @@ mod testy {
         let json = n.do_jsonu();
         let n2 = Nastavenia::z_jsonu(&json);
         assert_eq!(n, n2);
+    }
+
+    #[test]
+    fn stare_nastavenia_bez_rozlozenia_sa_nacitaju_s_predvolenym() {
+        // TLI 21: appka pred verziou s posúvaním okien pole `rozlozenie`
+        // vôbec nemá — `#[serde(default)]` nesmie pri jej načítaní zlyhať.
+        let n = Nastavenia::z_jsonu(r#"{"kluc":"abc","hotkey":"F8"}"#);
+        assert_eq!(n.rozlozenie, crate::rozlozenie::Rozlozenie::default());
+        assert_eq!(n.kluc, "abc");
+    }
+
+    #[test]
+    fn rozlozenie_prezije_round_trip() {
+        use crate::rozlozenie::{Obdlznik01, PANEL_MINI};
+        let mut n = Nastavenia::default();
+        n.rozlozenie.uloz_polohu(PANEL_MINI, "1920x1080@100", Obdlznik01 { x: 0.1, y: 0.1, w: 0.2, h: 0.1 });
+        n.rozlozenie.nastav_priehladnost(0.5);
+        let json = n.do_jsonu();
+        let n2 = Nastavenia::z_jsonu(&json);
+        assert_eq!(n.rozlozenie, n2.rozlozenie);
     }
 }
