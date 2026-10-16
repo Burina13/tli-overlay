@@ -1,6 +1,6 @@
 {
-  "version": "0.13.0",
-  "notes": "Analýza podľa taktiky (TLI 13b, 1. časť). Taktika = podpis setupu behu (chart+kompasy+mapa+mód+modifikátory mapy+build) — appka behy zoskupí sama, hráč ich môže pomenovať alebo zlúčiť viac podpisov do jednej. Nová sekcia „Taktiky“ v záložke Analýza: zoradené podľa priemerného FE/h (rebríček „najlepšia taktika za hodinu“), priemerný aj mediánový zisk, min/max, p10/p90, smerodajná odchýlka, náklad a ROI, pomer zisk/riziko. Deterministický panel „Odporúčanie“ a zoznam „čo vyskúšať viac“ pre taktiky s málo dátami. Export CSV aj JSON. Appka naďalej iba číta súbor na disku, nič v hre nemení.",
-  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.13.0/Tvoj-Tatko-TLI-Overlay_0.13.0_x64_en-US.msi",
-  "msiSha256": "74ce462e525e7743b868f61f743bba26d06489c216f8227e08b0d13f5a211472"
+  "version": "0.13.1",
+  "notes": "Hotfix: hlavné záložky Solvery/Analýza/Guide/Nastavenia nereagovali na klik (chyba v ukladaní prepínačov prepisovala funkciu na prepínanie záložiek) — opravené, pridaný E2E test. Behy bez spotrebovaného chartu/kompasu sa teraz označujú „kampaň“ namiesto „bez vstupu“ a mapy sa zobrazujú čitateľnejšie, nie ako surový engine kód.",
+  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.13.1/Tvoj-Tatko-TLI-Overlay_0.13.1_x64_en-US.msi",
+  "msiSha256": "f4d0fb60e7c9e1576f9b87775fb78c369bb692f29fcfa52d5010d95c626b8b46"
 }
