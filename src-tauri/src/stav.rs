@@ -121,6 +121,30 @@ pub fn cesta_db_suboru() -> PathBuf {
     c
 }
 
+/// Cesta k logu chýb pri práci s oknami (TLI 23) — vedľa `nastavenia.json`,
+/// z rovnakého dôvodu ako ostatné prevádzkové súbory vyššie.
+fn cesta_log_okien_suboru() -> PathBuf {
+    let mut c = cesta_suboru();
+    c.set_file_name("okna.log");
+    c
+}
+
+/// Pripíše jeden riadok o chybe pri otváraní/zatváraní okna (TLI 23 — predtým
+/// `let _ = okno.show()` a podobné volania chybu ticho zahodili, appka sa
+/// navonok tvárila v poriadku a druhý klik na „Nastavenia" v skutočnosti
+/// nerobil nič). Zápis je `best effort`: appka na chybe v logovaní nesmie
+/// spadnúť, je to diagnostika, nie dáta.
+pub fn zapis_chybu_okna(cas: u64, kontext: &str, chyba: &str) {
+    use std::io::Write;
+    let cesta = cesta_log_okien_suboru();
+    if let Some(priecinok) = cesta.parent() {
+        let _ = std::fs::create_dir_all(priecinok);
+    }
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&cesta) {
+        let _ = writeln!(f, "{cas} {kontext}: {chyba}");
+    }
+}
+
 /// Načíta uloženú pozíciu v logu — ale LEN keď uložená cesta sedí s tou, čo
 /// sa práve číta. Inak by appka po zmene cesty (iná hra, iný disk) omylom
 /// „pokračovala" v súbore, ktorý vôbec nečíta, a buď preskočila jeho

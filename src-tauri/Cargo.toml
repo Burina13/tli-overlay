@@ -33,6 +33,11 @@ notify = "8"
 # `cc`/MSVC na Windows), žiadna systémová DLL navyše.
 rusqlite = { version = "0.40.2", features = ["bundled"] }
 
+[dev-dependencies]
+# `tauri::test` (TLI 23) — len pre `tests/e2e_okna.rs`, nejde do vydanej appky
+# (feature sa pridá len pri `cargo test`, nie pri bežnom `build`/`bundle`).
+tauri = { version = "2", features = ["test"] }
+
 [target.'cfg(windows)'.dependencies]
 windows = { version = "=0.58.0", features = [
   "Win32_Foundation",

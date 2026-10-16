@@ -4,6 +4,7 @@
 
 mod guide;
 mod klient;
+mod okna;
 #[cfg(windows)]
 mod okno;
 #[cfg(windows)]
@@ -1374,14 +1375,20 @@ fn skry_overlay(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Zapíše chybu z práce s oknom do `okna.log` namiesto jej ticheho zahodenia
+/// (TLI 23, bod 2 zadania).
+fn loguj_chybu_okna(kontext: &str, chyba: &str) {
+    stav::zapis_chybu_okna(tracker::unixovy_cas(), kontext, chyba);
+}
+
 /// Ukáže a zaostrí dané okno (nastavenia/hlavné) — spoločné pre tray menu aj
 /// pre príkaz volaný z JS (tlačidlo „Otvoriť nastavenia“ v záložke Nastavenia
-/// hlavného okna).
+/// hlavného okna). Samotná logika je v `okna::ukaz_a_zaostri` (TLI 23) —
+/// vytiahnutá do vlastného súboru, aby sa dala otestovať v
+/// `tests/e2e_okna.rs` bez behu celej appky; tu sa len doplní logovanie.
 fn ukaz_a_zaostri(app: &AppHandle, label: &str) {
-    if let Some(okno) = app.get_webview_window(label) {
-        let _ = okno.show();
-        let _ = okno.unminimize();
-        let _ = okno.set_focus();
+    for (kontext, chyba) in okna::ukaz_a_zaostri(app, label) {
+        loguj_chybu_okna(&kontext, &chyba);
     }
 }
 
@@ -1561,6 +1568,21 @@ fn main() {
             rezim_upravy_ulozit_panel,
             uloz_priehladnost
         ])
+        // TLI 23: Tauri v2 by zatvorením (X) KAŽDÉ okno ZNIČILO — appka by
+        // potom na druhý klik (tray menu, `otvor_nastavenia`) narazila na
+        // `get_webview_window` vracajúce `None` a ticho by neurobila nič.
+        // Platí to pre VŠETKY okná appky (zadanie, bod 1), nielen Nastavenia:
+        // zatvorenie sa preto všade mení na skrytie, appka ho pri ďalšom
+        // otvorení (`ukaz_a_zaostri`) len znova ukáže namiesto stavania od
+        // nuly. Chyba pri skrývaní sa zaloguje (bod 2), nie ticho zahodí.
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                if let Err(e) = window.hide() {
+                    loguj_chybu_okna(&format!("zatvorenie okna '{}' (hide)", window.label()), &e.to_string());
+                }
+            }
+        })
         .setup(move |app| {
             let handle = app.handle().clone();
 
