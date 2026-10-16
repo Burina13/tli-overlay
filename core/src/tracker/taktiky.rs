@@ -43,6 +43,11 @@ pub struct VstupTaktiky {
     pub hodnota_vstupov_fe: Option<f64>,
     pub fe_za_hodinu: Option<f64>,
     pub trvanie_ms: Option<i64>,
+    /// `RRRR-MM-DD HH:MM:SS` (`log::Cas::text()`) — kedy sa beh začal. Samotné
+    /// zoskupenie a klasickú štatistiku (`zoskup`/`vypocitaj_statistiku`) sa
+    /// nedotýka, používa ho až bayesovský odhad v `poradca.rs` (TLI 13c) na
+    /// vypočítanie veku behu a rozpad váhy starších dát.
+    pub zaciatok_cas: Option<String>,
 }
 
 /// Kanonický podpis buildu: hrdina, pact konfigurácia a zotriedené ID
@@ -72,6 +77,7 @@ pub fn priprav_vstupy(riadky: &[RiadokPreTaktiku], modifikatory: &BTreeMap<i64, 
             hodnota_vstupov_fe: r.hodnota_vstupov_fe,
             fe_za_hodinu: r.fe_za_hodinu,
             trvanie_ms: r.trvanie_ms,
+            zaciatok_cas: r.zaciatok_cas.clone(),
         })
         .collect()
 }
@@ -371,6 +377,7 @@ mod testy {
             hodnota_vstupov_fe: naklad,
             fe_za_hodinu: fe_h,
             trvanie_ms: Some(60_000),
+            zaciatok_cas: None,
         }
     }
 

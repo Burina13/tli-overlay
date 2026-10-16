@@ -15,6 +15,7 @@ pub mod ceny;
 pub mod chvost;
 pub mod db;
 pub mod import;
+pub mod poradca;
 pub mod pripomienka;
 pub mod stav;
 pub mod steam;
