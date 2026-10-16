@@ -2,6 +2,29 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.17.1 — 16.10.2026 (TLI 23 hotfix: okno sa po zatvorení neotváralo)
+
+**Hotfix, vydaný priamo z `tli-v0.17.0`** (nie z aktuálneho `main`) — na `main`
+medzitým pristálo TLI 22 (ceny z obrazovky trhu cez Gemini vision), ktoré je
+zámerne NEVYDANÉ (čaká sa na reálne screenshoty od Richarda). Tento hotfix ho
+preto neobsahuje; TLI 22 ostáva čakať na `main` do `tli-v0.18.0`.
+
+Richard nahlásil 16.10.2026 ~17:10: klik na „Nastavenia" okno otvorí, X ho
+zavrie, druhý klik už nič neotvorí (platilo pre VŠETKY okná appky, nielen
+Nastavenia). Príčina: appka nemala `on_window_event(CloseRequested)`, takže
+Tauri v2 okno pri zatvorení PREDVOLENE ZNIČILO, a appka pri chýbajúcom okne
+ticho neurobila nič.
+
+- Zatvorenie (X) teraz pre všetky okná mení na skrytie (`prevent_close()` +
+  `hide()`) namiesto zničenia.
+- Keby okno napriek tomu chýbalo, appka ho znova postaví z `tauri.conf.json`
+  namiesto ticheho no-opu, a keď je mimo viditeľného monitora, vráti ho na
+  stred. Chyby sa logujú (`okna.log`), nie ticho zahadzujú.
+- Nový regresný test `src-tauri/tests/e2e_okna.rs` (5 okien × 3 cykly) —
+  overené ručne, že na pôvodnom kóde padá a po oprave prechádza.
+
+Detail: `stacks/games/tli-overlay/README.md` (repo `ops`) § TLI 23.
+
 ## 0.16.0 — 16.10.2026 (TLI 19 dokončenie + TLI 14)
 
 **TLI 19 akceptačné kritérium OVERENÉ nad reálnym celodenným logom.** Richard
