@@ -1,6 +1,6 @@
 {
-  "version": "0.17.0",
-  "notes": "Nové: skratka Ctrl+F8, Upraviť rozloženie — panel s radou, mini-panel trackera a toast pripomienky sa dajú posunúť a zmeniť im veľkosť (ťahaj za pásik hore, za roh zmeníš veľkosť, Enter alebo Esc uloží). Záložka Tracker teraz priebežne ukazuje stav denného uploadu logov aj chybu, keď niečo nejde — nielen po ručnom kliku.",
-  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.17.0/Tvoj-Tatko-TLI-Overlay_0.17.0_x64_en-US.msi",
-  "msiSha256": "6799fe642fe40a7c347db46e5f3180986c3d5d6a0882b9a73e38714fbfabcefe"
+  "version": "0.17.1",
+  "notes": "Hotfix: okno (Nastavenia aj ostatné) sa po zatvorení (X) už znova neotváralo — druhý klik na tray menu neotváral nič. Zatvorenie teraz skrýva okno namiesto jeho zničenia; keby okno napriek tomu chýbalo, appka ho sama postaví znova.",
+  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.17.1/Tvoj-Tatko-TLI-Overlay_0.17.1_x64_en-US.msi",
+  "msiSha256": "7b05b1982ba515887d1de1b243fa55cb912940f1c84f0896c175da24aa0a73ab"
 }
