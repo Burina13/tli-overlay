@@ -47,11 +47,29 @@ const UKAZKA_TRACKER = {
   },
   behy: [
     { id: 1, zona: OAZA, podpis_vstupov: "400021x1+500101x2", podpis_kombinacie: "", trvanie_ms: 300000, hodnota_dropov: 468.0, hodnota_vstupov: 3.1, cisty_zisk: 464.9, bez_ceny: [], najstarsia_cena: null },
-    { id: 2, zona: LAVA, podpis_vstupov: "400021x1+500102x1", podpis_kombinacie: "", trvanie_ms: 240000, hodnota_dropov: 306.0, hodnota_vstupov: 3.1, cisty_zisk: 302.9, bez_ceny: [[999999, 3]], najstarsia_cena: null },
+    { id: 2, zona: LAVA, podpis_vstupov: "400021x1+500102x1", podpis_kombinacie: "", trvanie_ms: 240000, hodnota_dropov: 306.0, hodnota_vstupov: 3.1, cisty_zisk: 302.9, bez_ceny: [[999999, 3]], najstarsia_cena: null, zastarane: [[5080, 12]] },
     { id: 3, zona: OAZA, podpis_vstupov: "400021x1+500101x2", podpis_kombinacie: "", trvanie_ms: 180000, hodnota_dropov: 104.0, hodnota_vstupov: 3.1, cisty_zisk: 100.9, bez_ceny: [], najstarsia_cena: null },
   ],
   vek_cien: { 400021: "pred 4 min", 500101: "pred 4 min", 5080: "pred 12 min" },
   pocet_cien: 5,
+  // TLI 20 — výzva „vyhľadaj na Exchange". V náhľade je zámerne vyplnená,
+  // nech je na screenshote z CI vidieť, ako vyzerá, keď sa zobrazí.
+  vyzva_ceny: { pocet: 4, polozky: [999999, 140005, 5080] },
+};
+
+// Mená položiek pre náhľad (TLI 20 bod 7). Náhľad beží z `file://`, kde
+// `fetch("polozky-seed-en.json")` neprejde — bez tohto by bolo na screenshote
+// `#400021` namiesto skutočného mena. Stačí hrsť ID, ktoré sa v náhľade
+// naozaj vyskytujú.
+// Hodnoty sú DOSLOVA z `polozky-seed-en.json` — náhľad nesmie ukazovať meno,
+// ktoré appka v skutočnosti nepozná. `500101`/`500102`/`999999` v seede nie sú,
+// preto sa tu neuvádzajú a v náhľade ostanú ako `#500101` (presne tak, ako to
+// hráč uvidí).
+window.__MENA_POLOZIEK__ = {
+  400021: "Steel Forge Beacon (Timemark 7)",
+  140005: "Shallow Dream Talking - Armor",
+  5080: "Energy Core",
+  100300: "Flame Elementium",
 };
 
 // Ukážkový sprievodca pre záložku Guide (TLI 11, krok 4). Tvar je presne ten,
@@ -98,6 +116,7 @@ const ODPOVEDE = {
   verzia: "0.9.0",
   nacitaj_nastavenia: { hotkey: "F8", hotkey_canvas: "F9", tema: "svetla",
                         mini_overlay: true, tracker_sync: false,
+                        ceny_sync: true,
                         cesta_logu: CESTA_LOGU_UKAZKA },
   tracker_prehlad: UKAZKA_TRACKER,
   tracker_csv: "id;mapa\n1;YunDuanLvZhou\n",
@@ -105,6 +124,7 @@ const ODPOVEDE = {
   guide_sync: UKAZKA_GUIDE,
   uloz_prepinac: true,
   tracker_sync_teraz: "Odoslané: 3 nových, 1 už server mal.",
+  ceny_sync_teraz: "Ceny: odoslaných 2, od partie prišlo 37 (z toho 5 nových).",
   uloz_temu: "svetla",
   // TLI 11c — automatická detekcia cesty k logu (náhľad ukazuje stav „nájdené a v poriadku").
   tracker_navrh_cestu: CESTA_LOGU_UKAZKA,

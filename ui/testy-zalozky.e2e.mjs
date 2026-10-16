@@ -164,3 +164,59 @@ test("uloz_prepinac: aj chk-pripomienka posiela string meno, nie element zo zál
         window.close();
     }
 });
+
+// ── TLI 20: zdieľané ceny partie ────────────────────────────────────────────
+
+test("uloz_prepinac: chk-ceny posiela meno ceny_sync a hneď si vypýta kolo synchronizácie", () => {
+    const { window, document, volania } = postavApp();
+    try {
+        const chk = document.getElementById("chk-ceny");
+        chk.checked = true;
+        chk.dispatchEvent(new window.Event("change", { bubbles: true }));
+
+        const prepinace = volania.filter((v) => v.prikaz === "uloz_prepinac");
+        assert.equal(prepinace.length, 1);
+        const { meno, zapnuty } = prepinace[0].argy;
+        assert.equal(meno, "ceny_sync");
+        assert.equal(zapnuty, true);
+    } finally {
+        window.close();
+    }
+});
+
+test("výzva na Exchange ukáže mená položiek, nie holé ID, a skryje sa keď netreba", async () => {
+    const { window, document } = postavApp();
+    try {
+        // `obnovTracker` beží asynchrónne po DOMContentLoaded — počkáme na
+        // jedno kolo mikroúloh, nech sa stihne vykresliť.
+        window.document.dispatchEvent(new window.Event("DOMContentLoaded", { bubbles: true }));
+        await new Promise((hotovo) => setTimeout(hotovo, 50));
+
+        const vyzva = document.getElementById("vyzva-ceny");
+        const text = document.getElementById("vyzva-ceny-text").textContent;
+        assert.equal(vyzva.classList.contains("skryte"), false,
+                     "stub má vyplnenú vyzva_ceny, výzva má byť vidieť");
+        assert.match(text, /Vyhľadaj na Exchange/);
+        // 5080 je v seede ako „Energy Core" — ID sa nesmie zobraziť surové.
+        assert.match(text, /Energy Core/);
+        assert.match(text, /Shallow Dream Talking/);
+    } finally {
+        window.close();
+    }
+});
+
+test("odznaky vstupov ukazujú meno položky a ID si nechávajú v title", async () => {
+    const { window, document } = postavApp();
+    try {
+        window.document.dispatchEvent(new window.Event("DOMContentLoaded", { bubbles: true }));
+        await new Promise((hotovo) => setTimeout(hotovo, 50));
+
+        const odznaky = [...document.querySelectorAll("#tabulka-behov .odznak")];
+        assert.ok(odznaky.length > 0, "história máp sa nevykreslila");
+        const beacon = odznaky.find((o) => o.getAttribute("title") === "#400021");
+        assert.ok(beacon, "odznak pre 400021 sa nenašiel");
+        assert.match(beacon.textContent, /Steel Forge Beacon/);
+    } finally {
+        window.close();
+    }
+});

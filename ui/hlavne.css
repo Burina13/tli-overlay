@@ -331,6 +331,25 @@ tbody tr:hover {
     border: 1px solid var(--farba-upozornenie-tlmene);
 }
 
+/* Výzva „vyhľadaj na Exchange" (TLI 20). Vizuálne je to upozornenie, nie
+   chyba — ceny sa dajú doplniť tromi klikmi v hre a appka nič nepokazila. */
+.vyzva-ceny {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 10px 0;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background-color: var(--farba-upozornenie-pozadie);
+    border: 1px solid var(--farba-upozornenie-tlmene);
+    color: var(--farba-upozornenie);
+    font-size: 0.85rem;
+}
+
+.vyzva-ceny span {
+    flex: 1;
+}
+
 .vek-ceny {
     font-size: 0.75rem;
     color: var(--farba-text-tlmeny);

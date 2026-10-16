@@ -40,6 +40,13 @@
                 <span id="zivy-text">Tracker čaká na prvú mapu…</span>
             </div>
 
+            <!-- Vyzva na vyhladanie cien na Exchange (TLI 20). Appka do hry
+                 NIC neposiela — je to navod, co si ma hrac vyhladat sam. -->
+            <div class="vyzva-ceny skryte" id="vyzva-ceny">
+                <span id="vyzva-ceny-text"></span>
+                <button type="button" class="btn-vedlajsi" id="btn-ako-na-exchange">Ako na to</button>
+            </div>
+
             <div class="riadok-prepinacov">
                 <!-- Prepinac pre mini-panel s vysvetlivkou -->
                 <label class="prepinac">
@@ -53,6 +60,13 @@
                     <input type="checkbox" id="chk-sync">
                     Posielať výsledky partii
                     <small>Výsledky máp sa objavia v rebríčku na tli.tvojtatko.sk/tracker. Bez zapnutia sa neposiela nič.</small>
+                </label>
+
+                <!-- Prepinac zdielania cien s partiou (TLI 20) -->
+                <label class="prepinac">
+                    <input type="checkbox" id="chk-ceny">
+                    Zdieľať ceny s partiou
+                    <small>Ceny, ktoré si vyhľadáš na Exchange, dostane celá partia — a ty ich ceny tiež. Nič iné sa neposiela.</small>
                 </label>
 
                 <!-- Prepinac pripomienky Enable Log (TLI 11d) -->

@@ -77,6 +77,38 @@ const PREKLAD_MAPY = {
     yujinzhixibinansuo: "Ember's Rest",
 };
 
+// Mená položiek (TLI 19 bod 3, TLI 20 bod 7). Balík `polozky-seed-en.json`
+// pochádza z TITracku (MIT, podrobne v NOTICE.md) a pokrýva aj tohtosezónne
+// beacony 400000/400001, ktoré staršia tabuľka `en_id_table.json` nemala.
+// Načítava sa raz a asynchrónne: keď sa nenačíta, zobrazí sa `#400021` ako
+// doteraz — appka na mene položky nesmie stáť.
+// `window.__MENA_POLOZIEK__` podsúva náhľad pre CI (`nahlad-stub.js`) —
+// ten beží z `file://`, kde `fetch` neprejde, a screenshot by inak ukazoval
+// holé `#400021` namiesto mien.
+let MENA_POLOZIEK = window.__MENA_POLOZIEK__ || {};
+
+// `typeof fetch` sa kontroluje zámerne: v jsdom teste (`ui/testy-zalozky.e2e.mjs`)
+// `fetch` neexistuje a holé volanie by zhodilo CELÝ skript pri načítaní —
+// teda aj všetko ostatné v okne.
+if (typeof fetch === "function") {
+    fetch("polozky-seed-en.json")
+        .then((o) => (o.ok ? o.json() : null))
+        .then((d) => {
+            if (d && d.polozky) {
+                MENA_POLOZIEK = d.polozky;
+                // Tabuľky už mohli byť vykreslené s holými číslami — prekresli ich.
+                obnovTracker().catch(() => {});
+            }
+        })
+        .catch(() => {});
+}
+
+/// `400021` → `Steel Forge Beacon (Timemark 7)`, alebo `#400021`, keď meno
+/// nepoznáme. Nikdy nevracia prázdny reťazec.
+function nazovPolozky(id) {
+    return MENA_POLOZIEK[String(id)] || `#${id}`;
+}
+
 /// Posledný kus cesty zóny bez prípony, napr. `XZ_ShouGuSiDi000`.
 function kodMapy(cesta) {
     const kus = cesta.split("/").pop() || cesta;
@@ -159,7 +191,9 @@ function odznakyVstupov(podpis) {
         .map((kus) => {
             const [id, pocet] = kus.split("x");
             const krat = pocet && pocet !== "1" ? ` ×${pocet}` : "";
-            return `<span class="odznak">#${id}${krat}</span>`;
+            // `title` nesie ID aj vtedy, keď sa zobrazuje meno — pri hlásení
+            // chyby je číslo to jediné, čo sa dá jednoznačne dohľadať.
+            return `<span class="odznak" title="#${id}">${nazovPolozky(id)}${krat}</span>`;
         })
         .join(" ");
 }
@@ -277,6 +311,50 @@ function vykresliStav(p) {
             : "Zatiaľ žiadna cena — vyhľadaj si v hre na trhu pár položiek a doplnia sa samy.";
 }
 
+// ─── Výzva „vyhľadaj na Exchange" (TLI 20) ──────────────────────────────────
+// Appka do hry NIČ neposiela a ani nemôže — toto je návod, čo si má hráč
+// vyhľadať sám. Zmysel: jedno vyhľadanie na in-game Exchange zapíše cenu do
+// logu a cez zdieľanie ju dostane celá partia, takže dva-tri kliky doplnia
+// ceny všetkým trom naraz.
+const elVyzvaCeny = document.getElementById("vyzva-ceny");
+const elVyzvaCenyText = document.getElementById("vyzva-ceny-text");
+const btnAkoNaExchange = document.getElementById("btn-ako-na-exchange");
+
+function vykresliVyzvuCien(p) {
+    const v = p.vyzva_ceny;
+    if (!v || !v.polozky || v.polozky.length === 0) {
+        elVyzvaCeny.classList.add("skryte");
+        return;
+    }
+    elVyzvaCeny.classList.remove("skryte");
+    const zoznam = v.polozky.map(nazovPolozky).join(", ");
+    const zvysok = v.pocet > v.polozky.length ? ` (a ďalších ${v.pocet - v.polozky.length})` : "";
+    elVyzvaCenyText.textContent =
+        `${v.pocet} ${slovoPoloziek(v.pocet)} z posledných máp nemá cenu mladšiu ako 24 h. ` +
+        `Vyhľadaj na Exchange: ${zoznam}${zvysok}.`;
+}
+
+function slovoPoloziek(n) {
+    if (n === 1) return "položka";
+    return n >= 2 && n <= 4 ? "položky" : "položiek";
+}
+
+btnAkoNaExchange.addEventListener("click", () => {
+    const v = elVyzvaCenyText.textContent;
+    elVyzvaCenyText.textContent =
+        "V hre otvor Exchange (Trade House), do hľadania napíš meno položky a " +
+        "potvrď. Hra si cenu zapíše do logu, appka ju zachytí sama a " +
+        (chkCeny.checked ? "pošle ju celej partii." : "ostane len u teba (zdieľanie cien máš vypnuté).");
+    // Pôvodný text sa vráti pri najbližšom prekreslení (á 3 s) — netreba
+    // zatvárať nič ručne.
+    setTimeout(() => {
+        if (elVyzvaCenyText.textContent.startsWith("V hre otvor")) {
+            elVyzvaCenyText.textContent = v;
+        }
+    }, 12000);
+});
+
+
 // ─── Cesta k hernému logu (TLI 11c) ─────────────────────────────────────────
 // Pole je READONLY zámerne — zmena ide len cez natívny výber súboru
 // (`btn-vyber-logu`), nech appka nedostane preklep, ktorý nevie overiť za letu.
@@ -372,6 +450,7 @@ async function obnovTracker() {
         vykresliKombinacie(p);
         vykresliBehy(p);
         vykresliStav(p);
+        vykresliVyzvuCien(p);
 
         // Automatické odoslanie partii — len keď si to hráč zapol a len raz za
         // SYNC_KAZDYCH_KOL kôl, nech sa pri každom takte nechodí na server.
@@ -600,6 +679,7 @@ if (btnGuideZavriOdkaz) {
 
 const chkMini = document.getElementById("chk-mini");
 const chkSync = document.getElementById("chk-sync");
+const chkCeny = document.getElementById("chk-ceny");
 const chkPripomienka = document.getElementById("chk-pripomienka");
 const btnSyncTeraz = document.getElementById("btn-sync-teraz");
 const stavSync = document.getElementById("stav-sync");
@@ -625,6 +705,21 @@ async function prepni(meno, zapnuty) {
 }
 
 chkMini.addEventListener("change", () => prepni("mini_overlay", chkMini.checked));
+
+chkCeny.addEventListener("change", async () => {
+    await prepni("ceny_sync", chkCeny.checked);
+    if (chkCeny.checked) {
+        // Po zapnutí hneď jedno kolo — inak by hráč klikol a päť minút
+        // nevidel, či to vôbec funguje.
+        try {
+            ukazStavSyncu(await invoke("ceny_sync_teraz"), false);
+        } catch (e) {
+            ukazStavSyncu(String(e), true);
+        }
+    } else {
+        ukazStavSyncu("Ceny sa s partiou nezdieľajú.", false);
+    }
+});
 chkPripomienka.addEventListener("change", () => prepni("pripominat_enable_log", chkPripomienka.checked));
 
 chkSync.addEventListener("change", async () => {
@@ -686,6 +781,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         // Predvolené ZAPNUTÉ — staré uložené nastavenia toto pole nemajú vôbec,
         // `!== false` preto drží checkbox zaškrtnutý, kým ho hráč výslovne nevypne.
         chkPripomienka.checked = nastavenia.pripominat_enable_log !== false;
+        // To isté platí pre zdieľanie cien (TLI 20) — predvolene zapnuté.
+        chkCeny.checked = nastavenia.ceny_sync !== false;
         ukazStavSyncu(chkSync.checked ? "Posiela sa automaticky každé tri minúty."
                                       : "Partii sa neposiela nič.", false);
         await pripravCestuLogu(nastavenia);
