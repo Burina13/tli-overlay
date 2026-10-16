@@ -29,6 +29,7 @@ use tli_overlay_core::tracker::db::{self, OceneneHodnoty, ZaznamCeny};
 use tli_overlay_core::tracker::pripomienka::{klasifikuj, SledovacPripomienky};
 use tli_overlay_core::tracker::stav::{Beh, Sledovac};
 use tli_overlay_core::tracker::steam;
+use tli_overlay_core::tracker::trh::je_otvorenie_trhu;
 
 use crate::stav::Stav;
 
@@ -150,6 +151,11 @@ pub struct StavTrackera {
     /// sa ešte nestal) — zobrazuje sa v záložke Tracker vedľa „Nahrať log
     /// teraz", nielen po ručnom kliku na to tlačidlo.
     pub posledna_chyba_uploadu: Option<String>,
+    /// TLI 22: `precitaj` v tejto dávke uvidel otvorenie obrazovky trhu
+    /// (`AuctionHouseShowItemGoodV2 Run`). Vlákno na pozadí to po
+    /// `odober_trh_otvoreny()` premení na jednu analýzu `Modul::Ceny` —
+    /// rovnaký vzor ako `pripomienka.odober_udalosti()` vyššie.
+    trh_otvoreny: bool,
 }
 
 impl Default for StavTrackera {
@@ -181,6 +187,7 @@ impl Default for StavTrackera {
             ceny_stiahnute_do: 0,
             posledna_kontrola_uploadu: None,
             posledna_chyba_uploadu: None,
+            trh_otvoreny: false,
         }
     }
 }
@@ -230,6 +237,31 @@ impl StavTrackera {
             }
         }
         zmenenych
+    }
+
+    /// TLI 22: zistí a VYNULUJE, či posledné `precitaj` uvidelo otvorenie
+    /// obrazovky trhu — volajúci (vlákno na pozadí) má na `true` zareagovať
+    /// práve raz, nie pri každom ďalšom tiku.
+    pub fn odober_trh_otvoreny(&mut self) -> bool {
+        std::mem::take(&mut self.trh_otvoreny)
+    }
+
+    /// Zapíše cenu prečítanú z obrazovky trhu (TLI 22, `?modul=ceny`) do
+    /// cenníka aj do lokálnej DB — rovnaký pár krokov ako pri vlastnom
+    /// vyhľadaní na Exchange (`precitaj` vyššie), len s `Zdroj::Obrazovka`.
+    pub fn uloz_cenu_z_obrazovky(&mut self, polozka: u32, najnizsia: f64, pocet_ponuk: u32, teraz: u64) -> bool {
+        let zmenilo_sa = self.cennik.vloz_v_case(
+            Cena::z_obrazovky(polozka, najnizsia, pocet_ponuk, teraz),
+            teraz,
+        );
+        if let Some(conn) = &self.db {
+            let sezona = self.sledovac.hrac_snimka().and_then(|h| h.season_id.clone());
+            let _ = db::uloz_cenu(
+                conn,
+                &ZaznamCeny::z_obrazovky(polozka, najnizsia, pocet_ponuk, sezona, teraz as i64),
+            );
+        }
+        zmenilo_sa
     }
 }
 
@@ -389,6 +421,9 @@ pub fn precitaj(stav: &mut StavTrackera, cesta: &Path) -> Result<usize, String> 
     let mut uzavrete_behy = Vec::new();
     for riadok in &riadky {
         stav.pripomienka.spracuj_riadok(teraz, klasifikuj(riadok));
+        if je_otvorenie_trhu(riadok) {
+            stav.trh_otvoreny = true;
+        }
         if let Some(beh) = stav.sledovac.riadok(riadok) {
             uzavrete_behy.push(beh);
             novych += 1;
@@ -477,6 +512,9 @@ pub struct PrehladProUi {
     pub posledna_kontrola_uploadu_pred: Option<String>,
     /// Text poslednej chyby uploadu, `None` keď posledný pokus prešiel.
     pub posledna_chyba_uploadu: Option<String>,
+    /// Koľko cien appka prečítala z obrazovky trhu (TLI 22) za posledných
+    /// 24 h — počítadlo „dnešných cien" zo zadania bod 3.
+    pub pocet_cien_z_obrazovky_24h: i64,
 }
 
 /// Koľko položiek najviac vypíše výzva „vyhľadaj na Exchange". Viac než tri
@@ -578,6 +616,11 @@ pub fn prehlad_pre_ui(stav: &StavTrackera, zapnuty: bool, dan: bool) -> PrehladP
             .posledna_kontrola_uploadu
             .map(|kedy| vek_text(teraz.saturating_sub(kedy))),
         posledna_chyba_uploadu: stav.posledna_chyba_uploadu.clone(),
+        pocet_cien_z_obrazovky_24h: stav
+            .db
+            .as_ref()
+            .and_then(|c| db::pocet_cien_z_obrazovky_od(c, teraz.saturating_sub(24 * 3600) as i64).ok())
+            .unwrap_or(0),
     }
 }
 
@@ -1025,10 +1068,10 @@ pub fn spusti_vlakno(app: AppHandle) {
         loop {
             // Daň (`tracker_dan`) sa uplatňuje až pri zostavovaní prehľadu pre
             // UI (`prehlad_pre_ui`), tu sa zámerne nepoužíva.
-            let (zapnuty, rucna, pripominat) = {
+            let (zapnuty, rucna, pripominat, ceny_obrazovka_zapnute) = {
                 let stav = app.state::<Stav>();
                 let n = stav.nastavenia.lock().unwrap();
-                (n.tracker_zapnuty, n.cesta_logu.clone(), n.pripominat_enable_log)
+                (n.tracker_zapnuty, n.cesta_logu.clone(), n.pripominat_enable_log, n.ceny_obrazovka_zapnute)
             };
 
             let cesta = if zapnuty { najdi_log(&rucna) } else { None };
@@ -1067,7 +1110,7 @@ pub fn spusti_vlakno(app: AppHandle) {
             let Some(cesta) = cesta else { continue };
 
             let tracker = app.state::<Tracker>();
-            let (novych, pripomienka_udalosti) = {
+            let (novych, pripomienka_udalosti, trh_otvoreny) = {
                 let mut t = tracker.0.lock().unwrap();
                 t.pripomienka.nastav_zapnute(pripominat);
                 let vysledok = precitaj(&mut t, &cesta);
@@ -1085,13 +1128,22 @@ pub fn spusti_vlakno(app: AppHandle) {
                 // či `precitaj` našlo nové bajty — lehota sa počíta aj vtedy,
                 // keď sa v logu nedeje ÚPLNE NIČ.
                 t.pripomienka.tik(unixovy_cas());
-                (novych, t.pripomienka.odober_udalosti())
+                (novych, t.pripomienka.odober_udalosti(), t.odober_trh_otvoreny())
             };
             if novych > 0 {
                 let _ = app.emit(UDALOST_ZMENA, novych);
             }
             for udalost in pripomienka_udalosti {
                 oznam_pripomienku(&app, udalost);
+            }
+
+            // TLI 22: appka SAMA odfotí a pošle, len čo log ukáže otvorenie
+            // obrazovky trhu — žiadny hotkey netreba (ten je len nepovinný
+            // ručný fallback, `hotkey_trh`). `spusti_analyzu` má vlastný
+            // zámok `beh` proti súbehu s F8/F9 aj proti dvom rýchlo za sebou
+            // idúcim otvoreniam.
+            if trh_otvoreny && ceny_obrazovka_zapnute {
+                crate::spusti_analyzu(app.clone(), crate::Modul::Ceny);
             }
 
             // Ceny partie (TLI 20) — á 5 minút, v tom istom vlákne. Vlastné

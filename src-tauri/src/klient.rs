@@ -1,6 +1,6 @@
 use tli_overlay_core::aktualizacia;
 use tli_overlay_core::api;
-use tli_overlay_core::api::{Analyza, AnalyzaCanvas};
+use tli_overlay_core::api::{Analyza, AnalyzaCanvas, AnalyzaCeny};
 use tli_overlay_core::nastavenia::Nastavenia;
 
 #[derive(Debug)]
@@ -12,6 +12,12 @@ pub struct Vysledok {
 #[derive(Debug)]
 pub struct VysledokCanvas {
     pub analyza: AnalyzaCanvas,
+    pub trvanie_ms: u128,
+}
+
+#[derive(Debug)]
+pub struct VysledokCeny {
+    pub analyza: AnalyzaCeny,
     pub trvanie_ms: u128,
 }
 
@@ -67,6 +73,37 @@ pub fn posli_analyzu_canvas(n: &Nastavenia, jpeg: Vec<u8>) -> Result<VysledokCan
                 .map_err(|_| "Server odpovedal niečím, čomu nerozumiem.".to_string())?;
 
             Ok(VysledokCanvas {
+                analyza,
+                trvanie_ms: zaciatok.elapsed().as_millis(),
+            })
+        }
+        Err(ureq::Error::Status(kod, odpoved)) => {
+            let telo = odpoved.into_string().unwrap_or_default();
+            Err(api::sprava_chyby(kod, &telo))
+        }
+        Err(ina) => Err(api::sprava_siete(&ina.to_string())),
+    }
+}
+
+/// Rovnaké ako `posli_analyzu`, len pre ceny z obrazovky trhu (TLI 22) — iný
+/// endpoint (`?modul=ceny`) a iný tvar odpovede (meno položky + ceny, žiadne
+/// súradnice — nič sa nekreslí nad hrou).
+pub fn posli_analyzu_ceny(n: &Nastavenia, jpeg: Vec<u8>) -> Result<VysledokCeny, String> {
+    let zaciatok = std::time::Instant::now();
+
+    let odpoved = ureq::post(&n.adresa_analyza_ceny())
+        .set("Authorization", &format!("Bearer {}", n.kluc))
+        .set("Content-Type", "image/jpeg")
+        .timeout(std::time::Duration::from_secs(60))
+        .send_bytes(&jpeg);
+
+    match odpoved {
+        Ok(res) => {
+            let telo = res.into_string().unwrap_or_default();
+            let analyza: AnalyzaCeny = serde_json::from_str(&telo)
+                .map_err(|_| "Server odpovedal niečím, čomu nerozumiem.".to_string())?;
+
+            Ok(VysledokCeny {
                 analyza,
                 trvanie_ms: zaciatok.elapsed().as_millis(),
             })

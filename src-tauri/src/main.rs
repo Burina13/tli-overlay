@@ -112,6 +112,27 @@ alebo kolíduje s hlavnou skratkou). Vraciam sa k F9."
     Ok(())
 }
 
+/// Tretia skratka — ceny z obrazovky trhu (TLI 22), NEPOVINNÁ. Na rozdiel od
+/// `prehlas_hotkey`/`prehlas_hotkey_canvas` nemá predvolenú hodnotu: hlavný
+/// spôsob spustenia je automatická detekcia z logu (`tracker.rs`,
+/// `odober_trh_otvoreny`), tento hotkey je len ručný fallback zo zadania
+/// („alebo na hotkey"). Prázdny reťazec = nezaregistrovaná, appke sa nič
+/// nemení. Volá sa vždy AŽ PO `prehlas_hotkey` (ten `unregister_all()`-uje).
+pub fn prehlas_hotkey_trh(app: &AppHandle, novy: &str) -> Result<(), String> {
+    let novy = novy.trim();
+    if novy.is_empty() {
+        return Ok(());
+    }
+    let skratky = app.global_shortcut();
+    if skratky.register(novy).is_err() {
+        return Err(format!(
+            "Skratku pre ceny z trhu „{novy}“ Windows neprijal (môže ju držať iná appka \
+alebo kolíduje s inou skratkou). Automatická detekcia z logu funguje ďalej bez nej."
+        ));
+    }
+    Ok(())
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Overlay
 // ─────────────────────────────────────────────────────────────────────────────
@@ -280,10 +301,13 @@ fn naplanuj_skrytie(app: AppHandle, znacka: Instant, sekundy: u64) {
 pub enum Modul {
     Tartarus,
     Canvas,
+    /// Ceny z obrazovky trhu (TLI 22) — spúšťa sa HLAVNE automaticky z logu
+    /// (`tracker.rs::odober_trh_otvoreny`), nepovinne aj cez `hotkey_trh`.
+    Ceny,
 }
 
 #[cfg(windows)]
-fn spusti_analyzu(app: AppHandle, modul: Modul) {
+pub(crate) fn spusti_analyzu(app: AppHandle, modul: Modul) {
     // Kým hráč posúva/zväčšuje panely (TLI 21), F8/F9 nemajú spustiť analýzu
     // nad práve upravovaným rozložením — zmazalo by to náhľad aj vrátilo
     // priechodnosť myši uprostred ťahania.
@@ -359,8 +383,14 @@ V hre prepni Nastavenia → Zobrazenie → Režim okna na „Okno bez okrajov“
     }
 
     let mierka = mierka_okna(&app, &obdlznik);
-    ukaz_overlay_nad(&app, &obdlznik, true);
-    let _ = app.emit("stav", json!({ "faza": "analyzujem" }));
+    // Ceny z obrazovky trhu (TLI 22) bežia hlavne AUTOMATICKY, potichu na
+    // pozadí (zakaždým, keď hráč otvorí detail položky) — veľký panel by pri
+    // bežnom prezeraní trhu blikal nad hrou pri každom kliknutí. Výsledok
+    // ukáže len toast (`ukaz_pripomienku_toast`), rovnako ako chyba.
+    if modul != Modul::Ceny {
+        ukaz_overlay_nad(&app, &obdlznik, true);
+        let _ = app.emit("stav", json!({ "faza": "analyzujem" }));
+    }
 
     // Kódovanie JPEGu aj sieť idú mimo hlavného vlákna — inak by sa na tých
     // pár sekúnd zasekla celá appka vrátane tray ikony.
@@ -464,6 +494,29 @@ V hre prepni Nastavenia → Zobrazenie → Režim okna na „Okno bez okrajov“
                     }
                 }
             }
+            Modul::Ceny => {
+                // TLI 22: žiadne súradnice, žiadne kreslenie nad hrou — len
+                // zápis do cenníka (keď sa dá) a jeden toast. `.ok` je tu vždy
+                // `true`: server pri zlyhaní rozpoznania vráti != 200, čo
+                // `klient::posli_analyzu_ceny` premení na `Err`, nie na
+                // `Ok(AnalyzaCeny { ok: false, .. })`.
+                let vysledok = snimka::do_jpegu(&snimok, zmensenie::MAX_DLZKA, 80)
+                    .and_then(|jpeg| klient::posli_analyzu_ceny(&nastavenia, jpeg));
+                match vysledok {
+                    Ok(v) => {
+                        let a = &v.analyza;
+                        if let (Some(cena), Some(cbid)) = (a.p10, a.config_base_id) {
+                            let tracker = app.state::<tracker::Tracker>();
+                            let mut t = tracker.0.lock().unwrap();
+                            t.uloz_cenu_z_obrazovky(cbid, cena, a.pocet_ponuk, tracker::unixovy_cas());
+                        }
+                        ukaz_pripomienku_toast(&app, &api::text_toastu_ceny(a), "cena", 8);
+                    }
+                    Err(e) => {
+                        ukaz_pripomienku_toast(&app, &format!("Ceny z trhu: {e}"), "chyba", 8);
+                    }
+                }
+            }
         }
 
         *app.state::<Stav>().beh.lock().unwrap() = false;
@@ -478,7 +531,7 @@ V hre prepni Nastavenia → Zobrazenie → Režim okna na „Okno bez okrajov“
 /// Mimo Windowsu appka nevie odfotiť okno hry — kompiluje sa len preto, aby sa
 /// dali spúšťať testy a `cargo check` na Linuxe v CI.
 #[cfg(not(windows))]
-fn spusti_analyzu(app: AppHandle, _modul: Modul) {
+pub(crate) fn spusti_analyzu(app: AppHandle, _modul: Modul) {
     ukaz_chybu(&app, None, "Appka funguje len na Windowse.");
 }
 
@@ -860,6 +913,7 @@ fn uloz_prepinac(
             "pripominat_enable_log" => n.pripominat_enable_log = zapnuty,
             "ceny_sync" => n.ceny_sync = zapnuty,
             "upload_logov" => n.upload_logov = zapnuty,
+            "ceny_obrazovka_zapnute" => n.ceny_obrazovka_zapnute = zapnuty,
             ine => return Err(format!("Neznámy prepínač: {ine}")),
         }
         n.normalizuj();
@@ -1287,19 +1341,21 @@ fn uloz_nastavenia(
     stav::uloz(&nove)?;
     let hotkey = nove.hotkey.clone();
     let hotkey_canvas = nove.hotkey_canvas.clone();
+    let hotkey_trh = nove.hotkey_trh.clone();
     *stav.nastavenia.lock().unwrap() = nove;
-    // `prehlas_hotkey` ruší VŠETKY skratky — canvas sa preto registruje až
-    // po nej, nie súbežne/pred. Ctrl+F8 (TLI 21) z rovnakého dôvodu tiež: inak
-    // by zmena F8/F9 v Nastaveniach appku o „Upraviť rozloženie" nenávratne
-    // pripravila až do reštartu.
+    // `prehlas_hotkey` ruší VŠETKY skratky — canvas aj trh sa preto
+    // registrujú až po nej, nie súbežne/pred. Ctrl+F8 (TLI 21) z rovnakého
+    // dôvodu tiež: inak by zmena F8/F9/F10 v Nastaveniach appku o „Upraviť
+    // rozloženie" nenávratne pripravila až do reštartu.
     let chyba1 = prehlas_hotkey(&app, &hotkey).err();
     let chyba2 = prehlas_hotkey_canvas(&app, &hotkey_canvas).err();
+    let chyba3 = prehlas_hotkey_trh(&app, &hotkey_trh).err();
     let _ = app.global_shortcut().register(ctrl_f8());
-    match (chyba1, chyba2) {
-        (None, None) => Ok(()),
-        (Some(a), None) => Err(a),
-        (None, Some(b)) => Err(b),
-        (Some(a), Some(b)) => Err(format!("{a} {b}")),
+    let chyby: Vec<String> = [chyba1, chyba2, chyba3].into_iter().flatten().collect();
+    if chyby.is_empty() {
+        Ok(())
+    } else {
+        Err(chyby.join(" "))
     }
 }
 
@@ -1389,6 +1445,7 @@ fn main() {
     let nacitane = stav::nacitaj();
     let hotkey_pri_starte = nacitane.hotkey.clone();
     let hotkey_canvas_pri_starte = nacitane.hotkey_canvas.clone();
+    let hotkey_trh_pri_starte = nacitane.hotkey_trh.clone();
 
     let skratky = tauri_plugin_global_shortcut::Builder::new()
         .with_handler(|app, skratka, udalost| {
@@ -1421,15 +1478,25 @@ fn main() {
                 // Hotkey aj Esc robia to isté: zhasnú overlay.
                 skry(app);
             } else if skratka != &esc() {
-                // Ktorý z dvoch hotkey práve spustil analýzu sa pozná podľa
-                // zhody s AKTUÁLNE nastaveným `hotkey_canvas` (nie podľa
-                // hodnoty pri štarte appky — nastavenia sa dajú zmeniť bez
-                // reštartu). Keď sa reťazec nedá naparsovať, nikdy sa
+                // Ktorý z troch hotkey práve spustil analýzu sa pozná podľa
+                // zhody s AKTUÁLNE nastaveným `hotkey_canvas`/`hotkey_trh` (nie
+                // podľa hodnoty pri štarte appky — nastavenia sa dajú zmeniť
+                // bez reštartu). Keď sa reťazec nedá naparsovať (vrátane
+                // prázdneho `hotkey_trh`, ktorý je nepovinný), nikdy sa
                 // nezhodne a padá sa na Tartarus (bezpečný predvolený stav).
-                let hotkey_canvas = app.state::<Stav>().nastavenia.lock().unwrap().hotkey_canvas.clone();
-                let modul = match Shortcut::from_str(&hotkey_canvas) {
-                    Ok(s) if &s == skratka => Modul::Canvas,
-                    _ => Modul::Tartarus,
+                let (hotkey_canvas, hotkey_trh) = {
+                    let stav = app.state::<Stav>();
+                    let n = stav.nastavenia.lock().unwrap();
+                    (n.hotkey_canvas.clone(), n.hotkey_trh.clone())
+                };
+                let modul = if matches!(Shortcut::from_str(&hotkey_canvas), Ok(s) if &s == skratka) {
+                    Modul::Canvas
+                } else if !hotkey_trh.is_empty()
+                    && matches!(Shortcut::from_str(&hotkey_trh), Ok(s) if &s == skratka)
+                {
+                    Modul::Ceny
+                } else {
+                    Modul::Tartarus
                 };
                 spusti_analyzu(app.clone(), modul);
             }
@@ -1499,15 +1566,16 @@ fn main() {
 
             // Keď skratku z nastavení Windows neprijme, `prehlas_hotkey` sa sám
             // vráti k F8 — appka teda nikdy neostane bez ovládacej klávesy.
-            // Canvas sa registruje AŽ PO nej (tá ruší všetky skratky).
+            // Canvas aj trh sa registrujú AŽ PO nej (tá ruší všetky skratky).
             let _ = prehlas_hotkey(&handle, &hotkey_pri_starte);
             let _ = prehlas_hotkey_canvas(&handle, &hotkey_canvas_pri_starte);
-            // Ctrl+F8 (TLI 21) — registruje sa AŽ PO oboch predošlých riadkoch,
+            let _ = prehlas_hotkey_trh(&handle, &hotkey_trh_pri_starte);
+            // Ctrl+F8 (TLI 21) — registruje sa AŽ PO predošlých riadkoch,
             // lebo `prehlas_hotkey` ruší VŠETKY skratky (`unregister_all`) bez
-            // ohľadu na modifikátor. `uloz_nastavenia` volá tú istú dvojicu
+            // ohľadu na modifikátor. `uloz_nastavenia` volá tú istú trojicu
             // znova (zmena skratky v Nastaveniach za behu appky) — preto aj
             // ona po nich musí Ctrl+F8 zaregistrovať nanovo, inak by po zmene
-            // F8/F9 appka o Ctrl+F8 nenávratne prišla až do reštartu.
+            // F8/F9/F10 appka o Ctrl+F8 nenávratne prišla až do reštartu.
             let _ = handle.global_shortcut().register(ctrl_f8());
 
             // Tracker (TLI 11c): číta log na pozadí nezávisle od toho, či je

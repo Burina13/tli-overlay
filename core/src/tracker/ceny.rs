@@ -9,6 +9,11 @@ pub enum Zdroj {
     /// Hráč si položku sám vyhľadal na trhu — najpravdivejšie, čo vieme mať.
     #[default]
     VlastnyTrh,
+    /// TLI 22: cena prečítaná z obrazovky `AuctionHouseShowItemGoodV2` cez
+    /// Gemini vision (keď `XchgSearchPrice` SS14 do logu nepíše). Vidí sa len
+    /// 3–5 najnižších viditeľných ponúk, nie celý trh — o niečo menej
+    /// dôveryhodné než `VlastnyTrh`, stále vlastné pozorovanie hráča.
+    Obrazovka,
     /// Prišlo od partie cez tli.tvojtatko.sk.
     Partia,
     /// Ručne zadané hráčom v nastaveniach.
@@ -21,6 +26,7 @@ impl Zdroj {
     pub fn doveryhodnost(self) -> f64 {
         match self {
             Zdroj::VlastnyTrh => 1.0,
+            Zdroj::Obrazovka => 0.9,
             Zdroj::Partia => 0.8,
             Zdroj::Rucne => 0.6,
         }
@@ -30,6 +36,7 @@ impl Zdroj {
     pub fn kod(self) -> &'static str {
         match self {
             Zdroj::VlastnyTrh => "vlastny_trh",
+            Zdroj::Obrazovka => "obrazovka",
             Zdroj::Partia => "partia",
             Zdroj::Rucne => "rucne",
         }
@@ -37,6 +44,7 @@ impl Zdroj {
 
     pub fn z_kodu(kod: &str) -> Zdroj {
         match kod {
+            "obrazovka" => Zdroj::Obrazovka,
             "partia" => Zdroj::Partia,
             "rucne" => Zdroj::Rucne,
             _ => Zdroj::VlastnyTrh,
@@ -77,6 +85,21 @@ impl Cena {
             zdroj: Zdroj::VlastnyTrh,
             kedy,
             median: Some(median),
+            pocet_ponuk,
+            zdrojov: 1,
+        }
+    }
+
+    /// Cena prečítaná z obrazovky trhu (TLI 22) — `najnizsia` je najlacnejšia
+    /// z 3–5 viditeľných ponúk. Bez mediánu: pri len niekoľkých viditeľných
+    /// ponukách by medián nič navyše nepovedal oproti p10/minimu.
+    pub fn z_obrazovky(polozka: u32, najnizsia: f64, pocet_ponuk: u32, kedy: u64) -> Self {
+        Self {
+            polozka,
+            fe: najnizsia,
+            zdroj: Zdroj::Obrazovka,
+            kedy,
+            median: None,
             pocet_ponuk,
             zdrojov: 1,
         }
@@ -338,6 +361,39 @@ mod testy {
             kedy,
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn zdroj_obrazovka_je_menej_doveryhodny_nez_vlastny_trh_ale_viac_nez_partia() {
+        assert!(Zdroj::Obrazovka.doveryhodnost() < Zdroj::VlastnyTrh.doveryhodnost());
+        assert!(Zdroj::Obrazovka.doveryhodnost() > Zdroj::Partia.doveryhodnost());
+        assert_eq!(Zdroj::z_kodu("obrazovka"), Zdroj::Obrazovka);
+        assert_eq!(Zdroj::Obrazovka.kod(), "obrazovka");
+    }
+
+    #[test]
+    fn cena_z_obrazovky_ma_pocet_ponuk_a_bez_medianu() {
+        let c = Cena::z_obrazovky(1001, 12.0, 3, 1000);
+        assert_eq!(c.fe, 12.0);
+        assert_eq!(c.zdroj, Zdroj::Obrazovka);
+        assert_eq!(c.pocet_ponuk, 3);
+        assert_eq!(c.median, None);
+        assert_eq!(c.zdrojov, 1);
+    }
+
+    #[test]
+    fn cerstva_cena_z_obrazovky_prebije_tyzden_stary_vlastny_trh() {
+        // Rovnaký dôvod ako TLI 20 (vloz dokumentácia vyššie): stará, aj keď
+        // dôveryhodnejšia, cena nesmie navždy zablokovať čerstvú.
+        let mut cennik = Cennik::novy();
+        let tyzden_s = 7 * 24 * 3600;
+        cennik.vloz_v_case(vytvor_cenu(1001, 50.0, Zdroj::VlastnyTrh, 0), tyzden_s);
+        let prebila = cennik.vloz_v_case(
+            Cena::z_obrazovky(1001, 40.0, 3, tyzden_s),
+            tyzden_s,
+        );
+        assert!(prebila);
+        assert_eq!(cennik.cena(1001).unwrap().fe, 40.0);
     }
 
     #[test]

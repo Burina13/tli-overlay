@@ -52,6 +52,8 @@ const UKAZKA_TRACKER = {
   ],
   vek_cien: { 400021: "pred 4 min", 500101: "pred 4 min", 5080: "pred 12 min" },
   pocet_cien: 5,
+  // TLI 22 — koľko cien appka sama prečítala z obrazovky trhu za 24 h.
+  pocet_cien_z_obrazovky_24h: 2,
   // TLI 20 — výzva „vyhľadaj na Exchange". V náhľade je zámerne vyplnená,
   // nech je na screenshote z CI vidieť, ako vyzerá, keď sa zobrazí.
   vyzva_ceny: { pocet: 4, polozky: [999999, 140005, 5080] },
@@ -119,9 +121,9 @@ const CESTA_LOGU_UKAZKA =
 
 const ODPOVEDE = {
   verzia: "0.15.0",
-  nacitaj_nastavenia: { hotkey: "F8", hotkey_canvas: "F9", tema: "svetla",
+  nacitaj_nastavenia: { hotkey: "F8", hotkey_canvas: "F9", hotkey_trh: "", tema: "svetla",
                         mini_overlay: true, tracker_sync: false,
-                        ceny_sync: true, upload_logov: true,
+                        ceny_sync: true, upload_logov: true, ceny_obrazovka_zapnute: true,
                         cesta_logu: CESTA_LOGU_UKAZKA },
   tracker_prehlad: UKAZKA_TRACKER,
   tracker_csv: "id;mapa\n1;YunDuanLvZhou\n",

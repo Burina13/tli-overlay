@@ -63,6 +63,20 @@ pub struct Nastavenia {
     /// a monitor, kým ho hráč prvýkrát nepresunie v režime „Upraviť
     /// rozloženie“ (Ctrl+F8).
     pub rozlozenie: Rozlozenie,
+    /// Ceny z obrazovky trhu (TLI 22, `2026-10-16-1705-mcp.md`): keď appka v
+    /// logu uvidí otvorenie `AuctionHouseShowItemGoodV2` (SS14 do logu ceny
+    /// nepíše, len lifecycle stránky), sama odfotí a pošle na `?modul=ceny`.
+    /// **Predvolene ZAPNUTÉ** — rovnaký dôvod ako `ceny_sync`: je to verejná
+    /// cena na trhu, nie osobný údaj, a cieľom zadania je „ceny bez ručnej
+    /// práce". Žiadny nový povinný hotkey (`hotkey_trh` nižšie je len
+    /// nepovinný ručný fallback) — zámerne, rovnaká filozofia ako
+    /// `zber_dat_zapnute` vyššie.
+    pub ceny_obrazovka_zapnute: bool,
+    /// Nepovinná skratka pre RUČNÉ vyvolanie analýzy trhu (zadanie bod 2,
+    /// „alebo na hotkey") — napr. keď automatická detekcia z logu zlyhá
+    /// (iný jazyk klienta hry, zmena textu stránky). Prázdny reťazec =
+    /// nezaregistrovaná, nič sa nemení oproti appke bez tejto funkcie.
+    pub hotkey_trh: String,
 }
 
 impl Default for Nastavenia {
@@ -86,6 +100,8 @@ impl Default for Nastavenia {
             ceny_sync: true,
             upload_logov: true,
             rozlozenie: Rozlozenie::default(),
+            ceny_obrazovka_zapnute: true,
+            hotkey_trh: String::new(),
         }
     }
 }
@@ -104,6 +120,7 @@ impl Nastavenia {
         self.kluc = self.kluc.trim().to_string();
         self.hotkey = self.hotkey.to_uppercase();
         self.hotkey_canvas = self.hotkey_canvas.to_uppercase();
+        self.hotkey_trh = self.hotkey_trh.trim().to_uppercase();
 
         if self.autoskrytie_s > 600 {
             self.autoskrytie_s = 600;
@@ -129,6 +146,11 @@ impl Nastavenia {
     /// Frozen Canvas (TLI 4b) — ten istý endpoint, iný modul.
     pub fn adresa_analyza_canvas(&self) -> String {
         self.adresa("/api/analyza?modul=canvas")
+    }
+
+    /// Ceny z obrazovky trhu (TLI 22) — ten istý endpoint, iný modul.
+    pub fn adresa_analyza_ceny(&self) -> String {
+        self.adresa("/api/analyza?modul=ceny")
     }
 
     /// Príjem výsledkov máp pre rebríček partie (TLI 11, krok 5).
@@ -334,6 +356,32 @@ mod testy {
         let n = Nastavenia::z_jsonu(r#"{"kluc":"abc","hotkey":"F8"}"#);
         assert_eq!(n.rozlozenie, crate::rozlozenie::Rozlozenie::default());
         assert_eq!(n.kluc, "abc");
+    }
+
+    #[test]
+    fn ceny_obrazovka_je_predvolene_zapnuta_a_hotkey_trh_prazdny() {
+        // TLI 22: verejná cena na trhu, rovnaký dôvod ako ceny_sync — zapnuté
+        // predvolene. Žiadny nový povinný hotkey.
+        let n = Nastavenia::default();
+        assert!(n.ceny_obrazovka_zapnute);
+        assert_eq!(n.hotkey_trh, "");
+        assert_eq!(n.adresa_analyza_ceny(), "https://tli.tvojtatko.sk/api/analyza?modul=ceny");
+    }
+
+    #[test]
+    fn stare_nastavenia_bez_ceny_obrazovka_sa_nacitaju_so_zapnutym_predvolenim() {
+        // appka pred TLI 22 toto pole nemá vôbec — `#[serde(default)]` nesmie
+        // pri jej načítaní zlyhať a predvolené má byť ZAPNUTÉ.
+        let n = Nastavenia::z_jsonu(r#"{"kluc":"abc","hotkey":"F8"}"#);
+        assert!(n.ceny_obrazovka_zapnute);
+        assert_eq!(n.hotkey_trh, "");
+    }
+
+    #[test]
+    fn hotkey_trh_sa_normalizuje_velkymi_pismenami_ked_je_nastaveny() {
+        let mut n = Nastavenia { hotkey_trh: " f10 ".to_string(), ..Default::default() };
+        n.normalizuj();
+        assert_eq!(n.hotkey_trh, "F10");
     }
 
     #[test]

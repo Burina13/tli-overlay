@@ -22,4 +22,5 @@ pub mod stav;
 pub mod steam;
 pub mod sync;
 pub mod taktiky;
+pub mod trh;
 pub mod upload;

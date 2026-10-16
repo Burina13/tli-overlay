@@ -65,10 +65,16 @@ impl From<&ZaznamCeny> for CenaNaOdoslanie {
 /// Vyberie z DB záznamov tie, ktoré sa majú poslať. Nezmyselné hodnoty
 /// (nekonečno, nula, záporné) sa zahodia — jedna pokazená cena nesmie pokaziť
 /// medián celej partii.
+///
+/// Posielajú sa ceny z **vlastného pozorovania** hráča — `vlastny_trh`
+/// (vyhľadanie na Exchange, log) aj `obrazovka` (TLI 22: prečítané z
+/// obrazovky trhu cez Gemini vision, keď log cenu nenapísal). Obe sú to, čo
+/// hráč sám videl na trhu; `partia` (prevzaté od iných) a `rucne` sa
+/// neposielajú — rovnaký dôvod ako vyššie (žiadne self-confirmation).
 pub fn vyber_na_odoslanie(zaznamy: &[ZaznamCeny], max: usize) -> Vec<CenaNaOdoslanie> {
     zaznamy
         .iter()
-        .filter(|z| z.zdroj == "vlastny_trh")
+        .filter(|z| z.zdroj == "vlastny_trh" || z.zdroj == "obrazovka")
         .filter(|z| z.cena_fe.is_finite() && z.cena_fe > 0.0 && z.cena_fe < 1e9)
         .map(CenaNaOdoslanie::from)
         .take(max)
@@ -217,6 +223,23 @@ mod testy {
         let vybrane = vyber_na_odoslanie(&zaznamy, MAX_NA_DAVKU);
         assert_eq!(vybrane.len(), 1, "cena stiahnutá od partie sa nesmie poslať späť");
         assert_eq!(vybrane[0].polozka, 1);
+    }
+
+    #[test]
+    fn posiela_sa_aj_cena_z_obrazovky_trhu() {
+        // TLI 22: aj to je vlastné pozorovanie hráča (čítanie trhu okom cez
+        // Gemini vision namiesto cez log), rovnako dôveryhodné pre partiu ako
+        // vlastny_trh — nie prevzaté od niekoho iného.
+        let zaznamy = vec![
+            zaznam(1, 1.0, "vlastny_trh", 100),
+            zaznam(2, 2.0, "obrazovka", 101),
+            zaznam(3, 3.0, "partia", 102),
+            zaznam(4, 4.0, "rucne", 103),
+        ];
+        let vybrane = vyber_na_odoslanie(&zaznamy, MAX_NA_DAVKU);
+        assert_eq!(vybrane.len(), 2);
+        assert!(vybrane.iter().any(|c| c.polozka == 1));
+        assert!(vybrane.iter().any(|c| c.polozka == 2));
     }
 
     #[test]

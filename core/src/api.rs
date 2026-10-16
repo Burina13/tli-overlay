@@ -174,6 +174,71 @@ pub fn pouzitelne_kroky(a: &AnalyzaCanvas) -> Vec<&Krok> {
         .collect()
 }
 
+// ── Ceny z obrazovky trhu (TLI 22) — `?modul=ceny`, kontrakt v
+// docs/fakty/hry/torchlight-infinite/market-ceny-kontrakt.md. Na rozdiel od
+// Tartarus/Canvas sa nekreslí nič nad hrou — len toast a zápis do cenníka —
+// takže odpoveď nenesie žiadne súradnice políčok.
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AnalyzaCeny {
+    pub ok: bool,
+    pub modul: String,
+    /// Presný anglický názov položky, ako ho server prečítal z obrázka.
+    pub polozka_nazov: String,
+    /// `None`, keď sa `polozka_nazov` nenašiel v cenníku položiek — appka
+    /// cenu ukáže v Trackeri, ale NEODOŠLE ju do zdieľania s partiou
+    /// (`/api/ceny` potrebuje číselné ID).
+    pub config_base_id: Option<u32>,
+    pub mena: String,
+    /// Najnižšie viditeľné ceny (3–5), zoradené VZOSTUPNE.
+    pub ceny: Vec<f64>,
+    /// Referenčná hodnota na uloženie do cenníka — najnižšia z `ceny`.
+    pub p10: Option<f64>,
+    pub pocet_ponuk: u32,
+    pub istota: Option<f64>,
+    pub istota_rozpoznania: Option<f64>,
+    pub skontroluj: Vec<String>,
+    pub trvanie_ms: Option<u64>,
+}
+
+impl Default for AnalyzaCeny {
+    fn default() -> Self {
+        Self {
+            ok: false,
+            modul: "ceny".to_string(),
+            polozka_nazov: "".to_string(),
+            config_base_id: None,
+            mena: "FE".to_string(),
+            ceny: vec![],
+            p10: None,
+            pocet_ponuk: 0,
+            istota: None,
+            istota_rozpoznania: None,
+            skontroluj: vec![],
+            trvanie_ms: None,
+        }
+    }
+}
+
+/// Text toastu „Cena uložená: <položka> = X FE" (zadanie bod 3). Keď server
+/// položku v cenníku nenašiel (`config_base_id` chýba), text to hovorí
+/// namiesto sumy, nech hráč vie, že cena sa nezdieľa s partiou.
+pub fn text_toastu_ceny(a: &AnalyzaCeny) -> String {
+    match a.p10 {
+        Some(cena) if a.config_base_id.is_some() => {
+            format!("Cena uložená: {} = {:.0} {}", a.polozka_nazov, cena, a.mena)
+        }
+        Some(cena) => {
+            format!(
+                "Cena prečítaná: {} = {:.0} {} (nenašla sa v cenníku, nezdieľa sa s partiou)",
+                a.polozka_nazov, cena, a.mena
+            )
+        }
+        None => format!("Na trhu sa nenašla žiadna čitateľná cena pre „{}“.", a.polozka_nazov),
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ChybaServera {
@@ -347,6 +412,75 @@ mod testy {
         let json = r#"{"ok": true, "modul": "canvas", "kroky": [], "istota": 0.9, "skontroluj": []}"#;
         let a: AnalyzaCanvas = serde_json::from_str(json).unwrap();
         assert_eq!(a.pravidlo_overene, None);
+    }
+
+    #[test]
+    fn parsovanie_analyzy_ceny() {
+        let json = r#"{
+            "ok": true,
+            "modul": "ceny",
+            "polozka_nazov": "Sparks of Moth Fire",
+            "config_base_id": 1001,
+            "mena": "FE",
+            "ceny": [12.0, 13.5, 14.0],
+            "p10": 12.0,
+            "pocet_ponuk": 3,
+            "istota": 0.9,
+            "skontroluj": []
+        }"#;
+        let a: AnalyzaCeny = serde_json::from_str(json).unwrap();
+        assert!(a.ok);
+        assert_eq!(a.modul, "ceny");
+        assert_eq!(a.config_base_id, Some(1001));
+        assert_eq!(a.ceny, vec![12.0, 13.5, 14.0]);
+        assert_eq!(a.p10, Some(12.0));
+    }
+
+    #[test]
+    fn chybajuce_pole_v_starsej_odpovedi_je_none_nie_chyba() {
+        // Starší server (pred TLI 22) toto nikdy nevracia — no `AnalyzaCeny` sa
+        // nikdy neparsuje zo staršieho servera v praxi; test len istí, že
+        // `#[serde(default)]` znesie čiastočný JSON.
+        let json = r#"{"ok": true, "modul": "ceny", "polozka_nazov": "X", "ceny": []}"#;
+        let a: AnalyzaCeny = serde_json::from_str(json).unwrap();
+        assert_eq!(a.config_base_id, None);
+        assert_eq!(a.p10, None);
+        assert_eq!(a.mena, "FE");
+    }
+
+    #[test]
+    fn text_toastu_ceny_so_znamou_polozkou() {
+        let a = AnalyzaCeny {
+            polozka_nazov: "Sparks of Moth Fire".to_string(),
+            config_base_id: Some(1001),
+            p10: Some(12.0),
+            mena: "FE".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(text_toastu_ceny(&a), "Cena uložená: Sparks of Moth Fire = 12 FE");
+    }
+
+    #[test]
+    fn text_toastu_ceny_s_nenajdenou_polozkou() {
+        let a = AnalyzaCeny {
+            polozka_nazov: "Neznáma vec".to_string(),
+            config_base_id: None,
+            p10: Some(5.0),
+            mena: "FE".to_string(),
+            ..Default::default()
+        };
+        let text = text_toastu_ceny(&a);
+        assert!(text.contains("nenašla v cenníku") || text.contains("nezdieľa"));
+    }
+
+    #[test]
+    fn text_toastu_ceny_bez_ceny() {
+        let a = AnalyzaCeny {
+            polozka_nazov: "Prázdna ponuka".to_string(),
+            p10: None,
+            ..Default::default()
+        };
+        assert!(text_toastu_ceny(&a).contains("nenašla žiadna čitateľná cena"));
     }
 
     #[test]

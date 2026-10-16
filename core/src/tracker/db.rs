@@ -475,6 +475,27 @@ impl ZaznamCeny {
             zapisane,
         }
     }
+
+    /// Záznam z obrazovky trhu (TLI 22, `?modul=ceny`) — bez mediánu, viď
+    /// `Cena::z_obrazovky` v `ceny.rs` pre dôvod.
+    pub fn z_obrazovky(
+        polozka: u32,
+        najnizsia: f64,
+        pocet_ponuk: u32,
+        sezona: Option<String>,
+        zapisane: i64,
+    ) -> Self {
+        Self {
+            polozka,
+            cena_fe: najnizsia,
+            median_fe: None,
+            pocet_ponuk: Some(pocet_ponuk),
+            sezona,
+            zdroj: "obrazovka".to_string(),
+            cas: None,
+            zapisane,
+        }
+    }
 }
 
 /// Uloží jednu trhovú cenu. `INSERT OR IGNORE` kvôli dedup na
@@ -492,14 +513,29 @@ pub fn uloz_cenu(conn: &Connection, z: &ZaznamCeny) -> rusqlite::Result<()> {
     Ok(())
 }
 
+/// Koľko cien z obrazovky trhu (TLI 22, zdroj `obrazovka`) sa zapísalo od
+/// zadaného okamihu — pre počítadlo „dnešných cien" v záložke Tracker.
+/// Zámerne rolujúcich 24 h od teraz, nie kalendárny deň — appka nikde inde
+/// nerieši časové pásmo a rolujúce okno je presne to, čo `ZASTARANA_PO_S`
+/// vyššie už robí pre vek cien.
+pub fn pocet_cien_z_obrazovky_od(conn: &Connection, od: i64) -> rusqlite::Result<i64> {
+    conn.query_row(
+        "SELECT COUNT(*) FROM ceny WHERE zdroj = 'obrazovka' AND zapisane >= ?1",
+        params![od],
+        |r| r.get(0),
+    )
+}
+
 /// Ceny zapísané PO zadanom okamihu — rozdielový vstup pre `POST /api/ceny`.
-/// Posielajú sa len ceny z VLASTNÉHO vyhľadania: ceny stiahnuté od partie by
-/// sa inak vrátili späť a agregát by sa sám sebou potvrdzoval.
+/// Posielajú sa len ceny z VLASTNÉHO pozorovania hráča — `vlastny_trh`
+/// (vyhľadanie na Exchange) aj `obrazovka` (TLI 22: prečítané z obrazovky
+/// trhu, keď log cenu nenapísal): ceny stiahnuté od partie (`partia`) by sa
+/// inak vrátili späť a agregát by sa sám sebou potvrdzoval.
 pub fn ceny_od(conn: &Connection, od: i64, max: usize) -> rusqlite::Result<Vec<ZaznamCeny>> {
     let mut dotaz = conn.prepare(
         "SELECT config_base_id, cena_fe, median_fe, pocet_ponuk, sezona, zdroj, cas, zapisane
            FROM ceny
-          WHERE zapisane > ?1 AND zdroj = 'vlastny_trh'
+          WHERE zapisane > ?1 AND zdroj IN ('vlastny_trh', 'obrazovka')
           ORDER BY zapisane ASC
           LIMIT ?2",
     )?;
@@ -1234,6 +1270,37 @@ mod testy {
         uloz_raw(&conn, None, "čosi zaujímavé", cas(1).as_ref()).unwrap();
         let pocet_raw: i64 = conn.query_row("SELECT COUNT(*) FROM raw_udalosti", [], |r| r.get(0)).unwrap();
         assert_eq!(pocet_raw, 1);
+    }
+
+    #[test]
+    fn ceny_od_vracia_vlastny_trh_aj_obrazovku_ale_nie_partiu() {
+        // TLI 22: `ceny_od` kŕmi upload partii (`vyber_na_odoslanie`) — keby
+        // SQL filter nepustil `obrazovka`, cena z obrazovky by sa do dávky na
+        // odoslanie nikdy nedostala, bez ohľadu na to, čo robí Rust logika nad
+        // ňou.
+        let conn = otvor_v_pamati().unwrap();
+        uloz_cenu(&conn, &ZaznamCeny { polozka: 1, cena_fe: 1.0, median_fe: None, pocet_ponuk: None, sezona: None, zdroj: "vlastny_trh".into(), cas: None, zapisane: 100 }).unwrap();
+        uloz_cenu(&conn, &ZaznamCeny::z_obrazovky(2, 2.0, 3, None, 101)).unwrap();
+        uloz_cenu(&conn, &ZaznamCeny { polozka: 3, cena_fe: 3.0, median_fe: None, pocet_ponuk: None, sezona: None, zdroj: "partia".into(), cas: None, zapisane: 102 }).unwrap();
+
+        let vysledok = ceny_od(&conn, 0, 100).unwrap();
+        let polozky: Vec<u32> = vysledok.iter().map(|z| z.polozka).collect();
+        assert_eq!(polozky.len(), 2);
+        assert!(polozky.contains(&1));
+        assert!(polozky.contains(&2));
+        assert!(!polozky.contains(&3));
+    }
+
+    #[test]
+    fn pocet_cien_z_obrazovky_od_pocita_len_obrazovku_a_len_od_hranice() {
+        let conn = otvor_v_pamati().unwrap();
+        uloz_cenu(&conn, &ZaznamCeny::z_obrazovky(1, 1.0, 3, None, 1000)).unwrap();
+        uloz_cenu(&conn, &ZaznamCeny::z_obrazovky(2, 2.0, 3, None, 2000)).unwrap();
+        uloz_cenu(&conn, &ZaznamCeny::z_obrazovky(3, 3.0, 3, None, 500)).unwrap(); // pred hranicou
+        uloz_cenu(&conn, &ZaznamCeny { polozka: 4, cena_fe: 4.0, median_fe: None, pocet_ponuk: None, sezona: None, zdroj: "vlastny_trh".into(), cas: None, zapisane: 1500 }).unwrap();
+
+        assert_eq!(pocet_cien_z_obrazovky_od(&conn, 1000).unwrap(), 2);
+        assert_eq!(pocet_cien_z_obrazovky_od(&conn, 0).unwrap(), 3);
     }
 
     #[test]

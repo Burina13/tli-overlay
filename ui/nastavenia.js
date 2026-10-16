@@ -6,6 +6,7 @@ const inpUrl = document.getElementById("inp-url");
 const inpKluc = document.getElementById("inp-kluc");
 const inpHotkey = document.getElementById("inp-hotkey");
 const inpHotkeyCanvas = document.getElementById("inp-hotkey-canvas");
+const inpHotkeyTrh = document.getElementById("inp-hotkey-trh");
 const inpProces = document.getElementById("inp-proces");
 const inpAutoskrytie = document.getElementById("inp-autoskrytie");
 const inpZvuk = document.getElementById("inp-zvuk");
@@ -26,6 +27,19 @@ const elVysledokAktualizacie = document.getElementById("vysledok-aktualizacie");
 const btnStiahnut = document.getElementById("btn-stiahnut");
 
 let urlAktualizacie = null;
+
+// Posledné načítané nastavenia z `nacitaj_nastavenia` — ulož_nastavenia pri
+// odoslaní formulára z nich vychádza a prepíše len polia, ktoré má tento
+// formulár (hotkeys, URL, kľúč, proces, autoskrytie, zvuk, zber dát).
+// DÔVOD (oprava nájdená pri TLI 22): appka `Nastavenia` má aj polia, ktoré
+// tento formulár vôbec nezobrazuje (téma, uložené rozloženie okien z TLI 21,
+// prepínače v záložke Tracker — tracker_sync/ceny_sync/upload_logov/
+// pripominat_enable_log/ceny_obrazovka_zapnute, cesta k logu...). Keby `nove`
+// vznikalo len z polí formulára, `#[serde(default)]` na strane Rustu by
+// chýbajúce polia pri uložení potichu vrátilo na predvolené — hráč by
+// uložením pripojenia v Nastaveniach prišiel o posunuté panely aj o všetky
+// prepínače v Trackeri.
+let nacitaneNastavenia = {};
 
 // --- TLI 21 — Rozloženie okien nad hrou ---
 const btnRezimUpravy = document.getElementById("btn-rezim-upravy");
@@ -73,10 +87,12 @@ document.addEventListener("DOMContentLoaded", async () => {
     try {
         // Načítanie existujúcich nastavení
         const nastavenia = await invoke("nacitaj_nastavenia");
+        nacitaneNastavenia = nastavenia;
         inpUrl.value = nastavenia.url_servera || "";
         inpKluc.value = nastavenia.kluc || "";
         inpHotkey.value = nastavenia.hotkey || "F8";
         inpHotkeyCanvas.value = nastavenia.hotkey_canvas || "F9";
+        inpHotkeyTrh.value = nastavenia.hotkey_trh || "";
         inpProces.value = nastavenia.proces_hry || "";
         inpAutoskrytie.value = nastavenia.autoskrytie_s || 0;
         inpZvuk.checked = !!nastavenia.zvuk;
@@ -126,11 +142,17 @@ formular.addEventListener("submit", async (e) => {
         return;
     }
 
+    // Vychádza z POSLEDNÝCH načítaných nastavení (`nacitaneNastavenia`), nie z
+    // prázdneho objektu — inak by uloženie tohto formulára potichu vrátilo na
+    // predvolené všetko, čo tento formulár nezobrazuje (pozri komentár vyššie
+    // pri `nacitaneNastavenia`).
     const nove = {
+        ...nacitaneNastavenia,
         url_servera: url,
         kluc: kluc,
         hotkey: inpHotkey.value.trim(),
         hotkey_canvas: inpHotkeyCanvas.value.trim(),
+        hotkey_trh: inpHotkeyTrh.value.trim(),
         proces_hry: inpProces.value.trim(),
         autoskrytie_s: parseInt(inpAutoskrytie.value, 10) || 0,
         zvuk: inpZvuk.checked,
@@ -139,6 +161,7 @@ formular.addEventListener("submit", async (e) => {
 
     try {
         await invoke("uloz_nastavenia", { nove });
+        nacitaneNastavenia = nove;
         zobrazSpravu(elVysledokUlozenia, "Uložené.", true);
         // Po 3 sekundách zhasni text
         setTimeout(() => {

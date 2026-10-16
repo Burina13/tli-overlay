@@ -302,9 +302,13 @@ function vykresliStav(p) {
         return;
     }
     const bez = Object.keys(p.prehlad.bez_ceny_spolu || {}).length;
+    // TLI 22: koľko cien appka sama prečítala z obrazovky trhu za posledných
+    // 24 h (automaticky, bez hotkey) — „dnešných cien" zo zadania bod 3.
+    const zObrazovky = p.pocet_cien_z_obrazovky_24h || 0;
     el.textContent =
         `Log: ${p.cesta_logu || "nenájdený"} · cien v cenníku: ${p.pocet_cien}` +
-        (bez ? ` · položiek bez ceny: ${bez}` : "");
+        (bez ? ` · položiek bez ceny: ${bez}` : "") +
+        (zObrazovky > 0 ? ` · dnešných cien z obrazovky trhu: ${zObrazovky}` : "");
     document.getElementById("info-ceny").textContent =
         p.pocet_cien > 0
             ? "Ceny pochádzajú z tvojich vlastných vyhľadávaní na trhu; vek ceny je pri položke."
@@ -683,6 +687,7 @@ const chkSync = document.getElementById("chk-sync");
 const chkCeny = document.getElementById("chk-ceny");
 const chkPripomienka = document.getElementById("chk-pripomienka");
 const chkUpload = document.getElementById("chk-upload");
+const chkCenyObrazovka = document.getElementById("chk-ceny-obrazovka");
 const btnSyncTeraz = document.getElementById("btn-sync-teraz");
 const stavSync = document.getElementById("stav-sync");
 const btnUploadTeraz = document.getElementById("btn-upload-teraz");
@@ -725,6 +730,7 @@ chkCeny.addEventListener("change", async () => {
     }
 });
 chkPripomienka.addEventListener("change", () => prepni("pripominat_enable_log", chkPripomienka.checked));
+chkCenyObrazovka.addEventListener("change", () => prepni("ceny_obrazovka_zapnute", chkCenyObrazovka.checked));
 
 chkSync.addEventListener("change", async () => {
     await prepni("tracker_sync", chkSync.checked);
@@ -840,6 +846,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         chkCeny.checked = nastavenia.ceny_sync !== false;
         // A pre upload logov (TLI 14) — tiež predvolene zapnuté.
         chkUpload.checked = nastavenia.upload_logov !== false;
+        // A pre ceny z obrazovky trhu (TLI 22) — tiež predvolene zapnuté.
+        chkCenyObrazovka.checked = nastavenia.ceny_obrazovka_zapnute !== false;
         ukazStavSyncu(chkSync.checked ? "Posiela sa automaticky každé tri minúty."
                                       : "Partii sa neposiela nič.", false);
         ukazStavUploadu(chkUpload.checked ? "Nahráva sa automaticky na pozadí."
