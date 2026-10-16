@@ -116,7 +116,7 @@ const ODPOVEDE = {
   verzia: "0.15.0",
   nacitaj_nastavenia: { hotkey: "F8", hotkey_canvas: "F9", tema: "svetla",
                         mini_overlay: true, tracker_sync: false,
-                        ceny_sync: true,
+                        ceny_sync: true, upload_logov: true,
                         cesta_logu: CESTA_LOGU_UKAZKA },
   tracker_prehlad: UKAZKA_TRACKER,
   tracker_csv: "id;mapa\n1;YunDuanLvZhou\n",
@@ -125,6 +125,7 @@ const ODPOVEDE = {
   uloz_prepinac: true,
   tracker_sync_teraz: "Odoslané: 3 nových, 1 už server mal.",
   ceny_sync_teraz: "Ceny: odoslaných 2, od partie prišlo 37 (z toho 5 nových).",
+  upload_teraz: "Upload je dohnaný, nič nové na poslanie.",
   uloz_temu: "svetla",
   // TLI 11c — automatická detekcia cesty k logu (náhľad ukazuje stav „nájdené a v poriadku").
   tracker_navrh_cestu: CESTA_LOGU_UKAZKA,

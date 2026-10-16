@@ -24,6 +24,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use tli_overlay_core::tracker::agregacie::{ocen_beh, ocen_beh_v_case, prehlad, Prehlad, VysledokBehu};
 use tli_overlay_core::tracker::ceny::{vek_text, Cena, Cennik, Nastavenie};
 use tli_overlay_core::tracker::chvost::StavChvosta;
+use tli_overlay_core::nastavenia::Nastavenia;
 use tli_overlay_core::tracker::db::{self, OceneneHodnoty, ZaznamCeny};
 use tli_overlay_core::tracker::pripomienka::{klasifikuj, SledovacPripomienky};
 use tli_overlay_core::tracker::stav::{Beh, Sledovac};
@@ -176,6 +177,12 @@ impl StavTrackera {
     /// Prístup k DB pre príkazy, ktoré nad ňou pracujú zvonku (sync cien).
     pub fn db(&self) -> Option<&rusqlite::Connection> {
         self.db.as_ref()
+    }
+
+    /// Aktuálna cesta k sledovanému logu pre upload (TLI 14) — `None`, kým
+    /// appka ešte žiadny log nenašla/neprečítala.
+    pub fn cesta_logu(&self) -> Option<&Path> {
+        self.cesta.as_deref()
     }
 
     /// Zapíše stiahnutý agregát partie do cenníka aj do lokálnej DB, aby ho
@@ -838,6 +845,125 @@ pub fn sync_cien_kolo(app: &AppHandle) -> Result<String, String> {
     Ok(ceny_sync::zhrnutie(poslanych, stiahnutych, zmenenych))
 }
 
+/// Prečíta presne `dlzka` bajtov od `od` v danom súbore. Samostatná funkcia
+/// kvôli čitateľnosti volania v `upload_kolo_pre_subor` (dve volania s
+/// rôznou dĺžkou — malé okno na odtlačok, veľký kúsok na odoslanie).
+fn precitaj_usek(subor: &mut std::fs::File, od: u64, dlzka: u64) -> Result<Vec<u8>, String> {
+    subor
+        .seek(SeekFrom::Start(od))
+        .map_err(|e| format!("v logu sa nedá posunúť: {e}"))?;
+    let mut bajty = vec![0u8; dlzka as usize];
+    subor.read_exact(&mut bajty).map_err(|e| format!("log sa nedá prečítať: {e}"))?;
+    Ok(bajty)
+}
+
+/// Jedno kolo denného uploadu JEDNÉHO súboru (TLI 14) — pošle NAJVIAC jeden
+/// kúsok (`upload::KUSOK_BAJTOV`); volajúci (`upload_kolo`) ho preto volá
+/// v slučke, kým nevráti `poslanych == 0`.
+///
+/// Zámerne nikdy nedrží celý súbor v pamäti (dokumentácia `upload.rs`) —
+/// prečíta len malé okno na rozpoznanie rotácie a samotný kúsok na odoslanie.
+/// Stav sa ukladá do DB PO KAŽDOM kole, nie až na konci, aby reštart appky
+/// uprostred veľkého dobiehania nestratil už potvrdený pokrok.
+fn upload_kolo_pre_subor(
+    app: &AppHandle,
+    n: &Nastavenia,
+    cesta: &Path,
+) -> Result<u64, String> {
+    use tli_overlay_core::tracker::upload;
+
+    let Some(nazov) = cesta.file_name().and_then(|n| n.to_str()) else {
+        return Err("Log má neplatné meno súboru.".to_string());
+    };
+
+    let tracker = app.state::<Tracker>();
+    let stav_uploadu = {
+        let t = tracker.0.lock().unwrap();
+        let conn = t.db().ok_or_else(|| {
+            "Lokálna databáza nie je otvorená, upload logu sa nedá sledovať.".to_string()
+        })?;
+        db::nacitaj_upload_stav(conn, nazov)
+            .map_err(|e| format!("Stav uploadu sa nedá prečítať: {e}"))?
+            .unwrap_or_default()
+    };
+
+    let mut subor = std::fs::File::open(cesta).map_err(|e| format!("log sa nedá otvoriť: {e}"))?;
+    let velkost = subor.metadata().map_err(|e| format!("log sa nedá otvoriť: {e}"))?.len();
+
+    let okno_pred = precitaj_usek(&mut subor, 0, stav_uploadu.nahrana_pozicia.min(256))?;
+    let segment = upload::priprav_segment(&stav_uploadu, &okno_pred, velkost);
+    let dlzka = upload::dlzka_kusku(segment, velkost);
+    if dlzka == 0 {
+        return Ok(0);
+    }
+
+    let kusok = precitaj_usek(&mut subor, segment.pozicia_od, dlzka)?;
+    let odpoved = crate::klient::posli_upload_log(n, nazov, segment.pozicia_od, &kusok)?;
+    if !odpoved.ok {
+        // 409 (medzera) nesie `ocakavana_pozicia` — appka to tu len vracia ako
+        // chybu pre toto kolo, ďalšie kolo prečíta stav z DB odznova a
+        // `priprav_segment` prirodzene skúsi inú pozíciu (server mu medzitým
+        // nič neuložil, takže `nahrana_pozicia` v DB ostáva presná).
+        return Err(odpoved.chyba.unwrap_or_else(|| "Server upload odmietol.".to_string()));
+    }
+
+    let okno_po = precitaj_usek(&mut subor, 0, odpoved.prijata_pozicia_do.min(velkost).min(256))?;
+    let novy_stav = upload::po_uspesnom_uploade(nazov, &okno_po, odpoved.prijata_pozicia_do);
+    {
+        let t = tracker.0.lock().unwrap();
+        if let Some(conn) = t.db() {
+            let _ = db::uloz_upload_stav(conn, &novy_stav);
+        }
+    }
+    Ok(odpoved.bajtov_novych)
+}
+
+/// Jedno kolo denného uploadu (TLI 14) — nahradzuje ručné kopírovanie logu
+/// na zdieľaný disk (zadanie `2026-10-16-1208-mcp.md`). Beží na pozadí á
+/// `upload::INTERVAL_S`, rovnakým vzorom ako `sync_cien_kolo`: HTTP mimo
+/// zámku nad trackerom, chyba siete sa nehlási ako chyba appky (hráč môže
+/// hrať offline), len sa ticho skúsi nabudúce.
+pub fn upload_kolo(app: &AppHandle) -> Result<String, String> {
+    let n = {
+        let stav = app.state::<Stav>();
+        let n = stav.nastavenia.lock().unwrap().clone();
+        n
+    };
+    if !n.upload_logov {
+        return Ok("Upload logov je vypnutý.".to_string());
+    }
+    if let Some(chyba) = n.chyba_konfiguracie() {
+        return Err(chyba);
+    }
+
+    let cesta = {
+        let tracker = app.state::<Tracker>();
+        let t = tracker.0.lock().unwrap();
+        t.cesta_logu().map(Path::to_path_buf)
+    };
+    let Some(cesta) = cesta else {
+        return Ok("Cesta k logu zatiaľ nie je známa.".to_string());
+    };
+
+    // Najviac desať kôl naraz — appka dlho vypnutá (veľký nedohnaný rozdiel)
+    // sa tak dobehne v niekoľkých kusoch v tomto volaní, ale aj tak nikdy
+    // nezablokuje vlákno na neurčito, keby bol rozdiel obrovský.
+    let mut poslanych_spolu = 0u64;
+    for _ in 0..10 {
+        let poslanych = upload_kolo_pre_subor(app, &n, &cesta)?;
+        if poslanych == 0 {
+            break;
+        }
+        poslanych_spolu += poslanych;
+    }
+
+    if poslanych_spolu == 0 {
+        Ok("Upload je dohnaný, nič nové na poslanie.".to_string())
+    } else {
+        Ok(format!("Nahraných {poslanych_spolu} B."))
+    }
+}
+
 pub fn spusti_vlakno(app: AppHandle) {
     std::thread::spawn(move || {
         use notify::{RecommendedWatcher, RecursiveMode, Watcher};
@@ -850,6 +976,10 @@ pub fn spusti_vlakno(app: AppHandle) {
         // nie až o päť minút — hráč typicky spúšťa appku pred hraním a chce
         // mať ceny partie k dispozícii od prvej mapy.
         let mut posledny_sync_cien: u64 = 0;
+        // Upload logov (TLI 14) — tiež hneď po štarte, nie až o desať minút:
+        // appka sa typicky spúšťa krátko pred hraním a Richard má najväčší
+        // úžitok z toho, keď je log na serveri skôr, než si naň vôbec spomenie.
+        let mut posledny_upload: u64 = 0;
 
         loop {
             // Daň (`tracker_dan`) sa uplatňuje až pri zostavovaní prehľadu pre
@@ -935,6 +1065,17 @@ pub fn spusti_vlakno(app: AppHandle) {
                 // pripojenia a appka má v takom prípade ticho pokračovať
                 // s vlastnými cenami. Zobrazí sa až keď o sync požiada sám.
                 let _ = sync_cien_kolo(&app);
+            }
+
+            // Upload logov (TLI 14) — á `upload::INTERVAL_S`, rovnaký dôvod
+            // zdieľaného vlákna ako vyššie pri cenách. Chyba siete sa opäť
+            // nehlási: appka má ďalej fungovať offline, log sa dohoní pri
+            // ďalšom kole.
+            if teraz.saturating_sub(posledny_upload)
+                >= tli_overlay_core::tracker::upload::INTERVAL_S
+            {
+                posledny_upload = teraz;
+                let _ = upload_kolo(&app);
             }
         }
     });

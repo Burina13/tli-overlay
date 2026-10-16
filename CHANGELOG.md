@@ -2,6 +2,82 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.16.0 — 16.10.2026 (TLI 19 dokončenie + TLI 14)
+
+**TLI 19 akceptačné kritérium OVERENÉ nad reálnym celodenným logom.** Richard
+16.10.2026 skopíroval celý `UE_game.log` session 07:35–10:08 (200 MB, 1,69 mil.
+riadkov, zazipovaný kvôli limitu WebDAV) na zdieľaný disk. Spätný import +
+dump nad ním ukázal, že **všetkých 8 máp s beaconom (08:29–08:51) má presne
+zadaný `LevelUid`** (1001001/1001004/1001005/1001000/1011004/1011001/1011000/
+1011002), **boss YongShuangBingPo má `LevelUid 1001099`/`LevelId 3000` a typ
+boss** (`podpis_vstupov = "boss-alebo-pinnacle"`), kampaňové mapy ostávajú
+kampaň (`bez-vstupu`) — opravy A/B/C/E z `tli-v0.14.0` fungujú presne tak, ako
+mali, aj nad celou 2,5-hodinovou session, nie len nad úryvkom.
+
+- **Bug D (nerozpoznaný hub) sa v tomto logu NEPREJAVIL ani raz.** Nad všetkými
+  188 behmi tejto session nie je jediný prípad, že by vstup skončil na riadku,
+  ktorý je `je_hub() == true` — hub `XZ_YuJinZhiXiBiNanSuo200` (zápis
+  `yujinzhixibinansuo`) sa rozpoznal správne pri KAŽDOM návrate do mesta. Jediná
+  neštandardná cesta v logu (`/Game/Art/Season/S16/Maps/ZhongZuiDiYu/ZhongZuiDiYu`,
+  pravdepodobne tohtosezónna väzenská mechanika — hudba `Play_Mus_Gameplay_
+  S16_Prison_Card`, skutoční nepriatelia umierajú vnútri) je a má byť `je_hub()
+  == false`, lebo ide o skutočnú mapu s korisťou, nie o hub. Záver: hypotéza
+  „nerozpoznaná cesta hubu tejto sezóny" sa týmto konkrétnym logom NEPOTVRDILA —
+  buď sa Richardovo pozorovanie z 16.10. ~10:55 týkalo inej (neskoršej/inej)
+  časti session, než akú má tento zip, alebo problém odvtedy zmizol vďaka
+  opravám A/B/C/E (nesprávne `LevelUid` z bugu C mohlo pri pohľade na UI
+  vyzerať ako „vstup pripísaný hubu"). Bez ďalšieho konkrétneho prípadu sa
+  `je_hub()` nemení naslepo — zostáva otvorené v `BACKLOG.md`, zúžené o tento
+  nález.
+- **Mená MÁP (zadanie bod `PREKLAD_MAPY`) zostávajú NEDOPLNENÉ, vedome.** Tento
+  log priniesol 69 nových pinyin kódov (`core/src/tracker/stav.rs::je_hub` ich
+  nepotrebuje, ale zobrazenie v UI áno). Web search pre jednotlivé kódy
+  (overené živo, napr. `YuanGuTongDao`) opäť nenašiel nič — fan guides
+  vymenúvajú anglické mená zón (Netherrealm, God of Hunting Arena…), ale nie
+  jednotlivé interné kódy levelov. Vymýšľať preklad z pinyinu bez obrázka by
+  znamenalo ukázať Richardovi NEOVERENÚ vec ako hotovú — presne to si TLI 17
+  chcelo vyhnúť zavedením čitateľného rozpadu (`citatelnyKodMapy`), ktorý
+  funguje aj naďalej. Zoznam všetkých 69 kódov je v `BACKLOG.md`, čaká na
+  Gemini nad screenshotom/videom s viditeľným menom mapy.
+
+**TLI 14 — klientsky upload logov, konečne zapojený.** Server (`POST /api/tracker/upload`)
+bol hotový od `2026-10-15-2129-mcp.md`, appka ho ale nikdy nevolala — Richard
+musel log kopírovať ručne (a pri väčšom logu to ani nešlo, WebDAV má limit
+50 MB na súbor). Od tejto verzie appka log nahráva **sama, po kúskoch, na
+pozadí**:
+
+- **Nikdy netreba celý súbor v pamäti.** `core/src/tracker/upload.rs` bol
+  prepísaný tak, aby pracoval len s OKNAMI: rozpoznanie rotácie potrebuje len
+  prvých ≤256 B súboru, kúsok na odoslanie je najviac `KUSOK_BAJTOV` (8 MiB).
+  200 MB log by appku predtým prinútil držať celý obsah v RAM pri každom kole.
+- **Gzip po kúskoch, nie celý súbor naraz** (presne znenie zadania
+  `2026-10-16-1208-mcp.md`) — server limituje gzip telo na 16 MB a rozbalený
+  obsah na 128 MB; appka preto posiela postupné 8 MiB surové kúsky (á 10 minút,
+  `upload::INTERVAL_S`, hneď aj po štarte appky), nikdy jeden obrovský POST.
+  Veľký nedohnaný rozdiel (appka dlho vypnutá) sa rozloží na viacero kôl
+  automaticky.
+- **Stav uploadu PRETRVÁVA reštart appky** — nová tabuľka `tracker_upload_stav`
+  v lokálnej DB (schéma v4). Bez perzistencie by appka po reštarte poslala
+  `pozicia_od = 0` nad súborom, ktorý server už čiastočne má, a server by to
+  vyhodnotil ako rotáciu a existujúci log zbytočne archivoval.
+  Multipart telo (server čaká `multipart/form-data`) je poskladané ručne v
+  `src-tauri/src/klient.rs` — jednoduchý a stabilný formát, appka preň
+  nepridáva novú závislosť.
+- **Predvolene ZAPNUTÉ** (na rozdiel od `tracker_sync`/`mini_overlay`) —
+  nejde o nové zdieľanie niečoho osobného s partiou, len o náhradu ručného
+  kopírovania, ktoré Richard aj tak robí. Nový prepínač „Nahrávať log na
+  server" v záložke Tracker + tlačidlo „Nahrať log teraz".
+  DB export (`db::export_pre_upload`, iný typ uploadu) ostáva zatiaľ len
+  ručný (`db_export_teraz`) — automatický denný export čaká na nočné
+  serverové vyhodnotenie (TLI 14, časť 3, `BACKLOG.md`), ktoré ešte nebeží.
+- Testy: `upload.rs` prepísaný na okná (testy prerobené na nový tvar API,
+  pribudol regresný test na delenie veľkého rozdielu na kúsky), 4 nové testy
+  perzistencie v `db.rs` (302 testov jadra spolu), 2 nové testy
+  `src-tauri/src/klient.rs` (gzip round-trip, multipart telo) — `cargo check
+  --tests` nad `src-tauri` čisté (CI testy aplikačnej vrstvy bežia na
+  Windowse, lokálne na CT 111 sa z pravidla o cargo test na src-tauri
+  nespúšťajú).
+
 ## 0.15.0 — 16.10.2026 (TLI 20)
 
 **Ceny bez ručnej práce.** Richard ceny ručne aktualizovať nebude a doteraz mal tabuľku

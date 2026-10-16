@@ -76,9 +76,18 @@
                     <small>Hra si toto nastavenie nepamätá — appka na začiatku session upozorní, keď log evidentne nerastie.</small>
                 </label>
 
+                <!-- Prepinac denneho uploadu logov (TLI 14) -->
+                <label class="prepinac">
+                    <input type="checkbox" id="chk-upload">
+                    Nahrávať log na server
+                    <small>Nahradí ručné kopírovanie logu — posiela sa po kúskoch na pozadí, nie naraz. Nikdy nič iné než tvoj vlastný log.</small>
+                </label>
+
                 <!-- Vedlajsie tlacidlo a indikator na explicitne synchronizovanie vysledkov -->
                 <button type="button" class="btn-vedlajsi" id="btn-sync-teraz">Poslať teraz</button>
                 <span class="vek-ceny" id="stav-sync"></span>
+                <button type="button" class="btn-vedlajsi" id="btn-upload-teraz">Nahrať log teraz</button>
+                <span class="vek-ceny" id="stav-upload"></span>
             </div>
 
             <div class="karty-statistik" id="karty-statistik"></div>

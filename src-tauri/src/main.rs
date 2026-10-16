@@ -715,6 +715,45 @@ fn ceny_sync_teraz(app: AppHandle) -> Result<String, String> {
     tracker::sync_cien_kolo(&app)
 }
 
+/// Ručné kolo denného uploadu logu (TLI 14). Na pozadí beží aj tak á
+/// `upload::INTERVAL_S`; toto tlačidlo je na „pošli to hneď" (napr. tesne
+/// pred tým, než o log Richard žiada niekoho iného) a na viditeľnú chybu
+/// siete — automatické kolo mlčí zámerne.
+#[tauri::command]
+fn upload_teraz(app: AppHandle) -> Result<String, String> {
+    tracker::upload_kolo(&app)
+}
+
+/// Ručný export lokálnej DB na server (TLI 14) — na rozdiel od logu sa
+/// export NEPOSIELA automaticky na pozadí: je to jeden celý JSON, nie
+/// prírastkový tok, a server si z neho zatiaľ nič nevyhodnocuje
+/// (`GET /api/tracker/prior` čaká na nočné vyhodnotenie, `BACKLOG.md`).
+/// Tlačidlo je tu pre prípad, že si ho Richard/vývoj vyžiada ručne skôr.
+#[tauri::command]
+fn db_export_teraz(app: AppHandle) -> Result<String, String> {
+    let n = {
+        let stav = app.state::<Stav>();
+        let n = stav.nastavenia.lock().unwrap().clone();
+        n
+    };
+    if let Some(chyba) = n.chyba_konfiguracie() {
+        return Err(chyba);
+    }
+    let export = {
+        let tracker = app.state::<tracker::Tracker>();
+        let t = tracker.0.lock().unwrap();
+        let conn = t.db().ok_or_else(|| "Lokálna databáza nie je otvorená.".to_string())?;
+        tli_overlay_core::tracker::db::export_pre_upload(conn)
+            .map_err(|e| format!("Export sa nedá zostaviť: {e}"))?
+    };
+    let json = serde_json::to_vec(&export).map_err(|e| format!("Export sa nedá zapísať: {e}"))?;
+    let odpoved = klient::posli_db_export(&n, &json)?;
+    if !odpoved.ok {
+        return Err(odpoved.chyba.unwrap_or_else(|| "Server export odmietol.".to_string()));
+    }
+    Ok(format!("Export uložený ako {}.", odpoved.ulozeny_ako))
+}
+
 /// Prepínače v záložke Tracker. Samostatný príkaz (nie uloženie celých
 /// nastavení) z toho istého dôvodu ako `uloz_temu`: checkbox nesmie prepísať
 /// kľúč ani skratky zastaraným objektom.
@@ -734,6 +773,7 @@ fn uloz_prepinac(
             "tracker_dan" => n.tracker_dan = zapnuty,
             "pripominat_enable_log" => n.pripominat_enable_log = zapnuty,
             "ceny_sync" => n.ceny_sync = zapnuty,
+            "upload_logov" => n.upload_logov = zapnuty,
             ine => return Err(format!("Neznámy prepínač: {ine}")),
         }
         n.normalizuj();
@@ -1025,6 +1065,8 @@ fn main() {
             guide_sync,
             tracker_sync_teraz,
             ceny_sync_teraz,
+            upload_teraz,
+            db_export_teraz,
             uloz_prepinac,
             analyza_vyhladaj,
             analyza_monstra_podla_rarity,

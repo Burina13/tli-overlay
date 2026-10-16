@@ -234,6 +234,103 @@ pub fn stiahni_ceny(n: &Nastavenia, od: i64) -> Result<String, String> {
     }
 }
 
+/// Zabalí bajty gzipom — server (`_rozbal_gzip` v `app.py`) iný formát
+/// neprijme. Predvolená úroveň kompresie je rýchlostný kompromis: appka
+/// toto volá v slučke po `upload::KUSOK_BAJTOV` kusoch na pozadí hry, nemá
+/// zmysel míňať čas na maximálnu kompresiu textového logu.
+fn gzipuj(data: &[u8]) -> Result<Vec<u8>, String> {
+    use flate2::write::GzEncoder;
+    use flate2::Compression;
+    use std::io::Write;
+
+    let mut e = GzEncoder::new(Vec::new(), Compression::default());
+    e.write_all(data).map_err(|e| format!("gzip zlyhal: {e}"))?;
+    e.finish().map_err(|e| format!("gzip zlyhal: {e}"))
+}
+
+/// Ručne poskladané `multipart/form-data` telo — appka nepridáva kvôli
+/// jedinému uploadu novú závislosť, formát je jednoduchý a stabilný (RFC 7578).
+/// Vracia `(boundary, telo)`; `boundary` ide do hlavičky `Content-Type`.
+fn multipart_telo(polia: &[(&str, &str)], meno_suboru: &str, data: &[u8]) -> (String, Vec<u8>) {
+    let boundary = format!("----tliupload{}{}", std::process::id(), data.len());
+    let mut telo = Vec::with_capacity(data.len() + 512);
+    for (meno, hodnota) in polia {
+        telo.extend_from_slice(
+            format!(
+                "--{boundary}\r\nContent-Disposition: form-data; name=\"{meno}\"\r\n\r\n{hodnota}\r\n"
+            )
+            .as_bytes(),
+        );
+    }
+    telo.extend_from_slice(
+        format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"data\"; filename=\"{meno_suboru}\"\r\nContent-Type: application/gzip\r\n\r\n"
+        )
+        .as_bytes(),
+    );
+    telo.extend_from_slice(data);
+    telo.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+    (boundary, telo)
+}
+
+/// Pošle jeden gzip segment surového `UE_game*.log` na `POST /api/tracker/upload`
+/// (TLI 14). Telo odpovede sa vracia AJ pri chybovom HTTP stave (400/409/413) —
+/// server naň vždy odpovedá zrozumiteľným JSON-om (napr. 409 nesie
+/// `ocakavana_pozicia`, podľa ktorej si appka vie sama opraviť ďalší pokus),
+/// takže len transportná chyba (DNS, TLS, timeout) je tu skutočné `Err`.
+pub fn posli_upload_log(
+    n: &Nastavenia,
+    subor: &str,
+    pozicia_od: u64,
+    surove: &[u8],
+) -> Result<tli_overlay_core::tracker::upload::OdpovedUploadu, String> {
+    let gz = gzipuj(surove)?;
+    let (boundary, telo) = multipart_telo(
+        &[("typ", "log"), ("subor", subor), ("pozicia_od", &pozicia_od.to_string())],
+        "log.gz",
+        &gz,
+    );
+
+    let odpoved = ureq::post(&n.adresa_tracker_upload())
+        .set("Authorization", &format!("Bearer {}", n.kluc))
+        .set("Content-Type", &format!("multipart/form-data; boundary={boundary}"))
+        .timeout(std::time::Duration::from_secs(120))
+        .send_bytes(&telo);
+
+    let telo_odpovede = match odpoved {
+        Ok(res) => res.into_string().unwrap_or_default(),
+        Err(ureq::Error::Status(_, res)) => res.into_string().unwrap_or_default(),
+        Err(ina) => return Err(api::sprava_siete(&ina.to_string())),
+    };
+    serde_json::from_str(&telo_odpovede)
+        .map_err(|_| "Server odpovedal na upload logu niečím, čomu appka nerozumie.".to_string())
+}
+
+/// Pošle export lokálnej DB (TLI 14) — vždy ako jeden celý JSON, bez
+/// delenia na kusy (export je rádovo desiatky/stovky KB, nie stovky MB ako
+/// surový log).
+pub fn posli_db_export(
+    n: &Nastavenia,
+    json_obsah: &[u8],
+) -> Result<tli_overlay_core::tracker::upload::OdpovedUploadu, String> {
+    let gz = gzipuj(json_obsah)?;
+    let (boundary, telo) = multipart_telo(&[("typ", "db_export")], "export.json.gz", &gz);
+
+    let odpoved = ureq::post(&n.adresa_tracker_upload())
+        .set("Authorization", &format!("Bearer {}", n.kluc))
+        .set("Content-Type", &format!("multipart/form-data; boundary={boundary}"))
+        .timeout(std::time::Duration::from_secs(60))
+        .send_bytes(&telo);
+
+    let telo_odpovede = match odpoved {
+        Ok(res) => res.into_string().unwrap_or_default(),
+        Err(ureq::Error::Status(_, res)) => res.into_string().unwrap_or_default(),
+        Err(ina) => return Err(api::sprava_siete(&ina.to_string())),
+    };
+    serde_json::from_str(&telo_odpovede)
+        .map_err(|_| "Server odpovedal na DB export niečím, čomu appka nerozumie.".to_string())
+}
+
 #[cfg(test)]
 mod testy {
     use super::*;
@@ -241,5 +338,37 @@ mod testy {
     #[test]
     fn test_adresa_manifestu_je_v_poriadku() {
         assert!(aktualizacia::je_povolena_adresa(aktualizacia::MANIFEST_URL));
+    }
+
+    #[test]
+    fn gzipuj_sa_da_rozbalit_spat() {
+        use std::io::Read;
+        let povodne = b"ahoj svet, toto je testovaci obsah logu\n".repeat(50);
+        let gz = gzipuj(&povodne).unwrap();
+        assert_ne!(gz, povodne);
+        let mut rozbalene = Vec::new();
+        flate2::read::GzDecoder::new(&gz[..]).read_to_end(&mut rozbalene).unwrap();
+        assert_eq!(rozbalene, povodne);
+    }
+
+    #[test]
+    fn multipart_telo_obsahuje_vsetky_polia_a_data() {
+        let (boundary, telo) = multipart_telo(
+            &[("typ", "log"), ("subor", "UE_game.log"), ("pozicia_od", "123")],
+            "log.gz",
+            b"gzipdata",
+        );
+        let text = String::from_utf8_lossy(&telo);
+        assert!(text.contains(&boundary));
+        assert!(text.contains("name=\"typ\""));
+        assert!(text.contains("log"));
+        assert!(text.contains("name=\"subor\""));
+        assert!(text.contains("UE_game.log"));
+        assert!(text.contains("name=\"pozicia_od\""));
+        assert!(text.contains("123"));
+        assert!(text.contains("filename=\"log.gz\""));
+        assert!(text.contains("application/gzip"));
+        assert!(telo.windows(b"gzipdata".len()).any(|w| w == b"gzipdata"));
+        assert!(text.trim_end().ends_with(&format!("--{boundary}--")));
     }
 }

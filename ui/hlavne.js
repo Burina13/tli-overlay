@@ -681,8 +681,11 @@ const chkMini = document.getElementById("chk-mini");
 const chkSync = document.getElementById("chk-sync");
 const chkCeny = document.getElementById("chk-ceny");
 const chkPripomienka = document.getElementById("chk-pripomienka");
+const chkUpload = document.getElementById("chk-upload");
 const btnSyncTeraz = document.getElementById("btn-sync-teraz");
 const stavSync = document.getElementById("stav-sync");
+const btnUploadTeraz = document.getElementById("btn-upload-teraz");
+const stavUpload = document.getElementById("stav-upload");
 
 /// Koľko kôl `obnovTracker` (á 3 s) prejde medzi dvoma automatickými odoslaniami.
 /// 60 kôl = 3 minúty: dosť zriedka na to, aby to nikoho neobťažovalo, a dosť
@@ -751,6 +754,39 @@ btnSyncTeraz.addEventListener("click", async () => {
     }
 });
 
+function ukazStavUploadu(text, chyba) {
+    stavUpload.textContent = text;
+    stavUpload.classList.toggle("hodnota-zaporna", Boolean(chyba));
+}
+
+async function nahrajLogTeraz() {
+    try {
+        ukazStavUploadu(await invoke("upload_teraz"), false);
+    } catch (e) {
+        ukazStavUploadu(String(e), true);
+    }
+}
+
+chkUpload.addEventListener("change", async () => {
+    await prepni("upload_logov", chkUpload.checked);
+    if (chkUpload.checked) {
+        // Po zapnutí hneď jedno kolo — inak by hráč klikol a desať minút
+        // nevidel, či to vôbec funguje.
+        await nahrajLogTeraz();
+    } else {
+        ukazStavUploadu("Log sa na server nenahráva.", false);
+    }
+});
+
+btnUploadTeraz.addEventListener("click", async () => {
+    btnUploadTeraz.disabled = true;
+    try {
+        await nahrajLogTeraz();
+    } finally {
+        btnUploadTeraz.disabled = false;
+    }
+});
+
 
 // ─── Štart ──────────────────────────────────────────────────────────────────
 document.getElementById("btn-otvor-nastavenia").addEventListener("click", async () => {
@@ -783,8 +819,12 @@ document.addEventListener("DOMContentLoaded", async () => {
         chkPripomienka.checked = nastavenia.pripominat_enable_log !== false;
         // To isté platí pre zdieľanie cien (TLI 20) — predvolene zapnuté.
         chkCeny.checked = nastavenia.ceny_sync !== false;
+        // A pre upload logov (TLI 14) — tiež predvolene zapnuté.
+        chkUpload.checked = nastavenia.upload_logov !== false;
         ukazStavSyncu(chkSync.checked ? "Posiela sa automaticky každé tri minúty."
                                       : "Partii sa neposiela nič.", false);
+        ukazStavUploadu(chkUpload.checked ? "Nahráva sa automaticky na pozadí."
+                                          : "Log sa na server nenahráva.", false);
         await pripravCestuLogu(nastavenia);
     } catch (e) {
         console.error(e);

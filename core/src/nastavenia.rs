@@ -50,6 +50,13 @@ pub struct Nastavenia {
     /// a bez zdieľania by hráč, ktorý si nič nevyhľadal, videl behy za 0 FE —
     /// presne to je problém, kvôli ktorému TLI 20 vzniklo (zadanie bod 3).
     pub ceny_sync: bool,
+    /// Denný upload surových logov a DB exportu na server (TLI 14). **Predvolene
+    /// ZAPNUTÉ** — na rozdiel od `tracker_sync`/`mini_overlay` ide o náhradu
+    /// ručného kopírovania logu na zdieľaný disk (zadanie `2026-10-16-1208-mcp.md`),
+    /// nie o nové zdieľanie niečoho, čo hráč doteraz pre seba držal: Richard
+    /// logy aj tak posiela, len ručne. Posiela sa len VLASTNÝ log a DB export,
+    /// nikdy cudzie dáta.
+    pub upload_logov: bool,
 }
 
 impl Default for Nastavenia {
@@ -71,6 +78,7 @@ impl Default for Nastavenia {
             mini_overlay: false,
             pripominat_enable_log: true,
             ceny_sync: true,
+            upload_logov: true,
         }
     }
 }
@@ -130,6 +138,12 @@ impl Nastavenia {
     /// Skratka pre kontrolu dostupnosti a stavu serverového API.
     pub fn adresa_zdravie(&self) -> String {
         self.adresa("/api/zdravie")
+    }
+
+    /// Denný upload surových logov a DB exportu (TLI 14) — ten istý endpoint
+    /// pre oba typy (`typ=log`/`typ=db_export`), rozlíšené v tele requestu.
+    pub fn adresa_tracker_upload(&self) -> String {
+        self.adresa("/api/tracker/upload")
     }
 
     /// Poskytuje varovanie používateľovi ešte predtým, ako sa aplikácia pokúsi spojiť,
@@ -237,6 +251,17 @@ mod testy {
         // osobný údaj a bez neho má hráč behy za 0 FE.
         assert!(n.ceny_sync);
         assert_eq!(n.adresa_ceny(), "https://tli.tvojtatko.sk/api/ceny");
+    }
+
+    #[test]
+    fn upload_logov_je_predvolene_zapnute() {
+        // TLI 14: náhrada ručného kopírovania logu na zdieľaný disk — na
+        // rozdiel od `tracker_sync`/`mini_overlay` sa tu nič nové nezdieľa
+        // s partiou, len posiela vlastný log tam, kam ho Richard aj tak
+        // kopíruje ručne.
+        let n = Nastavenia::default();
+        assert!(n.upload_logov);
+        assert_eq!(n.adresa_tracker_upload(), "https://tli.tvojtatko.sk/api/tracker/upload");
     }
 
     #[test]

@@ -20,13 +20,17 @@ use super::stav::{Beh, Dovod, HracSnimka, NalezCeny};
 
 /// Aktuálna verzia schémy. Zvyšuje sa pri KAŽDEJ zmene tabuliek; `migruj()`
 /// podľa nej vie, ktoré kroky ešte treba spustiť.
+/// `4` (TLI 14) pridalo `tracker_upload_stav` — kam appka minule dohrala
+/// denný upload KAŽDÉHO súboru. Musí prežiť reštart appky: poslanie
+/// `pozicia_od = 0` nad súborom, ktorý server už čiastočne má, by server
+/// vyhodnotil ako rotáciu a existujúci log zbytočne archivoval.
 /// `3` (TLI 20) pridalo do `ceny` stĺpce `median_fe`/`pocet_ponuk`/`sezona`/
 /// `zdroj`/`zapisane` (cez `ALTER TABLE`, dáta ostávajú).
 /// `2` (TLI 13b) pridalo `taktiky`/`taktiky_priradenie` — pomenovanie a
 /// zlúčenie signatúr taktík hráčom. Všetky `CREATE TABLE IF NOT EXISTS` sú
 /// samy o sebe idempotentné, verzia je tu najmä na diagnostiku a budúce kroky,
 /// ktoré by už idempotentné CREATE nestačili.
-pub const SCHEMA_VERZIA: i32 = 3;
+pub const SCHEMA_VERZIA: i32 = 4;
 
 /// Otvorí (alebo vytvorí) databázu na danej ceste a rovno ju zmigruje na
 /// najnovšiu schému. Jediné miesto, odkiaľ sa má DB otvárať — inak sa dá
@@ -198,6 +202,14 @@ pub fn migruj(conn: &Connection) -> rusqlite::Result<()> {
             taktika_id INTEGER NOT NULL REFERENCES taktiky(id) ON DELETE CASCADE
         );
         CREATE INDEX IF NOT EXISTS idx_taktiky_priradenie_taktika ON taktiky_priradenie(taktika_id);
+
+        -- TLI 14: kam appka minule dohrala denný upload KAŽDÉHO súboru
+        -- (meno je kľúč, appka vie uploadovať aj zálohové logy popri živom).
+        CREATE TABLE IF NOT EXISTS tracker_upload_stav (
+            subor TEXT PRIMARY KEY,
+            nahrana_pozicia INTEGER NOT NULL,
+            odtlacok_zaciatku TEXT NOT NULL
+        );
         ",
     )?;
 
@@ -971,6 +983,48 @@ pub fn precitaj_verziu(conn: &Connection) -> rusqlite::Result<Option<i32>> {
         .optional()
 }
 
+/// Stav denného uploadu daného súboru (TLI 14) — `None`, keď sa tento súbor
+/// ešte nikdy nenahrával. MUSÍ sa čítať z disku pri každom kole uploadu,
+/// nikdy len z pamäte: appka po reštarte nesmie mať dojem, že ešte nič
+/// nenahrala, nad súborom, ktorý server už čiastočne má (viď dokumentácia
+/// `upload::StavUploaduSuboru`).
+pub fn nacitaj_upload_stav(
+    conn: &Connection,
+    subor: &str,
+) -> rusqlite::Result<Option<super::upload::StavUploaduSuboru>> {
+    conn.query_row(
+        "SELECT subor, nahrana_pozicia, odtlacok_zaciatku FROM tracker_upload_stav
+         WHERE subor = ?1",
+        params![subor],
+        |r| {
+            Ok(super::upload::StavUploaduSuboru {
+                nazov: r.get(0)?,
+                nahrana_pozicia: r.get::<_, i64>(1)? as u64,
+                odtlacok_zaciatku: r.get(2)?,
+            })
+        },
+    )
+    .optional()
+}
+
+/// Uloží stav po úspešnom uploade — volá sa PO KAŽDOM kole, nie len na konci
+/// dňa, aby reštart appky uprostred veľkého dobiehania (`upload::KUSOK_BAJTOV`
+/// po kole) nestratil už potvrdený pokrok.
+pub fn uloz_upload_stav(
+    conn: &Connection,
+    stav: &super::upload::StavUploaduSuboru,
+) -> rusqlite::Result<()> {
+    conn.execute(
+        "INSERT INTO tracker_upload_stav (subor, nahrana_pozicia, odtlacok_zaciatku)
+         VALUES (?1, ?2, ?3)
+         ON CONFLICT(subor) DO UPDATE SET
+            nahrana_pozicia = excluded.nahrana_pozicia,
+            odtlacok_zaciatku = excluded.odtlacok_zaciatku",
+        params![stav.nazov, stav.nahrana_pozicia as i64, stav.odtlacok_zaciatku],
+    )?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod testy {
     use super::*;
@@ -1360,5 +1414,69 @@ mod testy {
         // to, čo `src-tauri` pred gzipom a odoslaním zavolá).
         let text = serde_json::to_string(&export).unwrap();
         assert!(text.contains("Moja taktika"));
+    }
+
+    // ── upload_stav (TLI 14) ─────────────────────────────────────────────
+
+    #[test]
+    fn upload_stav_neexistujuceho_suboru_je_none() {
+        let conn = otvor_v_pamati().unwrap();
+        assert_eq!(nacitaj_upload_stav(&conn, "UE_game.log").unwrap(), None);
+    }
+
+    #[test]
+    fn upload_stav_sa_ulozi_a_precita_spat() {
+        let conn = otvor_v_pamati().unwrap();
+        let stav = super::super::upload::StavUploaduSuboru {
+            nazov: "UE_game.log".to_string(),
+            nahrana_pozicia: 12345,
+            odtlacok_zaciatku: "deadbeef".to_string(),
+        };
+        uloz_upload_stav(&conn, &stav).unwrap();
+        assert_eq!(nacitaj_upload_stav(&conn, "UE_game.log").unwrap(), Some(stav));
+    }
+
+    #[test]
+    fn upload_stav_druhe_ulozenie_prepise_prve_bez_duplicity() {
+        let conn = otvor_v_pamati().unwrap();
+        let mut stav = super::super::upload::StavUploaduSuboru {
+            nazov: "UE_game.log".to_string(),
+            nahrana_pozicia: 100,
+            odtlacok_zaciatku: "aaa".to_string(),
+        };
+        uloz_upload_stav(&conn, &stav).unwrap();
+        stav.nahrana_pozicia = 200;
+        stav.odtlacok_zaciatku = "bbb".to_string();
+        uloz_upload_stav(&conn, &stav).unwrap();
+
+        let nacitany = nacitaj_upload_stav(&conn, "UE_game.log").unwrap().unwrap();
+        assert_eq!(nacitany.nahrana_pozicia, 200);
+        assert_eq!(nacitany.odtlacok_zaciatku, "bbb");
+
+        let pocet: i64 = conn
+            .query_row("SELECT COUNT(*) FROM tracker_upload_stav", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(pocet, 1);
+    }
+
+    #[test]
+    fn upload_stav_dvoch_ruznych_suborov_su_nezavisle() {
+        let conn = otvor_v_pamati().unwrap();
+        uloz_upload_stav(&conn, &super::super::upload::StavUploaduSuboru {
+            nazov: "UE_game.log".to_string(),
+            nahrana_pozicia: 10,
+            odtlacok_zaciatku: "a".to_string(),
+        }).unwrap();
+        uloz_upload_stav(&conn, &super::super::upload::StavUploaduSuboru {
+            nazov: "UE_game-backup-2026.10.14.log".to_string(),
+            nahrana_pozicia: 20,
+            odtlacok_zaciatku: "b".to_string(),
+        }).unwrap();
+
+        assert_eq!(nacitaj_upload_stav(&conn, "UE_game.log").unwrap().unwrap().nahrana_pozicia, 10);
+        assert_eq!(
+            nacitaj_upload_stav(&conn, "UE_game-backup-2026.10.14.log").unwrap().unwrap().nahrana_pozicia,
+            20
+        );
     }
 }
