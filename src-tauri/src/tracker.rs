@@ -62,7 +62,19 @@ fn ocenenie_pre_db(beh: &Beh, cennik: &Cennik) -> OceneneHodnoty {
 fn uloz_beh_do_db(stav: &mut StavTrackera, beh: &Beh) {
     let Some(conn) = &mut stav.db else { return };
     let ocenenie = ocenenie_pre_db(beh, &stav.cennik);
-    let identita = stav.sledovac.hrac_snimka().cloned().unwrap_or_default();
+    let mut identita = stav.sledovac.hrac_snimka().cloned().unwrap_or_default();
+    if identita.player_id.is_none() {
+        // TLI 19 bug E: „Enable Log" sa zapína na začiatku KAŽDEJ session a
+        // identita (GetPlayerData/`+player+...`) chodí pri PRIHLÁSENÍ — teda
+        // typicky PRED tým, než ju hráč stihne zapnúť. Živé čítanie preto v
+        // danej session nemusí vidieť identitu VÔBEC, kým spätný import vidí
+        // logy od úplného začiatku (odtiaľ „oprava ecec22f sa v živej ceste
+        // neprejavuje" z TLI 19 zadania). Záloha: posledná známa identita z
+        // tej istej lokálnej DB — jeden inštalovaný klient appky = jeden hráč.
+        if let Ok(Some(posledna)) = db::posledna_znama_identita(conn) {
+            identita = posledna;
+        }
+    }
     match db::uloz_beh(conn, beh, &identita, &ocenenie) {
         Ok((beh_id, _)) => {
             if let Some((nazov, cas)) = stav.sledovac.posledna_pact_konfiguracia() {
@@ -904,5 +916,98 @@ mod testy {
         let s = stav_cesty(&cesta.display().to_string());
         assert!(!s.chyba_vypnuty_log);
         let _ = std::fs::remove_file(&cesta);
+    }
+
+    // ─── TLI 19 bug E: záloha identity pre živé čítanie ─────────────────
+
+    fn prazdny_beh_pre_test(zona: &str) -> Beh {
+        Beh {
+            id: 1,
+            zona: zona.to_string(),
+            je_hub: false,
+            level_uid: None,
+            level_typ: None,
+            level_id: None,
+            zaciatok: None,
+            koniec: None,
+            otvorenie_bez_spotreby: false,
+            dropy: BTreeMap::new(),
+            vstupy: BTreeMap::new(),
+            vsetky_zmeny: Vec::new(),
+            monstra: Vec::new(),
+            modifikatory: Vec::new(),
+            bossovia: Vec::new(),
+            canvas_akcie: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn uloz_beh_do_db_pouzije_zalohu_identity_ked_live_nevidelo_ziadnu() {
+        use tli_overlay_core::tracker::stav::HracSnimka;
+
+        let mut stav = StavTrackera::default();
+        // Izolovaná DB len pre tento test — `StavTrackera::default()` by inak
+        // otvoril ten istý zdieľaný súborový `tracker.sqlite3` ako ostatné
+        // testy v tomto module.
+        stav.db = Some(db::otvor_v_pamati().unwrap());
+
+        // Beh 1: predstiera, že v TEJTO session `GetPlayerData`/`+player+...`
+        // naozaj prišlo (napr. appka bežala už pred prihlásením) — uloží sa
+        // priamo cez `db::uloz_beh`, nezávisle od `stav.sledovac`.
+        let identita = HracSnimka {
+            player_id: Some("947466339310800896".to_string()),
+            season_id: Some("1501".to_string()),
+            hero_id: Some("1800".to_string()),
+            ..Default::default()
+        };
+        {
+            let conn = stav.db.as_mut().unwrap();
+            db::uloz_beh(conn, &prazdny_beh_pre_test("Mapa1"), &identita, &OceneneHodnoty::default()).unwrap();
+        }
+
+        // Beh 2: živé čítanie v TEJTO session nevidelo ŽIADNY `+player+...`
+        // blok (presne bug E — "Enable Log" sa zapol až po prihlásení) —
+        // `stav.sledovac` je čerstvý, `hrac_snimka()` je `None`.
+        assert!(stav.sledovac.hrac_snimka().is_none());
+        uloz_beh_do_db(&mut stav, &prazdny_beh_pre_test("Mapa2"));
+
+        let conn = stav.db.as_ref().unwrap();
+        let player_id: String = conn
+            .query_row("SELECT player_id FROM behy WHERE zona = 'Mapa2'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(
+            player_id, "947466339310800896",
+            "beh bez vlastnej identity mal dostať zálohu z posledného známeho behu (bug E)"
+        );
+    }
+
+    #[test]
+    fn uloz_beh_do_db_necakanu_identitu_nenahradza_zalohou() {
+        use tli_overlay_core::tracker::log::Udalost;
+        use tli_overlay_core::tracker::stav::HracSnimka;
+
+        let mut stav = StavTrackera::default();
+        stav.db = Some(db::otvor_v_pamati().unwrap());
+
+        let stara_identita = HracSnimka { player_id: Some("STARA".to_string()), ..Default::default() };
+        {
+            let conn = stav.db.as_mut().unwrap();
+            db::uloz_beh(conn, &prazdny_beh_pre_test("Mapa1"), &stara_identita, &OceneneHodnoty::default()).unwrap();
+        }
+
+        // Live čítanie TOTO beh naozaj identifikovalo — záloha sa nesmie
+        // použiť namiesto skutočne zistenej identity.
+        for riadok in ["+player+Name [Burina]", "+player+PlayerId [NOVA]", "+player+SeasonId [1501]"] {
+            stav.sledovac.spracuj_udalost(None, Udalost::TeloSpravy { surovy: riadok.to_string() });
+        }
+        stav.sledovac.spracuj_udalost(None, Udalost::Zona { cesta: "Mapa2".to_string() });
+
+        uloz_beh_do_db(&mut stav, &prazdny_beh_pre_test("Mapa2"));
+
+        let conn = stav.db.as_ref().unwrap();
+        let player_id: String = conn
+            .query_row("SELECT player_id FROM behy WHERE zona = 'Mapa2'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(player_id, "NOVA");
     }
 }

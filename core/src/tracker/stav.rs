@@ -157,6 +157,13 @@ pub struct Beh {
     pub level_id: Option<u64>,
     pub zaciatok: Option<Cas>,
     pub koniec: Option<Cas>,
+    /// `Spv3Open`/`ClimbTowerOpen` sa spustil TESNE PRED týmto behom, ale BEZ
+    /// spotreby batohu (TLI 19 bug B) — bossovia/pinnacle mapy sa otvárajú
+    /// rovnakou správou ako bežné mapy, len bez chartu/kompasu. Keď je `true`
+    /// a `vstupy` je prázdne, `podpis_vstupov()` vráti `"boss-alebo-pinnacle"`,
+    /// nie `"bez-vstupu"` — tá hodnota zostáva vyhradená pre kampaň/leveling,
+    /// kde sa `Spv3Open`/`ClimbTowerOpen` nespustil vôbec.
+    pub otvorenie_bez_spotreby: bool,
     /// Dropy: položka -> počet kusov (len kladné súčty).
     pub dropy: BTreeMap<u32, i64>,
     /// Vstupy spotrebované pri otvorení mapy (chart + kompasy): položka -> počet (kladné číslo).
@@ -183,8 +190,19 @@ impl Beh {
     }
 
     /// Podpis kombinácie „chart + kompasy": zotriedené `id×počet` spojené `+`.
+    ///
+    /// **TLI 19 bug B.** Pred opravou vracalo prázdne `vstupy` vždy
+    /// `"bez-vstupu"`, čo UI (`odznakyVstupov` v `ui/hlavne.js`) zobrazovalo
+    /// ako „kampaň" — správne pre kampaň/leveling (tam sa `Spv3Open`/
+    /// `ClimbTowerOpen` vôbec nespustí), ale nesprávne pre bossov a pinnacle
+    /// mapy, ktoré sa otvárajú RovnAKOU správou, len bez spotreby chartu/
+    /// kompasu. Rozlíšenie nesie `otvorenie_bez_spotreby` (nastavené v
+    /// `Sledovac::spracuj_udalost`, `Udalost::Zona`).
     pub fn podpis_vstupov(&self) -> String {
         if self.vstupy.is_empty() {
+            if self.otvorenie_bez_spotreby {
+                return "boss-alebo-pinnacle".to_string();
+            }
             return "bez-vstupu".to_string();
         }
         let mut casti = Vec::new();
@@ -222,6 +240,19 @@ pub struct Sledovac {
     dalsi_id_behu: u64,
     cakajuce_vstupy: BTreeMap<u32, i64>,
     cas_vstupov: Option<Cas>,
+    /// `Spv3Open`/`ClimbTowerOpen` bol spustený (`zaciatok=true`), nech už
+    /// skončil spotrebou alebo nie — čas posledného takého spustenia, kým ho
+    /// nespotrebuje najbližší `Udalost::Zona` (TLI 19 bug B). Nezávislé od
+    /// `cas_vstupov`, ktoré sa nastaví len pri SKUTOČNEJ spotrebe.
+    posledny_pokus_o_vstup: Option<Cas>,
+    /// Čakajúca identita ÚROVNE (`LevelUid, LevelType, LevelId`) z posledného
+    /// `LevelMgr@` riadku, ešte nepriradená žiadnemu behu (TLI 19 bug C).
+    /// **Prichádza TESNE PRED prechodom zóny**, nie počas vlastného behu
+    /// (`LevelMgr@` → `SceneLevelMgr@ OpenMainWorld END!`, v tomto poradí) —
+    /// priamy zápis do `aktualny_beh` by preto vždy trafil PREDOŠLÝ (ešte
+    /// neuzavretý) beh. Odoberá a čistí sa pri KAŽDOM `Udalost::Zona`,
+    /// bez ohľadu na to, či je cieľová zóna hub.
+    cakajuca_uroven: Option<(u64, u32, u64, Option<Cas>)>,
     hladania_cien: BTreeMap<u64, (u32, Option<Cas>)>,
     ceny: Vec<(u32, f64, Option<Cas>)>,
     aktivna_sprava: Option<(Smer, String, u64, Option<Cas>)>,
@@ -341,6 +372,12 @@ impl Sledovac {
             Udalost::Kontext { proto, zaciatok } => {
                 if zaciatok {
                     self.aktualny_dovod = dovod_pre_proto(&proto);
+                    // TLI 19 bug B: zapamätaj si POKUS o vstup do mapy nezávisle
+                    // od toho, či z neho vzíde aj spotreba — boss/pinnacle sa
+                    // otvára rovnakou správou, len bez chartu/kompasu.
+                    if self.aktualny_dovod == Dovod::VstupMapy {
+                        self.posledny_pokus_o_vstup = cas.clone();
+                    }
                 } else {
                     self.aktualny_dovod = Dovod::Ostatne;
                 }
@@ -389,7 +426,17 @@ impl Sledovac {
                     uzavrety_beh = Some(stary_beh);
                 }
 
+                // TLI 19 bug D (ČIASTOČNE OTVORENÉ — pozri BACKLOG.md): čínsky
+                // názov cesty sa mení každú sezónu (presne preto ho TLI 17
+                // nenašlo v novom logu) a zoznam reťazcov v `je_hub()` je nutne
+                // neúplný — práve preto Richard 16.10. videl vstup priradený
+                // "hub riadku 111" namiesto nasledujúcej mapy. Bez reálneho
+                // logu (zdieľaný disk ho zatiaľ nemá, pozri bod 4 zadania) sa
+                // nedá bezpečne uhádnuť, akú nerozpoznanú cestu tu doplniť, ani
+                // overiť prípadný štrukturálny náhradný signál (`LevelType`) —
+                // doplní sa, keď bude log k dispozícii.
                 let hub = je_hub(&cesta);
+
                 let mut novy_beh = Beh {
                     id: self.dalsi_id_behu,
                     zona: cesta,
@@ -399,6 +446,7 @@ impl Sledovac {
                     level_id: None,
                     zaciatok: cas.clone(),
                     koniec: None,
+                    otvorenie_bez_spotreby: false,
                     dropy: BTreeMap::new(),
                     vstupy: BTreeMap::new(),
                     vsetky_zmeny: Vec::new(),
@@ -409,6 +457,20 @@ impl Sledovac {
                 };
                 self.dalsi_id_behu += 1;
 
+                // TLI 19 bug C: `LevelMgr@` prichádza TESNE PRED `SceneLevelMgr@
+                // OpenMainWorld END!` (teda pred týmto `Udalost::Zona`), nie počas
+                // behu, ktorý announcuje — priamy zápis do `aktualny_beh` (pôvodný
+                // kód) preto vždy trafil PREDOŠLÝ, ešte neuzavretý beh a nový beh
+                // ostal s `level_uid = None`, kým ho neprepísal ĎALŠÍ (často už
+                // nesúvisiaci) `LevelMgr@` riadok. Odoberá sa tu vždy, bez ohľadu
+                // na to, či je cieľová zóna hub — `LevelMgr@` ohlasuje VŽDY len tú
+                // najbližšiu, ešte neotvorenú zónu.
+                if let Some((uid, typ, id, _)) = self.cakajuca_uroven.take() {
+                    novy_beh.level_uid = Some(uid);
+                    novy_beh.level_typ = Some(typ);
+                    novy_beh.level_id = Some(id);
+                }
+
                 if !hub {
                     if let Some(cas_v) = &self.cas_vstupov {
                         if let Some(cas_z) = &novy_beh.zaciatok {
@@ -417,19 +479,30 @@ impl Sledovac {
                             }
                         }
                     }
+                    // TLI 19 bug B: žiadna spotreba, ale `Spv3Open`/`ClimbTowerOpen`
+                    // sa tesne predtým spustil → boss/pinnacle, nie kampaň.
+                    if novy_beh.vstupy.is_empty() {
+                        if let Some(cas_p) = &self.posledny_pokus_o_vstup {
+                            if let Some(cas_z) = &novy_beh.zaciatok {
+                                if cas_z.rozdiel_ms(cas_p) <= 10 * 60 * 1000 {
+                                    novy_beh.otvorenie_bez_spotreby = true;
+                                }
+                            }
+                        }
+                    }
                     self.cakajuce_vstupy.clear();
                     self.cas_vstupov = None;
+                    self.posledny_pokus_o_vstup = None;
                 }
 
                 self.aktualny_beh = Some(novy_beh);
                 uzavrety_beh
             }
             Udalost::Uroven { uid, typ, id } => {
-                if let Some(beh) = &mut self.aktualny_beh {
-                    beh.level_uid = Some(uid);
-                    beh.level_typ = Some(typ);
-                    beh.level_id = Some(id);
-                }
+                // TLI 19 bug C: NEzapisuje sa priamo do `aktualny_beh` (pozri
+                // vysvetlenie pri `Udalost::Zona`) — čaká sa na najbližší prechod
+                // zóny, ktorému táto identita naozaj patrí.
+                self.cakajuca_uroven = Some((uid, typ, id, cas));
                 None
             }
             Udalost::SpravaZaciatok { smer, akcia, syn_id } => {
@@ -535,9 +608,33 @@ impl Sledovac {
             }
         }
         if dovod == Dovod::VstupMapy && mnozstvo < 0 {
-            *self.cakajuce_vstupy.entry(polozka).or_insert(0) += -mnozstvo;
-            if self.cas_vstupov.is_none() {
-                self.cas_vstupov = original_cas.clone();
+            // TLI 19 bug A: zvyčajne sa batoh spotrebuje PRED prechodom do
+            // mapy (preto nižšie `cakajuce_vstupy` čaká na ďalší
+            // `Udalost::Zona`), ale `BagMgr@:Modfy` niekedy dobehne do logu
+            // AŽ PO ňom — zjavne podľa toho, ako rýchlo server potvrdí
+            // spotrebu voči načítaniu scény. Vtedy je mapa už `aktualny_beh`
+            // a čakací mechanizmus (rieši opačné poradie) by ju už nestihol
+            // priradiť spätne, takže by ostala navždy „bez-vstupu".
+            let patri_aktualnemu_behu = self
+                .aktualny_beh
+                .as_ref()
+                .map(|b| {
+                    !b.je_hub
+                        && match (original_cas, &b.zaciatok) {
+                            (Some(cz), Some(bz)) => cz.rozdiel_ms(bz).abs() <= 10 * 60 * 1000,
+                            _ => true,
+                        }
+                })
+                .unwrap_or(false);
+            if patri_aktualnemu_behu {
+                if let Some(beh) = &mut self.aktualny_beh {
+                    *beh.vstupy.entry(polozka).or_insert(0) += -mnozstvo;
+                }
+            } else {
+                *self.cakajuce_vstupy.entry(polozka).or_insert(0) += -mnozstvo;
+                if self.cas_vstupov.is_none() {
+                    self.cas_vstupov = original_cas.clone();
+                }
             }
         }
     }
@@ -740,8 +837,11 @@ mod testy {
     #[test]
     fn test_delta_absolutne_num_odobranie() {
         let mut sledovac = Sledovac::novy();
-        sledovac.spracuj_udalost(None, Udalost::Zona { cesta: "Mapa".to_string() });
-        
+        // Hub, nie mapa: spotreba vstupu mimo hubu patrí priamo aktuálnemu behu
+        // (TLI 19 bug A) a tento test overuje práve `cakajuce_vstupy` — teda
+        // cestu, ktorou prechádza spotreba vzniknutá PRED vstupom do mapy.
+        sledovac.spracuj_udalost(None, Udalost::Zona { cesta: "Town".to_string() });
+
         // init
         sledovac.spracuj_udalost(None, Udalost::Batoh(BatohZmena { stranka: 1, slot: 1, polozka: 50, num: 20, je_init: true }));
         
@@ -823,13 +923,25 @@ mod testy {
     fn test_podpis_vstupov() {
         let mut beh = Beh {
             id: 1, zona: "X".into(), je_hub: false, level_uid: None, level_typ: None, level_id: None,
-            zaciatok: None, koniec: None, dropy: BTreeMap::new(), vstupy: BTreeMap::new(), vsetky_zmeny: Vec::new(),
+            zaciatok: None, koniec: None, otvorenie_bez_spotreby: false, dropy: BTreeMap::new(), vstupy: BTreeMap::new(), vsetky_zmeny: Vec::new(),
             monstra: Vec::new(), modifikatory: Vec::new(), bossovia: Vec::new(), canvas_akcie: Vec::new(),
         };
         assert_eq!(beh.podpis_vstupov(), "bez-vstupu");
         beh.vstupy.insert(400, 1);
         beh.vstupy.insert(300, 2);
         assert_eq!(beh.podpis_vstupov(), "300x2+400x1");
+    }
+
+    #[test]
+    fn test_podpis_vstupov_boss_bez_spotreby() {
+        // TLI 19 bug B: Spv3Open/ClimbTowerOpen BEZ spotreby = boss/pinnacle,
+        // nie kampaň — "bez-vstupu" ostáva vyhradené pre skutočnú kampaň.
+        let beh = Beh {
+            id: 1, zona: "Boss".into(), je_hub: false, level_uid: None, level_typ: None, level_id: None,
+            zaciatok: None, koniec: None, otvorenie_bez_spotreby: true, dropy: BTreeMap::new(), vstupy: BTreeMap::new(), vsetky_zmeny: Vec::new(),
+            monstra: Vec::new(), modifikatory: Vec::new(), bossovia: Vec::new(), canvas_akcie: Vec::new(),
+        };
+        assert_eq!(beh.podpis_vstupov(), "boss-alebo-pinnacle");
     }
 
     #[test]
@@ -1134,5 +1246,116 @@ mod testy {
         sledovac.spracuj_udalost(None, Udalost::TeloSpravy { surovy: "+ineco+hodnota [42]".to_string() });
         sledovac.spracuj_udalost(None, Udalost::SpravaKoniec);
         assert!(sledovac.hrac_snimka().is_none());
+    }
+
+    // ─── TLI 19 (16.10.2026): regresie nad REÁLNYM vzorom z Richardovho PC ──
+    //
+    // Vzor (zadanie `2026-10-16-1055-mcp-2.md`, overené priamo 16.10.2026):
+    // `ItemChange@ ProtoName=Spv3Open start` → `BagMgr@:Modfy ... ConfigBaseId=400000
+    // Num=N-1` → `Spv3Open end` → `LevelMgr@ LevelUid, LevelType, LevelId = ...` →
+    // prechod do novej zóny (`SceneLevelMgr@ OpenMainWorld END! InMainLevelPath=...`
+    // — jediný riadok prechodu zóny, ktorý parser rozpoznáva; Richardovo „EnterScene"
+    // je jeho skratka preň). Kľúčové zistenie 16.10.: `LevelMgr@` prichádza TESNE
+    // PRED prechodom zóny, nie počas nej — presný opak toho, čo predpokladala stará
+    // (vymyslená, nie z reálneho logu) vzorka `vzorky/session-3-mapy.log`.
+
+    fn riadok_s_casom(hh: u8, mm: u8, ss: u8, text: &str) -> String {
+        format!("[2026.10.16-{hh:02}.{mm:02}.{ss:02}:000][1]GameLog: Display: [Game] {text}")
+    }
+
+    #[test]
+    fn tli19_bug_c_level_uid_patri_novej_mape_nie_predoslemu_hubu() {
+        let mut sledovac = Sledovac::novy();
+        // Vstup do hubu (cesta naschvál obsahuje substring z `je_hub()`).
+        sledovac.riadok(&riadok_s_casom(8, 28, 0,
+            "SceneLevelMgr@ OpenMainWorld END! InMainLevelPath = /Game/Art/Maps/01SD/XZ_YuJinZhiXiBiNanSuo200/XZ_YuJinZhiXiBiNanSuo200"));
+        sledovac.riadok(&riadok_s_casom(8, 28, 1, "BagMgr@:InitBagData PageId = 103 SlotId = 3 ConfigBaseId = 400000 Num = 9"));
+
+        // Presne podľa Vzoru: Spv3Open spotrebuje beacon 9 -> 8, POTOM LevelMgr,
+        // POTOM až prechod do reálnej mapy.
+        sledovac.riadok(&riadok_s_casom(8, 29, 0, "ItemChange@ ProtoName=Spv3Open start"));
+        sledovac.riadok(&riadok_s_casom(8, 29, 0, "BagMgr@:Modfy BagItem PageId = 103 SlotId = 3 ConfigBaseId = 400000 Num = 8"));
+        sledovac.riadok(&riadok_s_casom(8, 29, 0, "ItemChange@ ProtoName=Spv3Open end"));
+        sledovac.riadok(&riadok_s_casom(8, 29, 1, "LevelMgr@ LevelUid, LevelType, LevelId = 1001001 3 4001"));
+        let uzavrety_hub = sledovac.riadok(&riadok_s_casom(8, 29, 2,
+            "SceneLevelMgr@ OpenMainWorld END! InMainLevelPath = /Game/Art/Maps/01DD/DD_ZaWuJieQu000/DD_ZaWuJieQu000"));
+
+        // Predošlý (hub) beh si NESMIE odniesť LevelUid mapy, ktorá sa ešte len otvára.
+        let hub = uzavrety_hub.expect("prechod zóny mal uzavrieť hub beh");
+        assert!(hub.je_hub);
+        assert_eq!(hub.level_uid, None, "hub nesmie dostať LevelUid patriaci nasledujúcej mape (bug C)");
+
+        let mapa = sledovac.aktualny().expect("nová mapa má byť aktuálny beh");
+        assert!(!mapa.je_hub);
+        assert_eq!(mapa.level_uid, Some(1001001));
+        assert_eq!(mapa.level_typ, Some(3));
+        assert_eq!(mapa.level_id, Some(4001));
+        assert_eq!(*mapa.vstupy.get(&400000).unwrap(), 1);
+        assert_eq!(mapa.podpis_vstupov(), "400000x1");
+    }
+
+    #[test]
+    fn tli19_bug_a_spotreba_po_prechode_do_mapy_sa_este_pripocita() {
+        // Opačné poradie než vo Vzore: `BagMgr@:Modfy` dobehne do logu AŽ PO
+        // prechode do mapy (mapa je už `aktualny_beh`) — predtým táto spotreba
+        // ostala navždy nezapočítaná a beh skončil ako "bez-vstupu" (bug A,
+        // reálne beh 102 DD_ZaWuJieQu000 z 16.10.2026).
+        let mut sledovac = Sledovac::novy();
+        sledovac.riadok(&riadok_s_casom(8, 40, 0,
+            "SceneLevelMgr@ OpenMainWorld END! InMainLevelPath = /Game/Art/Maps/01SD/XZ_YuJinZhiXiBiNanSuo200/XZ_YuJinZhiXiBiNanSuo200"));
+        sledovac.riadok(&riadok_s_casom(8, 40, 1, "BagMgr@:InitBagData PageId = 103 SlotId = 3 ConfigBaseId = 400000 Num = 9"));
+
+        sledovac.riadok(&riadok_s_casom(8, 40, 20,
+            "SceneLevelMgr@ OpenMainWorld END! InMainLevelPath = /Game/Art/Maps/01DD/DD_ZaWuJieQu000/DD_ZaWuJieQu000"));
+        // V tomto momente je mapa už aktuálny beh a NEMÁ žiadne vstupy.
+        assert_eq!(sledovac.aktualny().unwrap().podpis_vstupov(), "bez-vstupu");
+
+        sledovac.riadok(&riadok_s_casom(8, 40, 22, "ItemChange@ ProtoName=Spv3Open start"));
+        sledovac.riadok(&riadok_s_casom(8, 40, 22, "BagMgr@:Modfy BagItem PageId = 103 SlotId = 3 ConfigBaseId = 400000 Num = 8"));
+        sledovac.riadok(&riadok_s_casom(8, 40, 22, "ItemChange@ ProtoName=Spv3Open end"));
+
+        let mapa = sledovac.aktualny().unwrap();
+        assert_eq!(*mapa.vstupy.get(&400000).unwrap(), 1, "neskorá spotreba sa mala dopočítať do už bežiacej mapy");
+        assert_eq!(mapa.podpis_vstupov(), "400000x1");
+    }
+
+    #[test]
+    fn tli19_bug_b_boss_bez_spotreby_nie_je_kampan() {
+        // Boss: Spv3Open BEZ zmeny batohu (Richardov fakt 16.10.2026,
+        // YongShuangBingPo LevelUid 1001099 LevelId 3000) — predtým sa to
+        // zobrazovalo ako "kampaň", čo je nesprávne (pravidlo TLI 17 bolo pre
+        // bossov zlé).
+        let mut sledovac = Sledovac::novy();
+        sledovac.riadok(&riadok_s_casom(8, 50, 0,
+            "SceneLevelMgr@ OpenMainWorld END! InMainLevelPath = /Game/Art/Maps/01SD/XZ_YuJinZhiXiBiNanSuo200/XZ_YuJinZhiXiBiNanSuo200"));
+
+        sledovac.riadok(&riadok_s_casom(8, 50, 10, "ItemChange@ ProtoName=Spv3Open start"));
+        // Žiadny BagMgr riadok medzi start/end — presne ako pri bossovi.
+        sledovac.riadok(&riadok_s_casom(8, 50, 10, "ItemChange@ ProtoName=Spv3Open end"));
+        sledovac.riadok(&riadok_s_casom(8, 50, 11, "LevelMgr@ LevelUid, LevelType, LevelId = 1001099 3 3000"));
+        sledovac.riadok(&riadok_s_casom(8, 50, 12,
+            "SceneLevelMgr@ OpenMainWorld END! InMainLevelPath = /Game/Art/Maps/Boss/YongShuangBingPo/YongShuangBingPo"));
+
+        let boss = sledovac.aktualny().unwrap();
+        assert!(!boss.je_hub);
+        assert!(boss.vstupy.is_empty());
+        assert!(boss.otvorenie_bez_spotreby);
+        assert_eq!(boss.podpis_vstupov(), "boss-alebo-pinnacle");
+        assert_eq!(boss.level_id, Some(3000));
+    }
+
+    #[test]
+    fn tli19_skutocna_kampan_bez_pokusu_ostava_bez_vstupu() {
+        // Kontrolný prípad k bugu B: keď sa Spv3Open/ClimbTowerOpen NESPUSTIL
+        // vôbec, musí to ostať "bez-vstupu" (= kampaň v UI), nie "boss-alebo-pinnacle".
+        let mut sledovac = Sledovac::novy();
+        sledovac.riadok(&riadok_s_casom(9, 0, 0,
+            "SceneLevelMgr@ OpenMainWorld END! InMainLevelPath = /Game/Art/Maps/01SD/XZ_YuJinZhiXiBiNanSuo200/XZ_YuJinZhiXiBiNanSuo200"));
+        sledovac.riadok(&riadok_s_casom(9, 0, 5,
+            "SceneLevelMgr@ OpenMainWorld END! InMainLevelPath = /Game/Art/Maps/Mainstory_chapter1/SQ_MingShaJuLuo100"));
+
+        let kampan = sledovac.aktualny().unwrap();
+        assert!(!kampan.otvorenie_bez_spotreby);
+        assert_eq!(kampan.podpis_vstupov(), "bez-vstupu");
     }
 }

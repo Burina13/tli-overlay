@@ -134,6 +134,14 @@ function triedaZnamienka(hodnota) {
 /// TLI 17 (16.10.2026) zobrazuje ako „kampaň" — endgame mapy sa inak než cez
 /// chart/kompas (`Spv3Open`/`ClimbTowerOpen`) otvoriť nedajú, takže beh bez
 /// nich je vždy kampaňová/sezónna/leveling zóna, nikdy nie mapa „zadarmo".
+///
+/// **TLI 19 bug B (16.10.2026):** toto pravidlo bolo pre bossov zlé — boss a
+/// pinnacle mapy sa otvárajú ROVNAKOU správou (`Spv3Open`/`ClimbTowerOpen`),
+/// len bez spotreby chartu/kompasu, takže vychádzali tiež ako „bez-vstupu" a
+/// zobrazovali sa nesprávne ako kampaň. Jadro (`core/src/tracker/stav.rs`,
+/// `Beh::podpis_vstupov`) teraz tento prípad rozlišuje vlastnou hodnotou
+/// `"boss-alebo-pinnacle"` — `"bez-vstupu"` ostáva vyhradené pre skutočnú
+/// kampaň, kde sa `Spv3Open`/`ClimbTowerOpen` nespustil vôbec.
 /// Volá sa len na už hub-filtrovaných behoch (`behy`, `zivo`, `podla_kombinacie`
 /// — pozri `src-tauri/src/tracker.rs`), takže sa tu netreba pýtať na `je_hub`.
 function odznakyVstupov(podpis) {
@@ -142,6 +150,9 @@ function odznakyVstupov(podpis) {
     }
     if (podpis === "bez-vstupu") {
         return '<span class="odznak">kampaň</span>';
+    }
+    if (podpis === "boss-alebo-pinnacle") {
+        return '<span class="odznak">boss / pinnacle</span>';
     }
     return podpis
         .split("+")

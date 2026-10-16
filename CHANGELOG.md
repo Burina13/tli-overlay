@@ -2,6 +2,56 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.14.0 — 16.10.2026 (TLI 19, 1/N)
+
+Opravy parsera/trackera nad REÁLNYM Richardovým živým logom (overené priamo na jeho PC
+16.10.2026, zadanie `2026-10-16-1055-mcp-2.md`) — tracker.sqlite3 behy 97–111 mali štyri
+samostatné chyby:
+
+- **Bug A — spotreba PO prechode do mapy sa strácala.** `BagMgr@:Modfy` niekedy dobehne do
+  logu AŽ PO `SceneLevelMgr@` prechode do mapy, ktorú otvoril (poradie sa môže líšiť od behu
+  k behu). Doteraz sa spotreba vtedy nikdy nedostala do behu, ktorý už bežal, a beh ostal
+  navždy „bez-vstupu". `Sledovac::zaznamenaj_zmenu` teraz priraďuje priamo bežiacemu
+  (nehubovému, čerstvému) behu, keď spotreba dobehne až počas neho.
+- **Bug B — boss/pinnacle bez spotreby sa zobrazoval ako „kampaň".** `Spv3Open`/
+  `ClimbTowerOpen` sa pri bossoch/pinnacle mapách spustí BEZ zmeny batohu (žiadny chart ani
+  kompas), čo predtým vyzeralo rovnako ako skutočná kampaň. `Beh` má nové pole
+  `otvorenie_bez_spotreby` a `podpis_vstupov()` vracia `"boss-alebo-pinnacle"` namiesto
+  `"bez-vstupu"`, keď sa mapa otvárala, ale nič sa pritom nespotrebovalo — `"bez-vstupu"`
+  (zobrazené v UI ako „kampaň") ostáva vyhradené pre behy, kde sa `Spv3Open`/`ClimbTowerOpen`
+  nespustil VÔBEC.
+- **Bug C — `LevelUid`/`LevelType`/`LevelId` boli posunuté o jeden beh.** `LevelMgr@` prichádza
+  TESNE PRED prechodom do novej zóny (nie počas nej) — priamy zápis do `aktualny_beh` preto
+  vždy trafil PREDOŠLÝ, ešte neuzavretý beh. Identita úrovne sa teraz drží ako čakajúca
+  (`Sledovac::cakajuca_uroven`) a odovzdá sa až behu, ktorý naozaj vznikne pri najbližšom
+  prechode zóny.
+- **Bug E — `player_id`/`season_id` prázdne vo všetkých živých behoch.** „Enable Log" sa
+  zapína na začiatku KAŽDEJ session a identita (`GetPlayerData`/`+player+...`) chodí pri
+  PRIHLÁSENÍ — teda typicky PRED tým, než ju hráč stihne zapnúť; živé čítanie preto v danej
+  session nemusí vidieť identitu vôbec (spätný import to nemá, lebo vidí logy od úplného
+  začiatku). Nová `db::posledna_znama_identita()` je záloha: keď `Sledovac::hrac_snimka()`
+  nemá nič, `uloz_beh_do_db` použije poslednú známu identitu z tej istej lokálnej DB.
+- **Bug D (ČIASTOČNE OTVORENÉ)** — posledný vstup bol priradený hub riadku namiesto
+  nasledujúcej mapy; koreňová príčina je nerozpoznaná cesta tohtosezónneho hubu v `je_hub()`.
+  Bez reálneho prihrávaného logu (pozri nižšie) sa nedalo bezpečne uhádnuť, akú cestu doplniť —
+  detail a ďalší krok v `BACKLOG.md`.
+
+Nové regresné testy priamo nad vzorom z Richardovho 16.10. zistenia (`core/src/tracker/stav.rs`,
+`tli19_*`, aj dva `db.rs::posledna_znama_identita_*`) a dva integračné nad `uloz_beh_do_db`
+(`src-tauri/src/tracker.rs`) — `cargo test --lib` v `core`: 277 zelených (bolo 270),
+`cargo check --tests` v `src-tauri` čisté (testy v `src-tauri` sa spúšťajú len v CI na
+Windows, nie tu — pozri `[[feedback-tli-cargo-test-disk]]`).
+
+**Mapy a položky (zadanie body 2–3) nie sú v tomto release** — pinyin kódy máp sa cez
+websearch nedajú spárovať s anglickými menami (nie sú nikde indexované) a ikony položiek
+vyžadujú samostatnú sťahovaciu/cachovaciu infraštruktúru; nájdený zdroj
+(`TLI-Tracker-main/en_id_table.json` na zdieľanom disku, 240 položiek, MIT) je zdokumentovaný
+v `BACKLOG.md` ako štartovací bod ďalšej časti TLI 19.
+
+**Dnešný live log stále nie je na zdieľanom disku** (len včerajšia, 15.10. kópia) — Richard
+dostal správu na Discord, nech ho skopíruje, aby sa dali tieto opravy overiť nad SKUTOČNÝM
+dnešným logom (akceptačné kritérium zo zadania).
+
 ## 0.13.1 — 16.10.2026 (hotfix)
 
 - **Opravené: hlavné záložky (Solvery/Analýza/Guide/Nastavenia) nereagovali na

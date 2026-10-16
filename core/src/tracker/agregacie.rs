@@ -239,6 +239,7 @@ mod testy {
             level_id: None,
             zaciatok: None,
             koniec: None,
+            otvorenie_bez_spotreby: false,
             dropy: BTreeMap::new(),
             vstupy: BTreeMap::new(),
             vsetky_zmeny: vec![],

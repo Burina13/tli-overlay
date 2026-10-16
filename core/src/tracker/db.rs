@@ -355,6 +355,37 @@ pub fn uloz_beh(
     Ok((beh_id, true))
 }
 
+/// Posledná známa neprázdna identita hráča z predošlého uloženého behu
+/// (TLI 19 bug E) — záloha pre `uloz_beh_do_db` v `src-tauri`, keď živé
+/// čítanie v AKTUÁLNEJ session ešte nevidelo žiadny `+player+...`/
+/// `GetPlayerData` blok.
+///
+/// **Prečo to vôbec treba:** „Enable Log" sa musí zapínať na začiatku KAŽDEJ
+/// session (hra si to nepamätá) a identita sa posiela pri PRIHLÁSENÍ — teda
+/// typicky PRED tým, než hráč log stihne zapnúť. Spätný import (`import.rs`)
+/// vidí logy od úplného začiatku vrátane prihlásenia, live čítanie nie —
+/// presne preto oprava `ecec22f` identitu doplnila len tam. Jeden inštalovaný
+/// klient appky = jeden hráč, takže identita sa medzi sessions nemení (okrem
+/// sezóny, a tá sa prejaví hneď, ako prvý riadok identity v novej sezóne
+/// naozaj príde a nahradí túto zálohu).
+pub fn posledna_znama_identita(conn: &Connection) -> rusqlite::Result<Option<HracSnimka>> {
+    conn.query_row(
+        "SELECT player_id, season_id, hero_id FROM behy
+         WHERE player_id IS NOT NULL AND player_id != ''
+         ORDER BY id DESC LIMIT 1",
+        [],
+        |row| {
+            Ok(HracSnimka {
+                player_id: row.get(0)?,
+                season_id: row.get(1)?,
+                hero_id: row.get(2)?,
+                ..Default::default()
+            })
+        },
+    )
+    .optional()
+}
+
 /// Pripíše jeden nájdený build snapshot (DPS/DEF + pact konfigurácia +
 /// talenty) k behu. Volá sa samostatne od `uloz_beh`, lebo tieto údaje žijú
 /// v `Sledovac` globálne (nie v `Beh`) — volajúci ich spojí sám.
@@ -774,6 +805,7 @@ mod testy {
             level_id: None,
             zaciatok: cas(zaciatok_s),
             koniec: cas(zaciatok_s + 10),
+            otvorenie_bez_spotreby: false,
             dropy: BTreeMap::new(),
             vstupy: BTreeMap::new(),
             vsetky_zmeny: vec![],
@@ -867,6 +899,37 @@ mod testy {
 
         let riadky = vyhladaj_behy(&conn, &FilterBehov::default()).unwrap();
         assert_eq!(riadky.len(), 1);
+    }
+
+    // ─── TLI 19 bug E: záloha identity pre živé čítanie ─────────────────
+
+    #[test]
+    fn posledna_znama_identita_prazdna_db_vracia_none() {
+        let conn = otvor_v_pamati().unwrap();
+        assert!(posledna_znama_identita(&conn).unwrap().is_none());
+    }
+
+    #[test]
+    fn posledna_znama_identita_preskoci_behy_bez_identity_a_vrati_najnovsiu() {
+        let mut conn = otvor_v_pamati().unwrap();
+        let ocenenie = OceneneHodnoty::default();
+
+        let s_identitou = HracSnimka {
+            player_id: Some("947466339310800896".to_string()),
+            season_id: Some("1501".to_string()),
+            hero_id: Some("1800".to_string()),
+            ..Default::default()
+        };
+        uloz_beh(&mut conn, &prazdny_beh(1, "Mapa1", 0), &s_identitou, &ocenenie).unwrap();
+
+        // TLI 19 bug E: živé behy bez identity (chýbajúci GetPlayerData v
+        // danej session) nesmú zahodiť/prebiť to, čo sa už raz zistilo.
+        uloz_beh(&mut conn, &prazdny_beh(2, "Mapa2", 20), &HracSnimka::default(), &ocenenie).unwrap();
+
+        let identita = posledna_znama_identita(&conn).unwrap().expect("mala sa nájsť identita z behu 1");
+        assert_eq!(identita.player_id.as_deref(), Some("947466339310800896"));
+        assert_eq!(identita.season_id.as_deref(), Some("1501"));
+        assert_eq!(identita.hero_id.as_deref(), Some("1800"));
     }
 
     #[test]
