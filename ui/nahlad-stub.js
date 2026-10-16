@@ -128,6 +128,51 @@ const ODPOVEDE = {
   analyza_monstra_podla_rarity: [[1, 25], [2, 12], [3, 4], [4, 1]],
   analyza_export_csv: "id;zona\n1;YunDuanLvZhou\n",
   analyza_export_json: "[]",
+  // Taktiky (TLI 13b) — rovnaké čísla, aké dá appka nad vzorkou `session-3-mapy.log`
+  // (`core/tests/e2e_taktiky.rs`): LAVA má vyšší priemerný FE/h, hoci OAZA má
+  // viac behov aj vyšší súhrnný zisk — presne tento rozdiel má byť na snímke vidieť.
+  analyza_taktiky: {
+    taktiky: [
+      {
+        kluc: "400021x1+500102x1@" + LAVA + "@mod-@map[]@build[||]",
+        nazov: "400021x1+500102x1@" + LAVA + "@mod-@map[]@build[||]",
+        podpisy: ["400021x1+500102x1@" + LAVA + "@mod-@map[]@build[||]"],
+        ukazka_podpis_vstupov: "400021x1+500102x1",
+        ukazka_zona: LAVA,
+        statistika: {
+          pocet_behov: 1, pocet_ocenenych: 1,
+          priemerny_zisk: 302.9, median_zisk: 302.9, min_zisk: 302.9, max_zisk: 302.9,
+          p10_zisk: 302.9, p90_zisk: 302.9, smerodajna_odchylka: null,
+          priemerne_fe_za_hodinu: 4543.5, priemerny_naklad: 3.1, roi: 97.7,
+          pomer_zisk_riziko: null, priemerne_trvanie_ms: 240000, malo_dat: true,
+        },
+      },
+      {
+        kluc: "400021x1+500101x2@" + OAZA + "@mod-@map[]@build[||]",
+        nazov: "400021x1+500101x2@" + OAZA + "@mod-@map[]@build[||]",
+        podpisy: ["400021x1+500101x2@" + OAZA + "@mod-@map[]@build[||]"],
+        ukazka_podpis_vstupov: "400021x1+500101x2",
+        ukazka_zona: OAZA,
+        statistika: {
+          pocet_behov: 2, pocet_ocenenych: 2,
+          priemerny_zisk: 282.9, median_zisk: 282.9, min_zisk: 100.9, max_zisk: 464.9,
+          p10_zisk: 100.9, p90_zisk: 464.9, smerodajna_odchylka: 257.2,
+          priemerne_fe_za_hodinu: 3798.4, priemerny_naklad: 3.1, roi: 91.3,
+          pomer_zisk_riziko: 1.1, priemerne_trvanie_ms: 240000, malo_dat: true,
+        },
+      },
+    ],
+    odporucanie: {
+      text: "Zatiaľ málo dát na odporúčanie — žiadna taktika nemá aspoň 5 ocenených behov.",
+      taktika_kluc: null,
+    },
+    navrhy_na_otestovanie: [
+      "400021x1+500102x1@.../LAVA — zatiaľ len 1 ocenený beh (z 5 potrebných), oplatí sa otestovať viac",
+    ],
+  },
+  analyza_taktiky_export_csv: "nazov;pocet_behov\nLAVA;1\n",
+  analyza_taktiky_export_json: "[]",
+  taktika_pomenuj_alebo_zluc: 1,
   tracker_nacitaj_stare_logy: { pocet_riadkov: 163339, pocet_novych_behov: 9, pocet_preskocenych_behov: 0,
                                 pocet_monster: 4168, pocet_cien: 1, pocet_zostatkov: 374, neznamych_riadkov: 148724 },
 };

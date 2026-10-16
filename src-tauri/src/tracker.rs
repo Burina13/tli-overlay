@@ -460,6 +460,36 @@ pub fn analyza_monstra_podla_rarity(stav: &StavTrackera, beh_id: i64) -> Result<
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Záložka „Analýza" — taktiky (TLI 13b)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Zoskupí behy do taktík (podpis chart+kompasy+mapa+mód+modifikátory+build)
+/// a vypočíta ich štatistiky — hotové na priamo zobrazenie v tabuľke.
+/// Prázdna DB vráti prázdny zoznam, rovnako ako `analyza_vyhladaj`.
+pub fn analyza_taktiky(
+    stav: &StavTrackera,
+    filter: &db::FilterTaktik,
+) -> Result<tli_overlay_core::tracker::taktiky::AnalyzaTaktik, String> {
+    use tli_overlay_core::tracker::taktiky;
+    let Some(conn) = &stav.db else { return Ok(taktiky::AnalyzaTaktik::default()) };
+    let riadky = db::data_pre_taktiky(conn, filter).map_err(|e| e.to_string())?;
+    let modifikatory = db::modifikator_podpisy(conn).map_err(|e| e.to_string())?;
+    let priradenia = db::nacitaj_priradenia_taktik(conn).map_err(|e| e.to_string())?;
+    let vstupy = taktiky::priprav_vstupy(&riadky, &modifikatory);
+    let skupiny = taktiky::zoskup(&vstupy, &priradenia);
+    Ok(taktiky::priprav_analyzu(skupiny))
+}
+
+/// Pomenuje jednu taktiku alebo zlúči viac podpisov do jednej pomenovanej
+/// taktiky — `podpisy` sú `TaktikaSkupina.podpisy` vybraných riadkov z UI.
+pub fn taktika_pomenuj_alebo_zluc(stav: &StavTrackera, podpisy: &[String], nazov: &str) -> Result<i64, String> {
+    let Some(conn) = &stav.db else {
+        return Err("Lokálna databáza nie je otvorená.".to_string());
+    };
+    db::ulozit_taktiku(conn, podpisy, nazov).map_err(|e| e.to_string())
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Stav cesty k logu pre Nastavenia (TLI 11c, krok 2)
 // ─────────────────────────────────────────────────────────────────────────────
 

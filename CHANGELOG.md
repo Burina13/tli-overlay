@@ -2,6 +2,58 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.13.0 — 16.10.2026
+
+Analýza podľa taktiky (TLI 13b, 1. časť, doplnok k TLI 13).
+
+- **Taktika** = podpis celého setupu behu: štartovací chart a kompasy, mapa
+  a mód, modifikátory mapy a build (hrdina, pact konfigurácia, talentové
+  stromy). Appka behy do taktík zoskupí sama; hráč môže skupinu **pomenovať**
+  alebo **zlúčiť** viac podpisov do jednej (nové tabuľky `taktiky`/
+  `taktiky_priradenie`, schéma DB v2).
+- Nová sekcia **„Taktiky"** v záložke Analýza: tabuľka zoradená podľa
+  priemerného FE/h (= rebríček „najlepšia taktika za hodinu"), s počtom
+  behov, priemerným aj mediánovým ziskom, min/max, p10/p90, smerodajnou
+  odchýlkou (rozptyl — stabilná taktika vs. „lotéria"), priemerným nákladom
+  na beh a ROI, a pomerom zisk/riziko (rebríček „najlepší pomer zisk/riziko").
+  Taktiky s menej než 5 ocenenými behmi sú zreteľne označené „málo dát".
+- Panel **„Odporúčanie"**: deterministicky (žiadne AI) vyberie najlepšiu
+  taktiku spomedzi tých s dosť dátami, s dôvodom po slovensky. Vedľa neho
+  zoznam „čo vyskúšať viac" — taktiky s málo dátami, ktoré sa oplatí
+  otestovať (odvodené z reálnych dát appky, nie z katalógu kombinácií, ktorý
+  appka nemá — BACKLOG.md).
+- Export CSV a JSON zoznamu taktík.
+- Nový core modul `tracker::taktiky` (24 nových unit testov) — čisto, bez
+  DB, rovnaký vzor ako `agregacie.rs`.
+- **Čo v tejto časti ZÁMERNE chýba** (BACKLOG.md „TLI 13b — …"): rozpad zisku
+  podľa zdroja (mobky/rares/boss/mechanika/truhlice — log zatiaľ nedáva
+  spoľahlivo rozlíšiť zdroj dropu), graf vývoja FE/h v čase, prepočet starých
+  behov podľa DNEŠNÝCH cien, filter podľa obdobia/hrdinu/ligy v UI (server už
+  pripravený, `db::FilterTaktik`), voliteľný sync agregátov na
+  `tli.tvojtatko.sk`, Artistry/Snowpaper tier a sezónne mechaniky (Tartarus,
+  Followers) v podpise taktiky.
+
+## 0.12.0 — 16.10.2026
+
+Lokálna SQLite databáza všetkého, čo sa dá z logu vyčítať, a záložka
+„Analýza" (TLI 13, 1. časť). Tento záznam pôvodne v `CHANGELOG.md` chýbal
+(release aj `latest-tli.json` vyšli, zápis sem sa vynechal) — doplnené
+dodatočne úlohou TLI 13b, obsah nemenený, len dopísaný.
+
+- Nová lokálna databáza (`tracker::db`, SQLite cez `rusqlite`/`bundled`):
+  behy, položky, monštrá, modifikátory mapy, ceny, zostatky, bossovia,
+  Frozen Canvas akcie, build snapshoty a surový catch-all pre nerozobrané
+  riadky. Zápisy idempotentné — live čítanie aj spätný import sa dajú volať
+  opakovane bez duplicít.
+- Nové typy udalostí v parseri: spawny monštier s raritou a affixom, textové
+  modifikátory mapy, zostatky mien, stav bossov, pact konfigurácia, Frozen
+  Canvas akcie priamo z logu.
+- Tlačidlo **„Načítať staré logy"** — spätný import aktuálneho aj
+  `UE_game-backup-*.log` súborov, overené na reálnom 19 MB logu za 115 ms.
+- Nová záložka **„Analýza"**: vyhľadávanie podľa mapy a minimálneho zisku,
+  detail behu (monštrá podľa rarity), export CSV a JSON.
+- Appka naďalej iba číta súbor na disku, nič v hre nemení.
+
 ## 0.11.0 — 16.10.2026
 
 Pripomienka „Enable Log" na začiatku každej session (TLI 11d, doplnok k TLI 11c).

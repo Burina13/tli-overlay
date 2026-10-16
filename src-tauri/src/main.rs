@@ -495,6 +495,50 @@ fn analyza_export_json(
     Ok(tli_overlay_core::tracker::db::export_json(&riadky))
 }
 
+/// Zoskupené taktiky so štatistikami pre záložku Analýza (TLI 13b).
+#[tauri::command]
+fn analyza_taktiky(
+    tracker: tauri::State<tracker::Tracker>,
+    filter: tli_overlay_core::tracker::db::FilterTaktik,
+) -> Result<tli_overlay_core::tracker::taktiky::AnalyzaTaktik, String> {
+    let t = tracker.0.lock().unwrap();
+    tracker::analyza_taktiky(&t, &filter)
+}
+
+/// Export zoznamu taktík (s aktuálnym filtrom) do CSV.
+#[tauri::command]
+fn analyza_taktiky_export_csv(
+    tracker: tauri::State<tracker::Tracker>,
+    filter: tli_overlay_core::tracker::db::FilterTaktik,
+) -> Result<String, String> {
+    let t = tracker.0.lock().unwrap();
+    let analyza = tracker::analyza_taktiky(&t, &filter)?;
+    Ok(tli_overlay_core::tracker::taktiky::export_csv(&analyza.taktiky))
+}
+
+/// Export zoznamu taktík (s aktuálnym filtrom) do JSON.
+#[tauri::command]
+fn analyza_taktiky_export_json(
+    tracker: tauri::State<tracker::Tracker>,
+    filter: tli_overlay_core::tracker::db::FilterTaktik,
+) -> Result<String, String> {
+    let t = tracker.0.lock().unwrap();
+    let analyza = tracker::analyza_taktiky(&t, &filter)?;
+    Ok(tli_overlay_core::tracker::taktiky::export_json(&analyza.taktiky))
+}
+
+/// Pomenovanie jednej taktiky alebo zlúčenie viacerých podpisov do jednej
+/// pomenovanej taktiky (tlačidlo pri vybraných riadkoch v záložke Taktiky).
+#[tauri::command]
+fn taktika_pomenuj_alebo_zluc(
+    tracker: tauri::State<tracker::Tracker>,
+    podpisy: Vec<String>,
+    nazov: String,
+) -> Result<i64, String> {
+    let t = tracker.0.lock().unwrap();
+    tracker::taktika_pomenuj_alebo_zluc(&t, &podpisy, &nazov)
+}
+
 /// Tlačidlo „Načítať staré logy" — spätný import aktuálneho aj
 /// `UE_game-backup-*.log` súborov z priečinka aktuálneho logu.
 #[tauri::command]
@@ -976,6 +1020,10 @@ fn main() {
             analyza_monstra_podla_rarity,
             analyza_export_csv,
             analyza_export_json,
+            analyza_taktiky,
+            analyza_taktiky_export_csv,
+            analyza_taktiky_export_json,
+            taktika_pomenuj_alebo_zluc,
             tracker_nacitaj_stare_logy,
             ukaz_pripomienku
         ])

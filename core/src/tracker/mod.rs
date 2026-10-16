@@ -19,3 +19,4 @@ pub mod pripomienka;
 pub mod stav;
 pub mod steam;
 pub mod sync;
+pub mod taktiky;

@@ -19,7 +19,11 @@ use super::stav::{Beh, Dovod, HracSnimka};
 
 /// Aktuálna verzia schémy. Zvyšuje sa pri KAŽDEJ zmene tabuliek; `migruj()`
 /// podľa nej vie, ktoré kroky ešte treba spustiť.
-pub const SCHEMA_VERZIA: i32 = 1;
+/// `2` (TLI 13b) pridalo `taktiky`/`taktiky_priradenie` — pomenovanie a
+/// zlúčenie signatúr taktík hráčom. Všetky `CREATE TABLE IF NOT EXISTS` sú
+/// samy o sebe idempotentné, verzia je tu najmä na diagnostiku a budúce kroky,
+/// ktoré by už idempotentné CREATE nestačili.
+pub const SCHEMA_VERZIA: i32 = 2;
 
 /// Otvorí (alebo vytvorí) databázu na danej ceste a rovno ju zmigruje na
 /// najnovšiu schému. Jediné miesto, odkiaľ sa má DB otvárať — inak sa dá
@@ -180,6 +184,17 @@ pub fn migruj(conn: &Connection) -> rusqlite::Result<()> {
             UNIQUE(hash_riadku, cas)
         );
         CREATE INDEX IF NOT EXISTS idx_raw_cas ON raw_udalosti(cas);
+
+        CREATE TABLE IF NOT EXISTS taktiky (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nazov TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS taktiky_priradenie (
+            podpis TEXT PRIMARY KEY,
+            taktika_id INTEGER NOT NULL REFERENCES taktiky(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_taktiky_priradenie_taktika ON taktiky_priradenie(taktika_id);
         ",
     )?;
 
@@ -499,6 +514,156 @@ pub fn monstra_podla_rarity_pre_zonu(conn: &Connection, zona: &str) -> rusqlite:
     Ok(riadky)
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Záložka „Analýza" — taktiky (TLI 13b): zoskupenie behov podľa podpisu
+// taktiky (chart+kompasy+mapa+mód+modifikátory+build) a ich pomenovanie/zlúčenie.
+// Samotné zoskupenie a štatistiky počíta `taktiky.rs` (čisto, bez DB) — tu je
+// len surové čítanie dát a perzistencia pomenovania/zlúčenia.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Filter pre záložku Taktiky — obdobie, hrdina a liga (`season_id`).
+/// Rovnaký vzor ako `FilterBehov`: `None`/prázdne pole = nefiltruje sa.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct FilterTaktik {
+    pub od_casu: Option<String>,
+    pub do_casu: Option<String>,
+    pub hero_id: Option<String>,
+    pub season_id: Option<String>,
+}
+
+/// Jeden beh so všetkým, čo treba na zostavenie podpisu taktiky a jeho
+/// štatistík. Zámerne ploché (žiadne vnorené typy z `stav.rs`) — `taktiky.rs`
+/// z toho stavia `VstupTaktiky` bez závislosti na tom, odkiaľ dáta prišli.
+#[derive(Debug, Clone, Default)]
+pub struct RiadokPreTaktiku {
+    pub beh_id: i64,
+    pub podpis_vstupov: String,
+    pub zona: String,
+    pub level_typ: Option<i64>,
+    pub hero_id: Option<String>,
+    pub pact_konfiguracia: Option<String>,
+    /// JSON pole (`["id1","id2",...]`), presne ako ho ukladá `uloz_build_snapshot`.
+    pub genius_career_ids: Option<String>,
+    pub cisty_zisk_fe: Option<f64>,
+    pub hodnota_vstupov_fe: Option<f64>,
+    pub fe_za_hodinu: Option<f64>,
+    pub trvanie_ms: Option<i64>,
+    pub zaciatok_cas: Option<String>,
+}
+
+/// Načíta behy (bez hubových) pre výpočet taktík, s POSLEDNÝM build snapshotom
+/// daného behu (join na `MAX(id)` v rámci `beh_id` — build sa počas behu môže
+/// zaznamenať viackrát, napr. pri zmene pact konfigurácie, berie sa finálny stav).
+pub fn data_pre_taktiky(conn: &Connection, filter: &FilterTaktik) -> rusqlite::Result<Vec<RiadokPreTaktiku>> {
+    let mut stmt = conn.prepare(
+        "SELECT b.id, b.podpis_vstupov, b.zona, b.level_typ, b.hero_id,
+                bs.pact_konfiguracia, bs.genius_career_ids,
+                b.cisty_zisk_fe, b.hodnota_vstupov_fe, b.fe_za_hodinu, b.trvanie_ms, b.zaciatok_cas
+         FROM behy b
+         LEFT JOIN (
+             SELECT bs1.beh_id, bs1.pact_konfiguracia, bs1.genius_career_ids
+             FROM build_snapshoty bs1
+             INNER JOIN (SELECT beh_id, MAX(id) AS max_id FROM build_snapshoty GROUP BY beh_id) posledny
+               ON bs1.beh_id = posledny.beh_id AND bs1.id = posledny.max_id
+         ) bs ON bs.beh_id = b.id
+         WHERE b.je_hub = 0
+           AND (?1 IS NULL OR b.zaciatok_cas >= ?1)
+           AND (?2 IS NULL OR b.zaciatok_cas <= ?2)
+           AND (?3 IS NULL OR b.hero_id = ?3)
+           AND (?4 IS NULL OR b.season_id = ?4)",
+    )?;
+    let riadky = stmt
+        .query_map(
+            params![filter.od_casu, filter.do_casu, filter.hero_id, filter.season_id],
+            |r| {
+                Ok(RiadokPreTaktiku {
+                    beh_id: r.get(0)?,
+                    podpis_vstupov: r.get(1)?,
+                    zona: r.get(2)?,
+                    level_typ: r.get(3)?,
+                    hero_id: r.get(4)?,
+                    pact_konfiguracia: r.get(5)?,
+                    genius_career_ids: r.get(6)?,
+                    cisty_zisk_fe: r.get(7)?,
+                    hodnota_vstupov_fe: r.get(8)?,
+                    fe_za_hodinu: r.get(9)?,
+                    trvanie_ms: r.get(10)?,
+                    zaciatok_cas: r.get(11)?,
+                })
+            },
+        )?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(riadky)
+}
+
+/// Podpis modifikátorov mapy pre KAŽDÝ beh, ktorý aspoň jeden má — triedené
+/// a spojené, aby ten istý súbor modifikátorov dal vždy ten istý reťazec bez
+/// ohľadu na poradie, v akom ich log zapísal.
+pub fn modifikator_podpisy(conn: &Connection) -> rusqlite::Result<std::collections::BTreeMap<i64, String>> {
+    let mut stmt = conn.prepare(
+        "SELECT beh_id, danger, kind, skupina, rand_affix_id FROM modifikatory_mapy
+         ORDER BY beh_id, danger, kind, skupina, rand_affix_id",
+    )?;
+    let mut casti: std::collections::BTreeMap<i64, Vec<String>> = std::collections::BTreeMap::new();
+    let riadky = stmt.query_map([], |r| {
+        let beh_id: i64 = r.get(0)?;
+        let danger: Option<i64> = r.get(1)?;
+        let kind: Option<i64> = r.get(2)?;
+        let skupina: Option<i64> = r.get(3)?;
+        let rand_affix_id: Option<i64> = r.get(4)?;
+        Ok((
+            beh_id,
+            format!(
+                "{}.{}.{}.{}",
+                danger.map(|v| v.to_string()).unwrap_or_default(),
+                kind.map(|v| v.to_string()).unwrap_or_default(),
+                skupina.map(|v| v.to_string()).unwrap_or_default(),
+                rand_affix_id.map(|v| v.to_string()).unwrap_or_default(),
+            ),
+        ))
+    })?;
+    for riadok in riadky {
+        let (beh_id, cast) = riadok?;
+        casti.entry(beh_id).or_default().push(cast);
+    }
+    Ok(casti.into_iter().map(|(beh_id, v)| (beh_id, v.join("|"))).collect())
+}
+
+/// Uloží nové pomenovanie/zlúčenie taktiky: založí jeden riadok v `taktiky`
+/// a napojí naň VŠETKY dané podpisy (`ON CONFLICT` prepíše predchádzajúce
+/// priradenie, keď sa podpis presúva do inej skupiny). Vracia ID novej taktiky.
+/// Pri bežnom premenovaní jednej taktiky (jeden podpis) toto zakladá vždy nový
+/// riadok v `taktiky` — stará taktika ostane v tabuľke bez priradení
+/// (neškodné, len nepoužívané meno; úklad nie je súčasťou tejto časti).
+pub fn ulozit_taktiku(conn: &Connection, podpisy: &[String], nazov: &str) -> rusqlite::Result<i64> {
+    conn.execute("INSERT INTO taktiky (nazov) VALUES (?1)", params![nazov])?;
+    let id = conn.last_insert_rowid();
+    for podpis in podpisy {
+        conn.execute(
+            "INSERT INTO taktiky_priradenie (podpis, taktika_id) VALUES (?1, ?2)
+             ON CONFLICT(podpis) DO UPDATE SET taktika_id = excluded.taktika_id",
+            params![podpis, id],
+        )?;
+    }
+    Ok(id)
+}
+
+/// Načíta všetky priradenia podpis → (ID taktiky, názov) na zoskupenie v `taktiky.rs`.
+pub fn nacitaj_priradenia_taktik(
+    conn: &Connection,
+) -> rusqlite::Result<std::collections::BTreeMap<String, (i64, String)>> {
+    let mut stmt = conn.prepare(
+        "SELECT tp.podpis, tp.taktika_id, t.nazov
+         FROM taktiky_priradenie tp JOIN taktiky t ON t.id = tp.taktika_id",
+    )?;
+    let riadky = stmt
+        .query_map([], |r| {
+            Ok((r.get::<_, String>(0)?, (r.get::<_, i64>(1)?, r.get::<_, String>(2)?)))
+        })?
+        .collect::<Result<std::collections::BTreeMap<_, _>, _>>()?;
+    Ok(riadky)
+}
+
 /// Export zoznamu behov do CSV — jeden riadok na beh.
 pub fn export_csv(riadky: &[BehRiadok]) -> String {
     let mut out = String::from(
@@ -747,6 +912,83 @@ mod testy {
         let spat: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
         assert_eq!(spat.len(), 1);
         assert_eq!(spat[0]["zona"], "MapaX");
+    }
+
+    #[test]
+    fn data_pre_taktiky_cita_posledny_build_snapshot_a_filtruje_hub() {
+        let mut conn = otvor_v_pamati().unwrap();
+        let identita = HracSnimka { hero_id: Some("1800".to_string()), ..Default::default() };
+
+        let mut hub = prazdny_beh(1, "Town", 0);
+        hub.je_hub = true;
+        uloz_beh(&mut conn, &hub, &identita, &OceneneHodnoty::default()).unwrap();
+
+        let beh = prazdny_beh(2, "MapaX", 10);
+        let (beh_id, _) = uloz_beh(
+            &mut conn,
+            &beh,
+            &identita,
+            &OceneneHodnoty { cisty_zisk_fe: Some(50.0), hodnota_vstupov_fe: Some(5.0), fe_za_hodinu: Some(300.0), ..Default::default() },
+        )
+        .unwrap();
+        // Dva snapshoty za sebou — má sa zobrať ten NOVŠÍ (pact sa zmenil v priebehu behu).
+        uloz_build_snapshot(&conn, beh_id, &identita, Some("PACT_STARY"), None, None, cas(11).as_ref()).unwrap();
+        uloz_build_snapshot(&conn, beh_id, &identita, Some("PACT_NOVY"), None, None, cas(12).as_ref()).unwrap();
+
+        let riadky = data_pre_taktiky(&conn, &FilterTaktik::default()).unwrap();
+        assert_eq!(riadky.len(), 1, "hubový beh sa do taktík nepočíta");
+        assert_eq!(riadky[0].zona, "MapaX");
+        assert_eq!(riadky[0].hero_id.as_deref(), Some("1800"));
+        assert_eq!(riadky[0].pact_konfiguracia.as_deref(), Some("PACT_NOVY"));
+    }
+
+    #[test]
+    fn data_pre_taktiky_filter_podla_hrdinu_a_ligy() {
+        let mut conn = otvor_v_pamati().unwrap();
+        let hrdina_a = HracSnimka { hero_id: Some("A".to_string()), season_id: Some("S1".to_string()), ..Default::default() };
+        let hrdina_b = HracSnimka { hero_id: Some("B".to_string()), season_id: Some("S1".to_string()), ..Default::default() };
+
+        uloz_beh(&mut conn, &prazdny_beh(1, "MapaX", 0), &hrdina_a, &OceneneHodnoty::default()).unwrap();
+        uloz_beh(&mut conn, &prazdny_beh(2, "MapaX", 20), &hrdina_b, &OceneneHodnoty::default()).unwrap();
+
+        let filter = FilterTaktik { hero_id: Some("A".to_string()), ..Default::default() };
+        let riadky = data_pre_taktiky(&conn, &filter).unwrap();
+        assert_eq!(riadky.len(), 1);
+        assert_eq!(riadky[0].hero_id.as_deref(), Some("A"));
+    }
+
+    #[test]
+    fn modifikator_podpisy_su_triedene_a_deterministicke() {
+        let mut conn = otvor_v_pamati().unwrap();
+        let mut beh = prazdny_beh(1, "MapaX", 0);
+        // Vloží sa v OPAČNOM poradí, než v akom má vyjsť zotriedený podpis.
+        beh.modifikatory.push(ModifikatorZaznam {
+            danger: Some(5), kind: Some(1), skupina: None, seat: None, rand_affix_id: None, cas: cas(2),
+        });
+        beh.modifikatory.push(ModifikatorZaznam {
+            danger: Some(1), kind: Some(9), skupina: None, seat: None, rand_affix_id: None, cas: cas(1),
+        });
+        let (beh_id, _) = uloz_beh(&mut conn, &beh, &HracSnimka::default(), &OceneneHodnoty::default()).unwrap();
+
+        let podpisy = modifikator_podpisy(&conn).unwrap();
+        assert_eq!(podpisy.get(&beh_id).unwrap(), "1.9..|5.1..");
+    }
+
+    #[test]
+    fn ulozenie_a_nacitanie_priradeni_taktik() {
+        let conn = otvor_v_pamati().unwrap();
+        let id = ulozit_taktiku(&conn, &["podpisA".to_string(), "podpisB".to_string()], "Steel Forge farm T7").unwrap();
+        assert!(id > 0);
+
+        let priradenia = nacitaj_priradenia_taktik(&conn).unwrap();
+        assert_eq!(priradenia.get("podpisA"), Some(&(id, "Steel Forge farm T7".to_string())));
+        assert_eq!(priradenia.get("podpisB"), Some(&(id, "Steel Forge farm T7".to_string())));
+
+        // Presun podpisu do inej (novej) taktiky prepíše predchádzajúce priradenie.
+        let id2 = ulozit_taktiku(&conn, &["podpisA".to_string()], "Iná taktika").unwrap();
+        let priradenia2 = nacitaj_priradenia_taktik(&conn).unwrap();
+        assert_eq!(priradenia2.get("podpisA"), Some(&(id2, "Iná taktika".to_string())));
+        assert_eq!(priradenia2.get("podpisB"), Some(&(id, "Steel Forge farm T7".to_string())));
     }
 
     #[test]
