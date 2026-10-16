@@ -12,6 +12,7 @@
 pub mod log;
 pub mod agregacie;
 pub mod ceny;
+pub mod ceny_sync;
 pub mod chvost;
 pub mod db;
 pub mod import;

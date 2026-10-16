@@ -44,6 +44,12 @@ pub struct Nastavenia {
     /// na rozdiel od `tracker_sync`/`mini_overlay`: bez pripomienky by sa
     /// nevytrackovaná session zistila až spätne, keď je neskoro niečo robiť.
     pub pripominat_enable_log: bool,
+    /// Zdieľanie CIEN s partiou (TLI 20). **Predvolene ZAPNUTÉ** — na rozdiel
+    /// od `tracker_sync` (ktorý zdieľa tvoje výsledky a zárobky, čo je osobné)
+    /// tu ide o cenu veci na verejnom in-game trhu. Nie je to tvoje číslo,
+    /// a bez zdieľania by hráč, ktorý si nič nevyhľadal, videl behy za 0 FE —
+    /// presne to je problém, kvôli ktorému TLI 20 vzniklo (zadanie bod 3).
+    pub ceny_sync: bool,
 }
 
 impl Default for Nastavenia {
@@ -64,6 +70,7 @@ impl Default for Nastavenia {
             tracker_sync: false,
             mini_overlay: false,
             pripominat_enable_log: true,
+            ceny_sync: true,
         }
     }
 }
@@ -112,6 +119,12 @@ impl Nastavenia {
     /// Príjem výsledkov máp pre rebríček partie (TLI 11, krok 5).
     pub fn adresa_tracker_sync(&self) -> String {
         self.adresa("/api/tracker/sync")
+    }
+
+    /// Zdieľané ceny partie (TLI 20) — ten istý endpoint pre upload (POST)
+    /// aj sťahovanie (GET).
+    pub fn adresa_ceny(&self) -> String {
+        self.adresa("/api/ceny")
     }
 
     /// Skratka pre kontrolu dostupnosti a stavu serverového API.
@@ -219,6 +232,11 @@ mod testy {
         assert!(!n.tracker_sync);
         assert!(!n.mini_overlay);
         assert_eq!(n.adresa_tracker_sync(), "https://tli.tvojtatko.sk/api/tracker/sync");
+        // TLI 20: zdieľanie CIEN je predvolene ZAPNUTÉ (na rozdiel od
+        // zdieľania vlastných výsledkov) — cena veci na verejnom trhu nie je
+        // osobný údaj a bez neho má hráč behy za 0 FE.
+        assert!(n.ceny_sync);
+        assert_eq!(n.adresa_ceny(), "https://tli.tvojtatko.sk/api/ceny");
     }
 
     #[test]

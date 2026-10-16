@@ -196,6 +196,44 @@ pub fn posli_tracker_sync(n: &Nastavenia, telo: &str) -> Result<String, String> 
 }
 
 
+/// Pošle partii ceny, ktoré si hráč sám vyhľadal na in-game Exchange (TLI 20).
+/// Volá sa LEN keď má hráč `ceny_sync` zapnuté — kontroluje to volajúci.
+pub fn posli_ceny(n: &Nastavenia, telo: &str) -> Result<String, String> {
+    let odpoved = ureq::post(&n.adresa_ceny())
+        .set("Authorization", &format!("Bearer {}", n.kluc))
+        .set("Content-Type", "application/json")
+        .timeout(std::time::Duration::from_secs(30))
+        .send_string(telo);
+
+    match odpoved {
+        Ok(res) => Ok(res.into_string().unwrap_or_default()),
+        Err(ureq::Error::Status(kod, odpoved)) => {
+            let telo = odpoved.into_string().unwrap_or_default();
+            Err(api::sprava_chyby(kod, &telo))
+        }
+        Err(ina) => Err(api::sprava_siete(&ina.to_string())),
+    }
+}
+
+/// Stiahne agregát cien partie. `od` je serverový čas poslednej úspešnej
+/// dávky (0 = chcem celý cenník).
+pub fn stiahni_ceny(n: &Nastavenia, od: i64) -> Result<String, String> {
+    let url = format!("{}?od={}", n.adresa_ceny(), od.max(0));
+    let odpoved = ureq::get(&url)
+        .set("Authorization", &format!("Bearer {}", n.kluc))
+        .timeout(std::time::Duration::from_secs(30))
+        .call();
+
+    match odpoved {
+        Ok(res) => Ok(res.into_string().unwrap_or_default()),
+        Err(ureq::Error::Status(kod, odpoved)) => {
+            let telo = odpoved.into_string().unwrap_or_default();
+            Err(api::sprava_chyby(kod, &telo))
+        }
+        Err(ina) => Err(api::sprava_siete(&ina.to_string())),
+    }
+}
+
 #[cfg(test)]
 mod testy {
     use super::*;

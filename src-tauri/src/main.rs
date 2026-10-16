@@ -707,6 +707,14 @@ fn tracker_sync_teraz(
     Ok(tli_overlay_core::tracker::sync::zhrnutie(&vysledok))
 }
 
+/// Ručné kolo synchronizácie cien s partiou (TLI 20). Na pozadí beží aj tak
+/// á 5 minút; toto tlačidlo je na „chcem to hneď" a na to, aby hráč videl
+/// chybu siete, keď nastane — automatické kolo mlčí zámerne.
+#[tauri::command]
+fn ceny_sync_teraz(app: AppHandle) -> Result<String, String> {
+    tracker::sync_cien_kolo(&app)
+}
+
 /// Prepínače v záložke Tracker. Samostatný príkaz (nie uloženie celých
 /// nastavení) z toho istého dôvodu ako `uloz_temu`: checkbox nesmie prepísať
 /// kľúč ani skratky zastaraným objektom.
@@ -725,6 +733,7 @@ fn uloz_prepinac(
             "tracker_zapnuty" => n.tracker_zapnuty = zapnuty,
             "tracker_dan" => n.tracker_dan = zapnuty,
             "pripominat_enable_log" => n.pripominat_enable_log = zapnuty,
+            "ceny_sync" => n.ceny_sync = zapnuty,
             ine => return Err(format!("Neznámy prepínač: {ine}")),
         }
         n.normalizuj();
@@ -1015,6 +1024,7 @@ fn main() {
             guide_data,
             guide_sync,
             tracker_sync_teraz,
+            ceny_sync_teraz,
             uloz_prepinac,
             analyza_vyhladaj,
             analyza_monstra_podla_rarity,

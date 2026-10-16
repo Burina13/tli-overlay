@@ -21,10 +21,10 @@ use std::time::Duration;
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
-use tli_overlay_core::tracker::agregacie::{ocen_beh, prehlad, Prehlad, VysledokBehu};
-use tli_overlay_core::tracker::ceny::{vek_text, Cena, Cennik, Nastavenie, Zdroj};
+use tli_overlay_core::tracker::agregacie::{ocen_beh, ocen_beh_v_case, prehlad, Prehlad, VysledokBehu};
+use tli_overlay_core::tracker::ceny::{vek_text, Cena, Cennik, Nastavenie};
 use tli_overlay_core::tracker::chvost::StavChvosta;
-use tli_overlay_core::tracker::db::{self, OceneneHodnoty};
+use tli_overlay_core::tracker::db::{self, OceneneHodnoty, ZaznamCeny};
 use tli_overlay_core::tracker::pripomienka::{klasifikuj, SledovacPripomienky};
 use tli_overlay_core::tracker::stav::{Beh, Sledovac};
 use tli_overlay_core::tracker::steam;
@@ -132,6 +132,13 @@ pub struct StavTrackera {
     /// naživo, len bez trvalého ukladania (`chyba_db` nesie dôvod pre UI).
     db: Option<rusqlite::Connection>,
     pub chyba_db: Option<String>,
+    /// Po ktorý `zapisane` sa ceny už odoslali partii (TLI 20). Drží sa len
+    /// v pamäti: po reštarte appky sa dávka pošle znova a server ju zahodí
+    /// ako duplicitu — je to lacnejšie než ďalší stav na disku.
+    pub ceny_poslane_do: i64,
+    /// Serverový čas poslednej úspešne stiahnutej dávky cien partie
+    /// (`?od=` pri ďalšom sťahovaní).
+    pub ceny_stiahnute_do: i64,
 }
 
 impl Default for StavTrackera {
@@ -140,9 +147,18 @@ impl Default for StavTrackera {
             Ok(c) => (Some(c), None),
             Err(e) => (None, Some(format!("Lokálna databáza sa nedá otvoriť: {e}"))),
         };
+        // OFFLINE CACHE (TLI 20): cenník sa po štarte postaví z lokálnej DB.
+        // Bez toho mal hráč po každom reštarte appky prázdny cenník a behy
+        // ocenené na 0 FE, kým si znova niečo nevyhľadal na Exchange — a
+        // presne to bol problém, kvôli ktorému TLI 20 vzniklo. Chyba čítania
+        // tu nie je dôvod appku zhodiť: prázdny cenník sa doplní za behu.
+        let cennik = db
+            .as_ref()
+            .and_then(|c| db::nacitaj_cennik(c).ok())
+            .unwrap_or_else(Cennik::novy);
         Self {
             sledovac: Sledovac::novy(),
-            cennik: Cennik::novy(),
+            cennik,
             behy: Vec::new(),
             chvost: StavChvosta::novy(),
             cesta: None,
@@ -150,7 +166,51 @@ impl Default for StavTrackera {
             pripomienka: SledovacPripomienky::novy(false),
             db,
             chyba_db,
+            ceny_poslane_do: 0,
+            ceny_stiahnute_do: 0,
         }
+    }
+}
+
+impl StavTrackera {
+    /// Prístup k DB pre príkazy, ktoré nad ňou pracujú zvonku (sync cien).
+    pub fn db(&self) -> Option<&rusqlite::Connection> {
+        self.db.as_ref()
+    }
+
+    /// Zapíše stiahnutý agregát partie do cenníka aj do lokálnej DB, aby ho
+    /// appka mala aj po reštarte bez siete (offline cache).
+    pub fn prijmi_ceny_partie(
+        &mut self,
+        agregat: &tli_overlay_core::tracker::ceny_sync::AgregatPartie,
+        teraz: u64,
+    ) -> usize {
+        let zmenenych = tli_overlay_core::tracker::ceny_sync::zapis_do_cennika(
+            agregat,
+            &mut self.cennik,
+            teraz,
+        );
+        if let Some(conn) = &self.db {
+            for c in &agregat.ceny {
+                if !c.fe.is_finite() || c.fe <= 0.0 {
+                    continue;
+                }
+                let _ = db::uloz_cenu(
+                    conn,
+                    &ZaznamCeny {
+                        polozka: c.polozka,
+                        cena_fe: c.fe,
+                        median_fe: None,
+                        pocet_ponuk: Some(c.pocet_ponuk),
+                        sezona: None,
+                        zdroj: "partia".to_string(),
+                        cas: None,
+                        zapisane: c.kedy,
+                    },
+                );
+            }
+        }
+        zmenenych
     }
 }
 
@@ -316,10 +376,23 @@ pub fn precitaj(stav: &mut StavTrackera, cesta: &Path) -> Result<usize, String> 
         }
     }
 
-    for (polozka, fe, _) in stav.sledovac.odober_ceny() {
-        stav.cennik.vloz(Cena { polozka, fe, zdroj: Zdroj::VlastnyTrh, kedy: teraz });
+    // TLI 20: z každého vyhľadania na Exchange sa drží p10 (referenčná cena),
+    // medián aj počet ponúk — a cena ide do DB AJ so sezónou, nech sa dá
+    // neskôr oddeliť cenník tejto ligy od cien zo starej.
+    let sezona = stav
+        .sledovac
+        .hrac_snimka()
+        .and_then(|h| h.season_id.clone());
+    for nalez in stav.sledovac.odober_ceny() {
+        stav.cennik.vloz_v_case(
+            Cena::vlastna(nalez.polozka, nalez.p10, nalez.median, nalez.pocet_ponuk, teraz),
+            teraz,
+        );
         if let Some(conn) = &stav.db {
-            let _ = db::uloz_cenu(conn, polozka, fe, None);
+            let _ = db::uloz_cenu(
+                conn,
+                &ZaznamCeny::z_nalezu(&nalez, sezona.clone(), teraz as i64),
+            );
         }
     }
     if let Some(conn) = &stav.db {
@@ -376,19 +449,74 @@ pub struct PrehladProUi {
     /// Pripomienka „Enable Log" (TLI 11d): keď je `true`, záložka Tracker má
     /// ukázať červený stav — logovanie v tejto session evidentne nebeží.
     pub pripomienka_aktivna: bool,
+    /// Výzva na vyhľadanie cien na Exchange (TLI 20) — `None`, keď netreba nič.
+    pub vyzva_ceny: Option<VyzvaCeny>,
+}
+
+/// Koľko položiek najviac vypíše výzva „vyhľadaj na Exchange". Viac než tri
+/// si nikto pri hraní nezapamätá a výzva by sa zmenila na zoznam, ktorý sa
+/// preskakuje.
+const VYZVA_POLOZIEK: usize = 3;
+
+/// Top dropy, ktoré nemajú cenu mladšiu než 24 h (TLI 20, zadanie bod 5).
+///
+/// Prečo to appka vôbec rieši: jedno vyhľadanie na in-game Exchange zapíše
+/// cenu do logu **a cez partiu ju dostanú všetci traja**. Čiže tri kliky v
+/// hre môžu doplniť ceny celej partii — ale len keď hráč vie, ktoré tri veci
+/// má vyhľadať. Appka do hry nič neposiela a ani nemôže; je to NÁVOD, nie
+/// automatika.
+#[derive(Debug, Clone, Serialize)]
+pub struct VyzvaCeny {
+    /// Koľko rôznych položiek v posledných behoch nemá čerstvú cenu.
+    pub pocet: usize,
+    /// Najcennejšie z nich (podľa počtu kusov), najviac `VYZVA_POLOZIEK`.
+    pub polozky: Vec<u32>,
+}
+
+/// Zostaví výzvu z už ocenených behov. `bez_ceny` (cenu nepoznáme vôbec) má
+/// prednosť pred `zastarane` (cena je, ale je staršia než 24 h) — neznáma
+/// cena skresľuje zisk viac než stará.
+fn vyzva_z_behov(vysledky: &[VysledokBehu]) -> Option<VyzvaCeny> {
+    let mut bez_ceny: BTreeMap<u32, i64> = BTreeMap::new();
+    let mut zastarane: BTreeMap<u32, i64> = BTreeMap::new();
+    // Len posledných 20 máp — výzva má hovoriť o tom, čo hráč farmí TERAZ.
+    for v in vysledky.iter().rev().take(20) {
+        for (polozka, pocet) in &v.bez_ceny {
+            *bez_ceny.entry(*polozka).or_insert(0) += *pocet;
+        }
+        for (polozka, pocet) in &v.zastarane {
+            *zastarane.entry(*polozka).or_insert(0) += *pocet;
+        }
+    }
+    let pocet = bez_ceny.len() + zastarane.len();
+    if pocet == 0 {
+        return None;
+    }
+    let mut poradie: Vec<(u32, i64, u8)> = bez_ceny
+        .into_iter()
+        .map(|(p, n)| (p, n, 0u8))
+        .chain(zastarane.into_iter().map(|(p, n)| (p, n, 1u8)))
+        .collect();
+    // Najprv úplne neznáme ceny, v rámci toho najviac nazbierané kusy.
+    poradie.sort_by(|a, b| a.2.cmp(&b.2).then(b.1.cmp(&a.1)).then(a.0.cmp(&b.0)));
+    Some(VyzvaCeny {
+        pocet,
+        polozky: poradie.into_iter().take(VYZVA_POLOZIEK).map(|(p, _, _)| p).collect(),
+    })
 }
 
 /// Zostaví prehľad z aktuálneho stavu. Nič nečíta — to robí `precitaj`.
 pub fn prehlad_pre_ui(stav: &StavTrackera, zapnuty: bool, dan: bool) -> PrehladProUi {
     let nastavenie = Nastavenie { dan };
+    let teraz = unixovy_cas();
     let vysledky: Vec<VysledokBehu> = stav
         .behy
         .iter()
-        .filter_map(|b| ocen_beh(b, &stav.cennik, &nastavenie))
+        .filter_map(|b| ocen_beh_v_case(b, &stav.cennik, &nastavenie, Some(teraz)))
         .collect();
     let suhrn = prehlad(&vysledky, &stav.behy);
+    let vyzva_ceny = vyzva_z_behov(&vysledky);
 
-    let teraz = unixovy_cas();
     let mut vek_cien = BTreeMap::new();
     for cena in stav.cennik.vsetky() {
         let vek = teraz.saturating_sub(cena.kedy);
@@ -419,6 +547,7 @@ pub fn prehlad_pre_ui(stav: &StavTrackera, zapnuty: bool, dan: bool) -> PrehladP
         vek_cien,
         pocet_cien: stav.cennik.pocet(),
         pripomienka_aktivna: stav.pripomienka.aktivne(),
+        vyzva_ceny,
     }
 }
 
@@ -642,6 +771,73 @@ fn posli_windows_notifikaciu(_app: &AppHandle) {}
 // ZOSTAŤ ŽIVÝ (vlastniť OS handle na sledovanie), čo `cargo check` nevie
 // odlíšiť od mŕtveho priradenia.
 #[allow(unused_assignments, unused_variables)]
+/// Jedno kolo synchronizácie cien s partiou (TLI 20).
+///
+/// Poradie je zámerné: najprv UPLOAD (nech partia hneď vie, čo som si
+/// vyhľadal), až potom DOWNLOAD. Obe HTTP volania idú MIMO zámku nad
+/// `StavTrackera` — inak by sa pri pomalej sieti zastavilo aj čítanie logu.
+///
+/// Chyba siete sa nevracia ako chyba appky: je úplne normálne, že hráč hrá
+/// bez pripojenia na náš server. Vracia `Err` len preto, aby to vedelo
+/// tlačidlo v UI zobraziť, keď o to človek sám požiada.
+pub fn sync_cien_kolo(app: &AppHandle) -> Result<String, String> {
+    use tli_overlay_core::tracker::ceny_sync;
+
+    let n = {
+        let stav = app.state::<Stav>();
+        let n = stav.nastavenia.lock().unwrap().clone();
+        n
+    };
+    if !n.ceny_sync {
+        return Ok("Zdieľanie cien s partiou je vypnuté.".to_string());
+    }
+    if let Some(chyba) = n.chyba_konfiguracie() {
+        return Err(chyba);
+    }
+
+    let tracker = app.state::<Tracker>();
+    let (davka, od) = {
+        let t = tracker.0.lock().unwrap();
+        let Some(conn) = t.db() else {
+            return Err("Lokálna databáza nie je otvorená, ceny sa nedajú poslať.".to_string());
+        };
+        let zaznamy = db::ceny_od(conn, t.ceny_poslane_do, ceny_sync::MAX_NA_DAVKU)
+            .map_err(|e| format!("Ceny sa nedajú prečítať z databázy: {e}"))?;
+        (
+            ceny_sync::vyber_na_odoslanie(&zaznamy, ceny_sync::MAX_NA_DAVKU),
+            t.ceny_stiahnute_do,
+        )
+    };
+
+    let mut poslanych = 0usize;
+    if !davka.is_empty() {
+        let telo = ceny_sync::telo_uploadu(&davka, env!("CARGO_PKG_VERSION"));
+        let odpoved = crate::klient::posli_ceny(&n, &telo)?;
+        ceny_sync::z_odpovede_uploadu(&odpoved)?;
+        poslanych = davka.len();
+        // Za odoslané sa považuje aj to, čo server „preskočil" — mal to už
+        // od nás, posielať to znova nemá zmysel.
+        let posledny = davka.iter().map(|c| c.zapisane).max().unwrap_or(0);
+        let mut t = tracker.0.lock().unwrap();
+        t.ceny_poslane_do = t.ceny_poslane_do.max(posledny);
+    }
+
+    let odpoved = crate::klient::stiahni_ceny(&n, od)?;
+    let agregat = ceny_sync::z_odpovede_agregatu(&odpoved)?;
+    let stiahnutych = agregat.ceny.len();
+    let zmenenych = {
+        let teraz = unixovy_cas();
+        let mut t = tracker.0.lock().unwrap();
+        let zmenenych = t.prijmi_ceny_partie(&agregat, teraz);
+        t.ceny_stiahnute_do = agregat.cas;
+        zmenenych
+    };
+    if zmenenych > 0 {
+        let _ = app.emit(UDALOST_ZMENA, 0);
+    }
+    Ok(ceny_sync::zhrnutie(poslanych, stiahnutych, zmenenych))
+}
+
 pub fn spusti_vlakno(app: AppHandle) {
     std::thread::spawn(move || {
         use notify::{RecommendedWatcher, RecursiveMode, Watcher};
@@ -650,6 +846,10 @@ pub fn spusti_vlakno(app: AppHandle) {
         let (tx, rx) = channel::<notify::Result<notify::Event>>();
         let mut watcher: Option<RecommendedWatcher> = None;
         let mut sledovany_priecinok: Option<PathBuf> = None;
+        // Prvé kolo synchronizácie cien nech prebehne hneď po štarte appky,
+        // nie až o päť minút — hráč typicky spúšťa appku pred hraním a chce
+        // mať ceny partie k dispozícii od prvej mapy.
+        let mut posledny_sync_cien: u64 = 0;
 
         loop {
             // Daň (`tracker_dan`) sa uplatňuje až pri zostavovaní prehľadu pre
@@ -721,6 +921,20 @@ pub fn spusti_vlakno(app: AppHandle) {
             }
             for udalost in pripomienka_udalosti {
                 oznam_pripomienku(&app, udalost);
+            }
+
+            // Ceny partie (TLI 20) — á 5 minút, v tom istom vlákne. Vlastné
+            // vlákno by si pýtalo ďalší zámok a nič by nepridalo: toto beží
+            // aj tak každú sekundu a HTTP ide mimo zámku nad trackerom.
+            let teraz = unixovy_cas();
+            if teraz.saturating_sub(posledny_sync_cien)
+                >= tli_overlay_core::tracker::ceny_sync::INTERVAL_S
+            {
+                posledny_sync_cien = teraz;
+                // Chyba siete tu NIE JE dôvod na hlášku — hráč môže hrať bez
+                // pripojenia a appka má v takom prípade ticho pokračovať
+                // s vlastnými cenami. Zobrazí sa až keď o sync požiada sám.
+                let _ = sync_cien_kolo(&app);
             }
         }
     });

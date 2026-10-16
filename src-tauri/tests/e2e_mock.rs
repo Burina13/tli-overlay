@@ -280,6 +280,7 @@ fn e2e_sync_posle_mapy_a_precita_zhrnutie() {
             cisty_zisk: 464.9,
             bez_ceny: vec![],
             najstarsia_cena: None,
+            zastarane: vec![],
         },
         // Bez času začiatku — podpis by nebol stabilný, takže sa neposiela.
         VysledokBehu {
@@ -294,6 +295,7 @@ fn e2e_sync_posle_mapy_a_precita_zhrnutie() {
             cisty_zisk: 302.9,
             bez_ceny: vec![],
             najstarsia_cena: None,
+            zastarane: vec![],
         },
     ];
 
@@ -315,4 +317,84 @@ fn e2e_sync_posle_mapy_a_precita_zhrnutie() {
     let v = sync::z_odpovede(&odpoved).expect("odpoveď sa nedá prečítať");
     assert_eq!((v.prijatych, v.preskocenych), (2, 1));
     assert!(sync::zhrnutie(&v).contains('2'));
+}
+
+/// E2E cesta zdieľaných cien (TLI 20, zadanie: „upload → agregát → download"):
+/// klient pošle, čo si sám vyhľadal na Exchange, a to, čo stiahne naspäť,
+/// sa prejaví v cenníku — teda beh s dropom prestane mať hodnotu 0 FE.
+#[test]
+fn e2e_ceny_upload_a_download_naplnia_cennik() {
+    use std::collections::BTreeMap;
+    use tli_overlay_core::tracker::ceny::{ocen, Cennik, Nastavenie, Zdroj};
+    use tli_overlay_core::tracker::ceny_sync;
+    use tli_overlay_core::tracker::db::ZaznamCeny;
+
+    let zaznamy = vec![
+        ZaznamCeny {
+            polozka: 400021,
+            cena_fe: 1.5,
+            median_fe: Some(2.0),
+            pocet_ponuk: Some(7),
+            sezona: Some("1501".to_string()),
+            zdroj: "vlastny_trh".to_string(),
+            cas: Some("2026-10-16 10:12:03".to_string()),
+            zapisane: 1_760_000_000,
+        },
+        // Cena stiahnutá od partie sa NESMIE poslať späť — inak by si agregát
+        // potvrdzoval sám seba a „tri zdroje" by znamenali jeden.
+        ZaznamCeny {
+            polozka: 5080,
+            cena_fe: 0.2,
+            median_fe: None,
+            pocet_ponuk: None,
+            sezona: None,
+            zdroj: "partia".to_string(),
+            cas: None,
+            zapisane: 1_760_000_001,
+        },
+    ];
+    let davka = ceny_sync::vyber_na_odoslanie(&zaznamy, ceny_sync::MAX_NA_DAVKU);
+    assert_eq!(davka.len(), 1);
+
+    // ── upload ──
+    let (port, prijimac) = mock(200, r#"{"ok":true,"prijatych":1,"preskocenych":0}"#);
+    let n = nastavenia(port);
+    let odpoved = klient::posli_ceny(&n, &ceny_sync::telo_uploadu(&davka, "0.15.0"))
+        .expect("upload cien zlyhal");
+    let (hlavicky, telo) = prijimac.recv().expect("mock nedostal požiadavku");
+    assert!(hlavicky.contains("POST /api/ceny"), "{hlavicky}");
+    assert!(hlavicky.contains("Authorization: Bearer tli_test_kluc"));
+    let poslane = String::from_utf8_lossy(&telo);
+    assert!(poslane.contains("\"polozka\":400021"), "{poslane}");
+    assert!(poslane.contains("\"median\":2.0"), "{poslane}");
+    assert!(!poslane.contains("5080"), "cena od partie sa nesmie poslať späť: {poslane}");
+    let o = ceny_sync::z_odpovede_uploadu(&odpoved).expect("odpoveď sa nedá prečítať");
+    assert_eq!(o.prijatych, 1);
+
+    // ── download ──
+    let agregat_json = r#"{"ok":true,"cas":1760000500,"ceny":[
+        {"polozka":400021,"fe":1.6,"zdrojov":3,"pocet_ponuk":21,"kedy":1760000400,"istota":"overena"},
+        {"polozka":5080,"fe":0.25,"zdrojov":1,"pocet_ponuk":4,"kedy":1760000400,"istota":"slaba"}
+    ]}"#;
+    let (port2, prijimac2) = mock(200, agregat_json);
+    let n2 = nastavenia(port2);
+    let telo2 = klient::stiahni_ceny(&n2, 1_760_000_000).expect("stiahnutie cien zlyhalo");
+    let (hlavicky2, _) = prijimac2.recv().expect("mock nedostal požiadavku");
+    assert!(hlavicky2.contains("GET /api/ceny?od=1760000000"), "{hlavicky2}");
+
+    let agregat = ceny_sync::z_odpovede_agregatu(&telo2).expect("agregát sa nedá prečítať");
+    let mut cennik = Cennik::novy();
+    let zmenenych = ceny_sync::zapis_do_cennika(&agregat, &mut cennik, 1_760_000_500);
+    assert_eq!(zmenenych, 2);
+    assert_eq!(cennik.cena(400021).unwrap().zdroj, Zdroj::Partia);
+    assert_eq!(cennik.cena(400021).unwrap().zdrojov, 3);
+
+    // ── a to hlavné: beh s dropmi už NEMÁ hodnotu 0 FE ──
+    let mut dropy = BTreeMap::new();
+    dropy.insert(400021u32, 3i64);
+    dropy.insert(5080u32, 10i64);
+    let v = ocen(&dropy, &cennik, &Nastavenie::default());
+    assert!(v.bez_ceny.is_empty(), "po stiahnutí cien nesmie nič ostať bez ceny");
+    assert!((v.fe - (3.0 * 1.6 + 10.0 * 0.25)).abs() < 1e-9, "{}", v.fe);
+    assert!(v.fe > 0.0, "presne toto bol problém TLI 20: beh s dropmi za 0 FE");
 }
