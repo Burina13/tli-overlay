@@ -691,6 +691,62 @@ pub fn export_json(riadky: &[BehRiadok]) -> String {
     serde_json::to_string_pretty(riadky).unwrap_or_else(|_| "[]".to_string())
 }
 
+/// Prevedie jeden stĺpec na `serde_json::Value` bez straty typu (čísla
+/// ostanú čísla, nie reťazce) — potrebné, lebo `export_pre_upload` nepozná
+/// vopred schému žiadnej konkrétnej tabuľky.
+fn hodnota_na_json(v: rusqlite::types::Value) -> serde_json::Value {
+    use rusqlite::types::Value as V;
+    match v {
+        V::Null => serde_json::Value::Null,
+        V::Integer(i) => serde_json::Value::from(i),
+        V::Real(f) => serde_json::Number::from_f64(f)
+            .map(serde_json::Value::Number)
+            .unwrap_or(serde_json::Value::Null),
+        V::Text(s) => serde_json::Value::String(s),
+        // Táto DB blob stĺpce v exportovaných tabuľkách nepoužíva — pre
+        // úplnosť aspoň pole bajtov, nech export ostane platný JSON aj keby
+        // sa to niekedy zmenilo (žiadna nová závislosť len kvôli tomuto).
+        V::Blob(b) => serde_json::Value::Array(b.into_iter().map(serde_json::Value::from).collect()),
+    }
+}
+
+fn exportuj_tabulku(conn: &Connection, tabulka: &str) -> rusqlite::Result<serde_json::Value> {
+    // `tabulka` je vždy jeden z pevných literálov nižšie — nikdy vstup od
+    // používateľa — takže formátovanie priamo do SQL je tu bezpečné (rusqlite
+    // parametre mená tabuliek/stĺpcov nepodporujú).
+    let mut stmt = conn.prepare(&format!("SELECT * FROM {tabulka}"))?;
+    let stlpce: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();
+    let riadky = stmt.query_map([], |r| {
+        let mut objekt = serde_json::Map::with_capacity(stlpce.len());
+        for (i, nazov) in stlpce.iter().enumerate() {
+            let hodnota: rusqlite::types::Value = r.get(i)?;
+            objekt.insert(nazov.clone(), hodnota_na_json(hodnota));
+        }
+        Ok(serde_json::Value::Object(objekt))
+    })?;
+    riadky.collect::<Result<Vec<_>, _>>().map(serde_json::Value::Array)
+}
+
+/// Export lokálnej DB pre denný upload na server (TLI 14, zadanie bod 1):
+/// presne tabuľky, ktoré serverové prepočítanie modelov z TLI 13c (bayes,
+/// regresia, bandit, change-point) a taktík z TLI 13b potrebuje — `behy`,
+/// `polozky`, `monstra`, `modifikatory_mapy`, `ceny`, `taktiky`,
+/// `taktiky_priradenie`. Zámerne VYNECHÁVA `zostatky`, `bossovia`,
+/// `frozen_canvas_akcie`, `build_snapshoty` a `raw_udalosti` — to posledné
+/// ide na server už raz, surové, v samotnom logu (zadanie bod 1), duplicitne
+/// v DB exporte netreba.
+///
+/// Odoslanie (gzip, HTTP) rieši `src-tauri` — tento modul len postaví obsah.
+pub fn export_pre_upload(conn: &Connection) -> rusqlite::Result<serde_json::Value> {
+    let mut vysledok = serde_json::Map::new();
+    vysledok.insert("schema_verzia".to_string(), serde_json::Value::from(SCHEMA_VERZIA));
+    for tabulka in ["behy", "polozky", "monstra", "modifikatory_mapy", "ceny",
+                    "taktiky", "taktiky_priradenie"] {
+        vysledok.insert(tabulka.to_string(), exportuj_tabulku(conn, tabulka)?);
+    }
+    Ok(serde_json::Value::Object(vysledok))
+}
+
 /// Vráti aktuálnu verziu schémy uloženú v `schema_info` — na diagnostiku
 /// a testy migrácie.
 pub fn precitaj_verziu(conn: &Connection) -> rusqlite::Result<Option<i32>> {
@@ -998,5 +1054,62 @@ mod testy {
         let c = hash_riadku("iny text");
         assert_eq!(a, b);
         assert_ne!(a, c);
+    }
+
+    // ── export_pre_upload (TLI 14, 1/N) ─────────────────────────────────────
+
+    #[test]
+    fn export_pre_upload_obsahuje_presne_zadane_tabulky() {
+        let conn = otvor_v_pamati().unwrap();
+        let export = export_pre_upload(&conn).unwrap();
+        let obj = export.as_object().unwrap();
+        for tabulka in ["schema_verzia", "behy", "polozky", "monstra",
+                        "modifikatory_mapy", "ceny", "taktiky", "taktiky_priradenie"] {
+            assert!(obj.contains_key(tabulka), "chýba kľúč {tabulka}");
+        }
+        // Presne tieto a žiadne iné — `zostatky`/`bossovia`/`frozen_canvas_akcie`/
+        // `build_snapshoty`/`raw_udalosti` zadanie TLI 14 nežiada.
+        assert_eq!(obj.len(), 8);
+        assert_eq!(obj["schema_verzia"], serde_json::json!(SCHEMA_VERZIA));
+        assert_eq!(obj["behy"], serde_json::json!([]));
+    }
+
+    #[test]
+    fn export_pre_upload_vracia_realne_ulozene_riadky() {
+        let mut conn = otvor_v_pamati().unwrap();
+        let mut beh = prazdny_beh(1, "Oaza", 0);
+        beh.monstra.push(MonstrumZaznam { npc_id: 42, rarita: 3, affix: None, cas: cas(1) });
+        beh.modifikatory.push(ModifikatorZaznam {
+            danger: Some(1), kind: Some(9), skupina: None, seat: None,
+            rand_affix_id: None, cas: cas(1),
+        });
+        let identita = HracSnimka::default();
+        let ocenenie = OceneneHodnoty {
+            hodnota_dropov_fe: Some(100.0), hodnota_vstupov_fe: Some(10.0),
+            cisty_zisk_fe: Some(90.0), fe_za_hodinu: Some(32400.0),
+        };
+        let (beh_id, _) = uloz_beh(&mut conn, &beh, &identita, &ocenenie).unwrap();
+        uloz_cenu(&conn, 100300, 1.5, cas(2).as_ref()).unwrap();
+        ulozit_taktiku(&conn, &["podpisX".to_string()], "Moja taktika").unwrap();
+
+        let export = export_pre_upload(&conn).unwrap();
+        let behy = export["behy"].as_array().unwrap();
+        assert_eq!(behy.len(), 1);
+        assert_eq!(behy[0]["id"], serde_json::json!(beh_id));
+        assert_eq!(behy[0]["zona"], serde_json::json!("Oaza"));
+        assert_eq!(behy[0]["cisty_zisk_fe"], serde_json::json!(90.0));
+
+        let monstra = export["monstra"].as_array().unwrap();
+        assert_eq!(monstra.len(), 1);
+        assert_eq!(monstra[0]["npc_id"], serde_json::json!(42));
+
+        assert_eq!(export["modifikatory_mapy"].as_array().unwrap().len(), 1);
+        assert_eq!(export["ceny"].as_array().unwrap().len(), 1);
+        assert_eq!(export["taktiky"].as_array().unwrap().len(), 1);
+        assert_eq!(export["taktiky"][0]["nazov"], serde_json::json!("Moja taktika"));
+        // Sanity: serializuje sa to naspäť do platného JSON reťazca (presne
+        // to, čo `src-tauri` pred gzipom a odoslaním zavolá).
+        let text = serde_json::to_string(&export).unwrap();
+        assert!(text.contains("Moja taktika"));
     }
 }
