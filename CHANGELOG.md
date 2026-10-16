@@ -48,7 +48,7 @@ in-game Exchange po ocenenie behu u všetkých troch v partii.
   pre tretie strany — podrobne v
   `docs/fakty/hry/torchlight-infinite/README.md` (zápis 16.10.2026).
 
-Testy: jadro 297 (bolo 288), UI jsdom 7 (bolo 4), `tli-web` 97 (bolo 84).
+Testy: jadro 297 + 12 integračných (bolo 288 + 12), UI jsdom 7 (bolo 4), `tli-web` 97 (bolo 84).
 
 ## 0.14.0 — 16.10.2026 (TLI 19, 1/N)
 

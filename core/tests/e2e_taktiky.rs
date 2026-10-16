@@ -14,7 +14,7 @@
 //! očakávanie.
 
 use tli_overlay_core::tracker::agregacie::ocen_beh;
-use tli_overlay_core::tracker::ceny::{Cena, Cennik, Nastavenie, Zdroj};
+use tli_overlay_core::tracker::ceny::{Cena, Cennik, Nastavenie};
 use tli_overlay_core::tracker::db::{self, OceneneHodnoty};
 use tli_overlay_core::tracker::stav::{Beh, HracSnimka, Sledovac};
 use tli_overlay_core::tracker::taktiky;
@@ -40,8 +40,14 @@ fn naplnena_db() -> rusqlite::Connection {
     }
 
     let mut cennik = Cennik::novy();
-    for (polozka, fe, _cas) in sledovac.odober_ceny() {
-        cennik.vloz(Cena { polozka, fe, zdroj: Zdroj::VlastnyTrh, kedy: 1_792_000_000 });
+    for nalez in sledovac.odober_ceny() {
+        cennik.vloz(Cena::vlastna(
+            nalez.polozka,
+            nalez.p10,
+            nalez.median,
+            nalez.pocet_ponuk,
+            1_792_000_000,
+        ));
     }
 
     let mut conn = db::otvor_v_pamati().unwrap();
