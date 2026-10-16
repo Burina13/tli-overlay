@@ -113,7 +113,7 @@ const CESTA_LOGU_UKAZKA =
   "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Torchlight Infinite\\UE_Game\\Torchlight\\Saved\\Logs\\UE_game.log";
 
 const ODPOVEDE = {
-  verzia: "0.9.0",
+  verzia: "0.15.0",
   nacitaj_nastavenia: { hotkey: "F8", hotkey_canvas: "F9", tema: "svetla",
                         mini_overlay: true, tracker_sync: false,
                         ceny_sync: true,

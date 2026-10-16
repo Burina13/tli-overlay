@@ -1,6 +1,6 @@
 {
-  "version": "0.14.0",
-  "notes": "Opravy trackera nad reálnym Richardovým 16.10. logom: spotreba beaconu po prechode do mapy sa už nestráca, boss/pinnacle sa už nezobrazuje ako „kampaň“, LevelUid/LevelType/LevelId mapy sa už neposúva o jeden beh a identita hráča (meno/sezóna) sa už nestratí ani vtedy, keď appka v danej session nevidela prihlásenie.",
-  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.14.0/Tvoj-Tatko-TLI-Overlay_0.14.0_x64_en-US.msi",
-  "msiSha256": "4474568204d342996f0eb47ed6c63907e9a18f977c7a47a87f37b63db9da5bdb"
+  "version": "0.15.0",
+  "notes": "Ceny bez ručnej práce: appka si cenu zapamätá vždy, keď si niečo vyhľadáš na in-game Exchange, a ceny sa zdieľajú s partiou — stačí, aby drahú vec vyhľadal ktokoľvek jeden a ocenenie dostanú všetci. Behy už nemajú hodnotu 0 FE, položky majú mená namiesto čísel a Tracker ti povie, čo sa oplatí vyhľadať.",
+  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.15.0/Tvoj-Tatko-TLI-Overlay_0.15.0_x64_en-US.msi",
+  "msiSha256": "1e0126adc329f60c172ef973923a9783b6004c4ff38efda1de484c7db8f905c5"
 }
