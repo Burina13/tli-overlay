@@ -118,6 +118,34 @@ pub struct HracSnimka {
     pub cas: Option<Cas>,
 }
 
+/// Z riadkov tela správy (voľne stojaci blok ALEBO telo rámcovanej
+/// `----Socket STT/End----` správy, napr. odpoveď `GetPlayerData`) spraví
+/// `HracSnimka`, ak telo naozaj nesie aspoň jedno pole `player.*`. Spoločná
+/// logika pre `flush_volny_blok` aj `Udalost::SpravaKoniec` (TLI 15) — predtým
+/// mala `flush_volny_blok` vlastnú kópiu a `SpravaKoniec` identitu z
+/// rámcovaných správ (napr. `GetPlayerData`) ticho zahadzoval, lebo
+/// rozpoznával len `akcia == "XchgSearchPrice"/"XchgSyncSearchPrice"`.
+fn hrac_snimka_z_tela(riadky: &[String], cas: Option<Cas>) -> Option<HracSnimka> {
+    let mapa = parsuj_telo(riadky);
+    if !mapa.keys().any(|k| k.starts_with("player.")) {
+        return None;
+    }
+    let genius_career_ids = mapa
+        .get("player.GeniusCareerIdStr")
+        .map(|v| v.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect())
+        .unwrap_or_default();
+    Some(HracSnimka {
+        name: mapa.get("player.Name").cloned(),
+        player_id: mapa.get("player.PlayerId").cloned(),
+        season_id: mapa.get("player.SeasonId").cloned(),
+        hero_id: mapa.get("player.HeroId").cloned(),
+        death_count: mapa.get("player.DeathCount").and_then(|v| v.parse().ok()),
+        exp: mapa.get("player.Exp").and_then(|v| v.parse().ok()),
+        genius_career_ids,
+        cas,
+    })
+}
+
 /// Jeden beh mapy.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Beh {
@@ -295,24 +323,9 @@ impl Sledovac {
     fn flush_volny_blok(&mut self) {
         let riadky = std::mem::take(&mut self.telo_spravy);
         let cas = self.volny_blok_cas.take();
-        let mapa = parsuj_telo(&riadky);
-        if !mapa.keys().any(|k| k.starts_with("player.")) {
-            return;
+        if let Some(snimka) = hrac_snimka_z_tela(&riadky, cas) {
+            self.hrac_snimka = Some(snimka);
         }
-        let genius_career_ids = mapa
-            .get("player.GeniusCareerIdStr")
-            .map(|v| v.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect())
-            .unwrap_or_default();
-        self.hrac_snimka = Some(HracSnimka {
-            name: mapa.get("player.Name").cloned(),
-            player_id: mapa.get("player.PlayerId").cloned(),
-            season_id: mapa.get("player.SeasonId").cloned(),
-            hero_id: mapa.get("player.HeroId").cloned(),
-            death_count: mapa.get("player.DeathCount").and_then(|v| v.parse().ok()),
-            exp: mapa.get("player.Exp").and_then(|v| v.parse().ok()),
-            genius_career_ids,
-            cas,
-        });
     }
 
     /// Interná metóda na spracovanie konkrétnej udalosti (užitočné aj pre testy)
@@ -442,6 +455,13 @@ impl Sledovac {
                             &mut self.ceny,
                             cas_spravy,
                         );
+                    }
+                    // Nezávisle od `akcia`: telo rámcovanej správy môže byť aj
+                    // odpoveď `GetPlayerData` (reálne overené na Richardovom
+                    // logu, TLI 15) — bez tejto vetvy sa identita hráča z
+                    // rámcovaných správ ticho strácala.
+                    if let Some(snimka) = hrac_snimka_z_tela(&self.telo_spravy, cas_spravy) {
+                        self.hrac_snimka = Some(snimka);
                     }
                 }
                 self.telo_spravy.clear();
@@ -1069,6 +1089,50 @@ mod testy {
         sledovac.spracuj_udalost(None, Udalost::TeloSpravy { surovy: "+player+Name [Nieco]".to_string() });
         // Ďalšia udalosť uprostred otvorenej správy nesmie vyvolať flush.
         sledovac.spracuj_udalost(None, Udalost::Uroven { uid: 1, typ: 1, id: 1 });
+        assert!(sledovac.hrac_snimka().is_none());
+    }
+
+    #[test]
+    fn test_ramcovana_sprava_get_player_data_naplni_hrac_snimku() {
+        // Reálny prípad z Richardovho logu (TLI 15): odpoveď na "GetPlayerData"
+        // príde RÁMCOVANÁ v štandardnej STT/End správe, nie ako voľne stojaci
+        // blok — pred opravou sa `SpravaKoniec` staral len o
+        // "XchgSearchPrice"/"XchgSyncSearchPrice" a identitu ticho zahodil.
+        let mut sledovac = Sledovac::novy();
+        sledovac.spracuj_udalost(
+            None,
+            Udalost::SpravaZaciatok { smer: Smer::Odoslana, akcia: "GetPlayerData".to_string(), syn_id: 9 },
+        );
+        for riadok in [
+            "+player+Name [onlyboobs]",
+            "|      +PlayerId [947466339310800896]",
+            "|      +HeroId [1700]",
+            "|      +SeasonId [1501]",
+        ] {
+            sledovac.spracuj_udalost(None, Udalost::TeloSpravy { surovy: riadok.to_string() });
+        }
+        sledovac.spracuj_udalost(None, Udalost::SpravaKoniec);
+
+        let snimka = sledovac
+            .hrac_snimka()
+            .expect("identita hráča sa mala vytiahnuť aj z rámcovanej správy GetPlayerData");
+        assert_eq!(snimka.name.as_deref(), Some("onlyboobs"));
+        assert_eq!(snimka.player_id.as_deref(), Some("947466339310800896"));
+        assert_eq!(snimka.hero_id.as_deref(), Some("1700"));
+        assert_eq!(snimka.season_id.as_deref(), Some("1501"));
+    }
+
+    #[test]
+    fn test_ramcovana_cenova_sprava_nemeni_hrac_snimku() {
+        // Opačný smer regresie: rámcovaná správa BEZ player polí (bežná
+        // XchgSearchPrice) nesmie hrac_snimka nastaviť na None/prázdnu hodnotu.
+        let mut sledovac = Sledovac::novy();
+        sledovac.spracuj_udalost(
+            None,
+            Udalost::SpravaZaciatok { smer: Smer::Odoslana, akcia: "XchgSearchPrice".to_string(), syn_id: 1 },
+        );
+        sledovac.spracuj_udalost(None, Udalost::TeloSpravy { surovy: "+ineco+hodnota [42]".to_string() });
+        sledovac.spracuj_udalost(None, Udalost::SpravaKoniec);
         assert!(sledovac.hrac_snimka().is_none());
     }
 }
