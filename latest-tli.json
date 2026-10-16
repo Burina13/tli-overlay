@@ -1,6 +1,6 @@
 {
-  "version": "0.15.0",
-  "notes": "Ceny bez ručnej práce: appka si cenu zapamätá vždy, keď si niečo vyhľadáš na in-game Exchange, a ceny sa zdieľajú s partiou — stačí, aby drahú vec vyhľadal ktokoľvek jeden a ocenenie dostanú všetci. Behy už nemajú hodnotu 0 FE, položky majú mená namiesto čísel a Tracker ti povie, čo sa oplatí vyhľadať.",
-  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.15.0/Tvoj-Tatko-TLI-Overlay_0.15.0_x64_en-US.msi",
-  "msiSha256": "1e0126adc329f60c172ef973923a9783b6004c4ff38efda1de484c7db8f905c5"
+  "version": "0.16.0",
+  "notes": "Log sa už nemusí kopírovať ručne — appka ho nahráva sama na server, po malých kúskoch na pozadí. Nad celým dnešným logom overené, že tracker počíta mapy aj bossov presne: žiadna zmena, ktorú treba urobiť ručne.",
+  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.16.0/Tvoj-Tatko-TLI-Overlay_0.16.0_x64_en-US.msi",
+  "msiSha256": "fa0d7f8b94003c34dbca208ccfc1a668a7e71362e4e84c39d76df1dca24ba00f"
 }
