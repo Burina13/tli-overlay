@@ -1,6 +1,6 @@
 {
-  "version": "0.13.1",
-  "notes": "Hotfix: hlavné záložky Solvery/Analýza/Guide/Nastavenia nereagovali na klik (chyba v ukladaní prepínačov prepisovala funkciu na prepínanie záložiek) — opravené, pridaný E2E test. Behy bez spotrebovaného chartu/kompasu sa teraz označujú „kampaň“ namiesto „bez vstupu“ a mapy sa zobrazujú čitateľnejšie, nie ako surový engine kód.",
-  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.13.1/Tvoj-Tatko-TLI-Overlay_0.13.1_x64_en-US.msi",
-  "msiSha256": "f4d0fb60e7c9e1576f9b87775fb78c369bb692f29fcfa52d5010d95c626b8b46"
+  "version": "0.14.0",
+  "notes": "Opravy trackera nad reálnym Richardovým 16.10. logom: spotreba beaconu po prechode do mapy sa už nestráca, boss/pinnacle sa už nezobrazuje ako „kampaň“, LevelUid/LevelType/LevelId mapy sa už neposúva o jeden beh a identita hráča (meno/sezóna) sa už nestratí ani vtedy, keď appka v danej session nevidela prihlásenie.",
+  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.14.0/Tvoj-Tatko-TLI-Overlay_0.14.0_x64_en-US.msi",
+  "msiSha256": "4474568204d342996f0eb47ed6c63907e9a18f977c7a47a87f37b63db9da5bdb"
 }
