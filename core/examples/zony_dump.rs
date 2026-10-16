@@ -1,4 +1,4 @@
-//! Jednorazový debug nástroj (TLI 16 príprava): vypíše pre každý beh zo zadaného
+//! Jednorazový debug nástroj (TLI 17 príprava): vypíše pre každý beh zo zadaného
 //! logu zónu, level_typ a podpis vstupov — na overenie kampaň/mapa klasifikácie
 //! proti živému Richardovmu logu. Nejde do appky, len `cargo run --example`.
 use tli_overlay_core::tracker::{log, stav};

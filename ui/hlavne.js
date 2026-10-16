@@ -72,7 +72,7 @@ const NEZNAMA_MAPA = "Neznáma mapa";
 // Cesta zóny je interný čínsky (pinyin) názov z enginu hry. Pre overené zóny
 // má vlastnú tabuľku (zdroj: docs/fakty/hry/torchlight-infinite/log-format.md
 // §4, TLI 11b) — pre ostatné sa kód aspoň rozbije na čitateľné slová namiesto
-// zlepenej skratky, nikdy sa nezobrazuje surová cesta (TLI 16, 16.10.2026).
+// zlepenej skratky, nikdy sa nezobrazuje surová cesta (TLI 17, 16.10.2026).
 const PREKLAD_MAPY = {
     yujinzhixibinansuo: "Ember's Rest",
 };
@@ -131,7 +131,7 @@ function triedaZnamienka(hodnota) {
 /// Podpis `400021x1+500101x2` je presný, ale nečitateľný — rozbijeme ho na odznaky.
 ///
 /// `"bez-vstupu"` (žiadny chart/kompas spotrebovaný pri otvorení mapy) sa od
-/// TLI 16 (16.10.2026) zobrazuje ako „kampaň" — endgame mapy sa inak než cez
+/// TLI 17 (16.10.2026) zobrazuje ako „kampaň" — endgame mapy sa inak než cez
 /// chart/kompas (`Spv3Open`/`ClimbTowerOpen`) otvoriť nedajú, takže beh bez
 /// nich je vždy kampaňová/sezónna/leveling zóna, nikdy nie mapa „zadarmo".
 /// Volá sa len na už hub-filtrovaných behoch (`behy`, `zivo`, `podla_kombinacie`
