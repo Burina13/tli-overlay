@@ -639,6 +639,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     await nacitajGuide();
+    await analyzaHladaj();
 
     await obnovTracker();
     // Takt 3 s je len záložka — živé čítanie na pozadí (notify + 1s polling,
