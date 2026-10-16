@@ -1,6 +1,6 @@
 {
-  "version": "0.12.0",
-  "notes": "Lokálna databáza všetkého, čo sa dá z logu vyčítať (TLI 13, 1. časť). Tracker teraz priebežne ukladá uzavreté mapy do lokálnej SQLite databázy — monštrá podľa rarity, modifikátory mapy, zostatky mien, boss fighty, Frozen Canvas akcie aj ceny z trhu. Nová záložka „Analýza“: vyhľadávanie podľa mapy a minimálneho zisku, klik na riadok ukáže monštrá podľa rarity, export CSV aj JSON. Tlačidlo „Načítať staré logy“ spätne naimportuje aj zálohy UE_game-backup-*.log — bezpečné spustiť opakovane, nič sa nezdvojí. Appka naďalej iba číta súbor na disku, nič v hre nemení.",
-  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.12.0/Tvoj-Tatko-TLI-Overlay_0.12.0_x64_en-US.msi",
-  "msiSha256": "2d99dc5d4b7bcc1bf34c91d18da894bfcdb32c0fb46d8810de30acdfb5982ab1"
+  "version": "0.13.0",
+  "notes": "Analýza podľa taktiky (TLI 13b, 1. časť). Taktika = podpis setupu behu (chart+kompasy+mapa+mód+modifikátory mapy+build) — appka behy zoskupí sama, hráč ich môže pomenovať alebo zlúčiť viac podpisov do jednej. Nová sekcia „Taktiky“ v záložke Analýza: zoradené podľa priemerného FE/h (rebríček „najlepšia taktika za hodinu“), priemerný aj mediánový zisk, min/max, p10/p90, smerodajná odchýlka, náklad a ROI, pomer zisk/riziko. Deterministický panel „Odporúčanie“ a zoznam „čo vyskúšať viac“ pre taktiky s málo dátami. Export CSV aj JSON. Appka naďalej iba číta súbor na disku, nič v hre nemení.",
+  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.13.0/Tvoj-Tatko-TLI-Overlay_0.13.0_x64_en-US.msi",
+  "msiSha256": "74ce462e525e7743b868f61f743bba26d06489c216f8227e08b0d13f5a211472"
 }
