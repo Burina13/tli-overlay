@@ -1,0 +1,11 @@
+{
+  "name": "tli-overlay-ui-testy",
+  "private": true,
+  "description": "E2E testy nad ui/*.js a ui/*.html (klik na záložky, uloz_prepinac) — beží cez `node --test`, appku samotnú ani Tauri nepotrebuje.",
+  "scripts": {
+    "test": "node --test testy-zalozky.e2e.mjs"
+  },
+  "devDependencies": {
+    "jsdom": "^24.1.3"
+  }
+}

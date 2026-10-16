@@ -2,6 +2,50 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.13.1 — 16.10.2026 (hotfix)
+
+- **Opravené: hlavné záložky (Solvery/Analýza/Guide/Nastavenia) nereagovali na
+  klik.** `ui/hlavne.js` mal dve top-level deklarácie `function prepni(...)` —
+  prepínanie záložiek a ukladanie prepínačov (mini overlay/sync/pripomienka).
+  Súbor je obyčajný klasický `<script>`, nie modul, takže druhá deklarácia tú
+  prvú v behu ticho prepísala. Klik na záložku tak skončil ako
+  `invoke("uloz_prepinac", { meno: <DOM element>, zapnuty: undefined })` a
+  appka to odmietla vetou „invalid type: map, expected a string" — fungovala
+  len záložka Tracker (tá bola aktívna hneď pri štarte, bez potreby kliku).
+  Prepínanie záložiek je teraz `prepniZalozku(tlacidlo)`, meno jasne odlíšené
+  od `prepni(meno, zapnuty)`.
+- Nový E2E test `ui/testy-zalozky.e2e.mjs` (`node --test`, jsdom, nová CI úloha
+  `ui_e2e`): simuluje reálny klik na KAŽDÚ záložku nad ostrým `hlavne.html`/
+  `hlavne.js` a overuje, že (a) sa prepne správny panel, (b) klik na záložku
+  nikdy nezavolá `uloz_prepinac`, (c) `uloz_prepinac` dostáva string `meno` a
+  boolean `zapnuty`, nikdy DOM element. Existujúci CI náhľad (screenshoty
+  záložiek) tento bug chytiť nevedel — aktívnu záložku prepína priamo v HTML,
+  JS klik sa tam nespúšťa.
+- **Behy bez spotrebovaného chartu/kompasu („bez vstupu") sa teraz označujú
+  „kampaň".** Endgame mapu nejde otvoriť inak než chartom/kompasom
+  (`Spv3Open`/`ClimbTowerOpen`) — beh bez nich je vždy kampaňová/sezónna/
+  leveling zóna, nikdy „mapa zadarmo". Overené na Richardovom živom
+  `UE_game.log` (zdieľaný disk, session z 14.10.2026 večer): 13 pozorovaných
+  behov bolo PRESNE takýchto, všetky reálne kampaňové/sezónne zóny (napr.
+  `SD_ShouGuSiDi000`, `DD_ZaWuJieQu000`, `SQ_MingShaJuLuo100`,
+  `Season/S8/.../XueYuRongLu_*`). Konkrétne kódy máp z Discord zadania
+  (`XZ_YuJinZhiXi200`, `SD_YuanGuTongDao201`, `SD_ShangGuZhanChang301`) sa
+  v žiadnom dostupnom logu nenašli doslovne (najbližšia reálna zhoda je
+  `XZ_YuJinZhiXiBiNanSuo200`) — pravidlo je preto odvodené zo skutočného
+  správania hry (chart/kompas = jediný spôsob vstupu do mapy), nie z
+  konkrétneho zoznamu kódov.
+- **Mapy sa zobrazujú čitateľnejšie, nie ako surový engine kód.** Nová
+  `PREKLAD_MAPY` v `ui/hlavne.js` s overenými menami (zatiaľ len
+  `YuJinZhiXiBiNanSuo` → „Ember's Rest", zdroj
+  `docs/fakty/hry/torchlight-infinite/log-format.md`); pre ostatné kódy sa
+  oblastný prefix a koncové číslo odstránia a zvyšok (pinyin) sa rozdelí na
+  slová podľa veľkých písmen (`ShouGuSiDi` → „Shou Gu Si Di") — nie je to
+  preklad, len čitateľnejší zápis, kým nepribudnú ďalšie overené mená.
+- Debug nástroj `core/examples/zony_dump.rs` (`cargo run --example
+  zony_dump -- <log>`) — vypíše zónu/level_typ/podpis vstupov pre každý beh
+  zo zadaného logu; použitý na overenie vyššie, ponechaný pre budúce otázky
+  o konkrétnych mapách.
+
 ## 0.13.0 — 16.10.2026
 
 Analýza podľa taktiky (TLI 13b, 1. časť, doplnok k TLI 13).

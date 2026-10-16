@@ -23,6 +23,21 @@ jobs:
           workspaces: core
       - run: cargo test --manifest-path core/Cargo.toml -- --nocapture
 
+  ui_e2e:
+    name: UI — klik na záložky a uloz_prepinac (jsdom, bez Tauri)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: ui/package-lock.json
+      - working-directory: ui
+        run: npm ci
+      - working-directory: ui
+        run: npm test
+
   pravidla:
     name: Pravidlá ToS a pripnutý manifest
     runs-on: ubuntu-latest

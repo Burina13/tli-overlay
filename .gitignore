@@ -7,3 +7,6 @@ src-tauri/gen/
 # ležala jeho ručná kópia a po TLI 11 kroku 4 sa rozišla s originálom.
 ui/nahlad-hlavne-*.html
 ui/nahlad-mini.html
+
+# `npm ci` v ci.yml (jadro) kvôli E2E testu záložiek (ui/testy-zalozky.e2e.mjs).
+ui/node_modules/

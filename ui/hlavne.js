@@ -4,7 +4,14 @@ const { invoke } = window.__TAURI__.core;
 const zalozky = document.querySelectorAll(".zalozka");
 const panely = document.querySelectorAll(".panel");
 
-function prepni(tlacidlo) {
+// Pozor: meno `prepniZalozku` je zámerne ODLIŠNÉ od `prepni(meno, zapnuty)`
+// nižšie (ukladanie prepínačov). Obe boli donedávna `function prepni`, a keďže
+// tento súbor je obyčajný klasický <script> (nie modul), druhá deklarácia tú
+// prvú v behu ticho prepísala — klik na záložku tak skončil ako
+// `prepni(tlacidloZaložky)`, teda volanie `uloz_prepinac` s DOM elementom
+// namiesto `meno`/`zapnuty` („invalid type: map, expected a string"). Hotfix
+// v0.13.1, 16.10.2026.
+function prepniZalozku(tlacidlo) {
     zalozky.forEach((t) => t.classList.remove("aktivna"));
     panely.forEach((p) => p.classList.add("skryte"));
     tlacidlo.classList.add("aktivna");
@@ -12,7 +19,7 @@ function prepni(tlacidlo) {
 }
 
 zalozky.forEach((tlacidlo) => {
-    tlacidlo.addEventListener("click", () => prepni(tlacidlo));
+    tlacidlo.addEventListener("click", () => prepniZalozku(tlacidlo));
 });
 
 // `?tab=panel-solvery` otvorí rovno danú záložku — slúži len CI náhľadu
@@ -22,7 +29,7 @@ const ziadanaZalozka = parametre.get("tab");
 if (ziadanaZalozka) {
     const tlacidlo = document.querySelector(`.zalozka[data-panel="${ziadanaZalozka}"]`);
     if (tlacidlo) {
-        prepni(tlacidlo);
+        prepniZalozku(tlacidlo);
     }
 }
 
@@ -62,13 +69,40 @@ if (parametre.get("tema")) {
 // ─── Tracker ────────────────────────────────────────────────────────────────
 const NEZNAMA_MAPA = "Neznáma mapa";
 
-/// Interná cesta zóny je dlhá a čínska — do tabuľky ide posledný kus názvu.
+// Cesta zóny je interný čínsky (pinyin) názov z enginu hry. Pre overené zóny
+// má vlastnú tabuľku (zdroj: docs/fakty/hry/torchlight-infinite/log-format.md
+// §4, TLI 11b) — pre ostatné sa kód aspoň rozbije na čitateľné slová namiesto
+// zlepenej skratky, nikdy sa nezobrazuje surová cesta (TLI 16, 16.10.2026).
+const PREKLAD_MAPY = {
+    yujinzhixibinansuo: "Ember's Rest",
+};
+
+/// Posledný kus cesty zóny bez prípony, napr. `XZ_ShouGuSiDi000`.
+function kodMapy(cesta) {
+    const kus = cesta.split("/").pop() || cesta;
+    return kus.split(".").pop() || kus;
+}
+
+/// `XZ_ShouGuSiDi000` → `Shou Gu Si Di`: odstráni 1–3-písmenový oblastný
+/// prefix a koncové číslo úrovne/inštancie, zvyšok rozdelí na slová podľa
+/// veľkých písmen. Keď je jadro v `PREKLAD_MAPY`, použije sa overené meno
+/// namiesto tohto odhadu.
+function citatelnyKodMapy(kod) {
+    const jadro = kod.replace(/^[A-Za-z]{1,3}_/, "").replace(/(_?\d+)+$/, "") || kod;
+    const preklad = PREKLAD_MAPY[jadro.toLowerCase()];
+    if (preklad) {
+        return preklad;
+    }
+    return jadro.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/_/g, " ").trim() || kod;
+}
+
+/// Interná cesta zóny je dlhá a čínska — do tabuľky ide čitateľné meno mapy,
+/// nie surový engine kód.
 function nazovMapy(cesta) {
     if (!cesta) {
         return NEZNAMA_MAPA;
     }
-    const kus = cesta.split("/").pop() || cesta;
-    return kus.split(".").pop() || kus;
+    return citatelnyKodMapy(kodMapy(cesta)) || NEZNAMA_MAPA;
 }
 
 function cas(ms) {
@@ -95,9 +129,19 @@ function triedaZnamienka(hodnota) {
 }
 
 /// Podpis `400021x1+500101x2` je presný, ale nečitateľný — rozbijeme ho na odznaky.
+///
+/// `"bez-vstupu"` (žiadny chart/kompas spotrebovaný pri otvorení mapy) sa od
+/// TLI 16 (16.10.2026) zobrazuje ako „kampaň" — endgame mapy sa inak než cez
+/// chart/kompas (`Spv3Open`/`ClimbTowerOpen`) otvoriť nedajú, takže beh bez
+/// nich je vždy kampaňová/sezónna/leveling zóna, nikdy nie mapa „zadarmo".
+/// Volá sa len na už hub-filtrovaných behoch (`behy`, `zivo`, `podla_kombinacie`
+/// — pozri `src-tauri/src/tracker.rs`), takže sa tu netreba pýtať na `je_hub`.
 function odznakyVstupov(podpis) {
-    if (!podpis || podpis === "bez-vstupu") {
+    if (!podpis) {
         return '<span class="odznak">bez vstupu</span>';
+    }
+    if (podpis === "bez-vstupu") {
+        return '<span class="odznak">kampaň</span>';
     }
     return podpis
         .split("+")
