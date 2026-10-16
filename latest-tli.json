@@ -1,6 +1,6 @@
 {
-  "version": "0.16.0",
-  "notes": "Log sa už nemusí kopírovať ručne — appka ho nahráva sama na server, po malých kúskoch na pozadí. Nad celým dnešným logom overené, že tracker počíta mapy aj bossov presne: žiadna zmena, ktorú treba urobiť ručne.",
-  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.16.0/Tvoj-Tatko-TLI-Overlay_0.16.0_x64_en-US.msi",
-  "msiSha256": "fa0d7f8b94003c34dbca208ccfc1a668a7e71362e4e84c39d76df1dca24ba00f"
+  "version": "0.17.0",
+  "notes": "Nové: Ctrl+F8 „Upraviť rozloženie" — panel s radou, mini-panel trackera a toast pripomienky sa dajú posunúť a zmeniť im veľkosť (ťahaj za pásik hore, za roh zmeníš veľkosť, Enter/Esc uloží). Záložka Tracker teraz priebežne ukazuje stav denného uploadu logov aj chybu, keď niečo nejde — nielen po ručnom kliku.",
+  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.17.0/Tvoj-Tatko-TLI-Overlay_0.17.0_x64_en-US.msi",
+  "msiSha256": "6799fe642fe40a7c347db46e5f3180986c3d5d6a0882b9a73e38714fbfabcefe"
 }
