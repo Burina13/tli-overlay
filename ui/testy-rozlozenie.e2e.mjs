@@ -158,7 +158,14 @@ test("rezim-upravy-nahlas pošle Rustu PRESNE aktuálnu polohu panela po úprave
 
         const volanie = volania.find((v) => v.prikaz === "rezim_upravy_ulozit_panel");
         assert.ok(volanie, "appka nezavolala rezim_upravy_ulozit_panel");
-        assert.deepEqual(volanie.argy, { x: 200, y: 80, w: 500, h: 300 });
+        // Porovnanie POLÍ, nie `assert.deepEqual(volanie.argy, {...})` — `argy`
+        // je objekt z realmu jsdom okna (iný `Object.prototype` než Node),
+        // takže strict deepEqual naň hlási „same structure but are not
+        // reference-equal", hoci hodnoty sú identické.
+        assert.equal(volanie.argy.x, 200);
+        assert.equal(volanie.argy.y, 80);
+        assert.equal(volanie.argy.w, 500);
+        assert.equal(volanie.argy.h, 300);
     } finally {
         window.close();
     }
