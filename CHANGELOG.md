@@ -2,6 +2,54 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.15.0 — 16.10.2026 (TLI 20)
+
+**Ceny bez ručnej práce.** Richard ceny ručne aktualizovať nebude a doteraz mal tabuľku
+`ceny` prázdnu a všetky behy za 0 FE. Táto verzia rieši celú cestu od vyhľadania na
+in-game Exchange po ocenenie behu u všetkých troch v partii.
+
+- **Z jedného vyhľadania sa drží viac než jedno číslo.** Doteraz sa z dvojice správ
+  `XchgSearchPrice` brala len p10 (10. percentil ponúk) a zvyšok sa zahodil. Teraz sa
+  ukladá aj **medián**, **počet ponúk** a **sezóna** — medián je odolnejší voči jednej
+  extrémne drahej ponuke a počet ponúk hovorí, nakoľko sa dá cene veriť.
+- **⚠️ Oprava, ktorá by inak ticho vypla ceny úplne.** Druhá cenová skupina sa v reálnom
+  logu zapisuje SKRÁTENE, bez zopakovania slova `prices` (`|      +2+currency [100200]`).
+  Parser taký riadok nerozpoznal, nechal index skupiny na predošlej hodnote, mena druhej
+  skupiny tak prepísala menu prvej a **všetky FE ponuky sa odfiltrovali ako „iná mena"**.
+  Tvar je doložený vzorkami reálnych logov z 26./28.1.2026 (testy TITracku) a je na neho
+  regresný test. Pokrytý je aj „nový" tvar, kde `+currency` stojí AŽ ZA zoznamom ponúk.
+- **Ceny starnú.** Do 24 h má cena plnú váhu, potom lineárne klesá na 25 % počas siedmich
+  dní a nižšie už nie — stará cena je lepší odhad než žiadna. Váha sa používa pri
+  rozhodovaní, ktorá cena vyhrá: **čerstvá cena od partie prebije týždeň starú vlastnú**,
+  čerstvú vlastnú neprebije. Dovtedy platilo tvrdé „menej dôveryhodný zdroj neprepíše
+  nikdy", takže stará vlastná cena blokovala čerstvú partiovú navždy.
+- **Zdieľanie cien s partiou (predvolene ZAPNUTÉ).** Klient posiela rozdielovo len ceny
+  z vlastného vyhľadania (`POST /api/ceny`) a sťahuje agregát partie
+  (`GET /api/ceny?od=`) á 5 minút. Server počíta **medián cez hráčov** z ich najnovšej
+  ceny na položku (päť vyhľadaní toho istého hráča = jeden hlas) a pripisuje **istotu**
+  `overena`/`dobra`/`slaba` podľa počtu nezávislých zdrojov. Cena od partie sa späť
+  neodosiela — inak by si agregát potvrdzoval sám seba.
+- **Offline cache.** Cenník sa po štarte appky postaví z lokálnej DB. Dovtedy mal hráč po
+  každom reštarte prázdny cenník a behy za 0 FE, kým si znova niečo nevyhľadal.
+- **Spätný import starých logov konečne oceňuje behy.** Druhý prechod: po dočítaní súboru
+  sa z nájdených cien postaví cenník a dopočíta sa hodnota behov, ktoré sa ukladali skôr,
+  než bola cena známa. Vek ceny sa pritom berie z **herného času riadku**, nie z „teraz" —
+  inak by mesiac starý log vyzeral ako čerstvé ceny. Beh, ktorého položky cenník nepozná
+  ani potom, ostane **bez hodnoty (`NULL`), nie na nule**.
+- **Výzva „vyhľadaj na Exchange".** Záložka Tracker ukáže, koľko položiek z posledných máp
+  nemá cenu mladšiu ako 24 h, a vymenuje dve-tri najcennejšie. Je to **návod pre človeka** —
+  appka do hry neposiela nič a ani nemôže.
+- **Mená položiek namiesto `#400021`.** Nový balík `ui/polozky-seed-en.json` (1 933
+  položiek) prevzatý z projektu TITrack pod licenciou MIT; rozsah a atribúcia sú v novom
+  súbore [`NOTICE.md`](NOTICE.md). Pokrýva aj tohtosezónne beacony `400000`/`400001`, ktoré
+  staršia tabuľka `en_id_table.json` nemala. ID ostáva v `title` odznaku.
+- **Na komunitné ceny TITracku sa NENAPÁJAME.** Ich crowd backend je Supabase projekt
+  autora s natvrdo zapísaným kľúčom v zdrojáku, bez verejného API a bez podmienok použitia
+  pre tretie strany — podrobne v
+  `docs/fakty/hry/torchlight-infinite/README.md` (zápis 16.10.2026).
+
+Testy: jadro 297 (bolo 288), UI jsdom 7 (bolo 4), `tli-web` 97 (bolo 84).
+
 ## 0.14.0 — 16.10.2026 (TLI 19, 1/N)
 
 Opravy parsera/trackera nad REÁLNYM Richardovým živým logom (overené priamo na jeho PC

@@ -42,6 +42,7 @@ Konfigurácia sa ukladá do `%APPDATA%\sk.tvojtatko.tli-overlay\nastavenia.json`
 | Automatické skrytie | Po koľkých sekundách overlay sám zhasne. `0` = nikdy. | `20` |
 | Klávesová skratka — Frozen Canvas | Druhá, nezávislá skratka pre inú obrazovku hry (mriežka miešania paintov, samostatný cieľ Richardovho testovania 16.10.2026). | `F9` |
 | Zber dát (Frozen Canvas) | Keď zapnuté, skratka pre Frozen Canvas nevykreslí radu — len odfotí, pošle na server (uloží sa VŽDY) a ukáže počítadlo „Uložené #N". Zapni počas zberu dát, inak nech je vypnuté. | vypnuté |
+| Zdieľať ceny s partiou | Ceny, ktoré si **ty** vyhľadáš na in-game Exchange, sa pošlú partii, a ceny partie sa stiahnu k tebe (á 5 min). Posielajú sa **len ceny**, nič o tvojich behoch ani zárobkoch. **Predvolene ZAPNUTÉ** — na rozdiel od „Posielať výsledky partii": cena veci na verejnom trhu nie je tvoje číslo, a bez zdieľania má hráč, ktorý si nič nevyhľadal, všetky behy za 0 FE. | zapnuté |
 
 ## Hlavné okno
 
@@ -56,6 +57,40 @@ export CSV, voliteľné posielanie výsledkov partii a mini-panel nad hrou),
 ďalej presne tak, ako doteraz, táto záložka im nič nemení), **Guide** (sprievodca
 Erika 1, stiahnutý zo servera a funguje aj offline) a **Nastavenia** (zatiaľ len
 tlačidlo, ktoré otvorí existujúce samostatné okno nastavení).
+
+## Odkiaľ sa berú ceny (TLI 20)
+
+Appka **do hry nijako nezasahuje** — ceny sa nedajú „stiahnuť z trhu". Jediný
+zdroj je riadok `XchgSearchPrice`, ktorý si **hra sama zapíše do logu**, keď
+hráč vyhľadá položku na in-game Exchange (Trade House). Z jedného takého
+vyhľadania sa vezme:
+
+- **p10** — 10. percentil ponúk, teda cena, za ktorú sa vec reálne predá
+  (najnižšia ponuka býva návnada alebo omyl). Toto je cena, ktorou sa oceňuje.
+- **medián** a **počet ponúk** — kontrolné čísla. Keď je medián mnohonásobne
+  vyšší než p10 alebo sú ponuky tri, trh je riedky a cene sa dá veriť menej.
+
+**Ceny starnú.** Do 24 hodín má cena plnú váhu, potom váha lineárne klesá na
+25 % počas ďalších siedmich dní a nižšie už nie — stará cena je stále lepší
+odhad než žiadna. Beh sa ňou ocení normálne, len sa to označí v UI.
+
+**Zdieľanie v partii.** V trojčlennej partii stačí, aby drahú vec vyhľadal
+ktokoľvek jeden — cenu dostanú všetci. Server (`tli.tvojtatko.sk`) počíta
+**medián cez hráčov** z ich najnovšej ceny na položku (päť vyhľadaní toho
+istého hráča = jeden hlas, nie päť) a k cene pripíše **istotu**: `overena`
+(3+ nezávislé zdroje), `dobra` (2), `slaba` (1). TITrack vydáva cenu až od
+troch prispievateľov; tu by to znamenalo, že sa nezdieľa nikdy nič, takže sa
+cena vydá vždy a radšej sa povie, ako veľmi jej veriť.
+
+**Čo appka urobí, keď cenu nemá:** položka sa ukáže ako „bez ceny" (hodnota
+behu sa **nevynuluje**, len je neúplná) a v záložke Tracker sa objaví výzva
+„Vyhľadaj na Exchange: …" s dvomi-tromi najcennejšími položkami bez čerstvej
+ceny. Je to **návod pre človeka** — appka do hry nič neposiela.
+
+**Mená položiek** pochádzajú z balíka `ui/polozky-seed-en.json` (1 933
+položiek). Prevzatý je z projektu TITrack pod licenciou MIT — presný rozsah
+a atribúcia sú v [`NOTICE.md`](NOTICE.md). Na komunitné ceny TITracku sa tento
+projekt **nenapája**.
 
 ## Bezpečnosť a pravidlá hry
 
