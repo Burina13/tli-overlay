@@ -231,6 +231,38 @@ pub fn cena_percentil(ponuky: &[f64], percentil: u32) -> Option<f64> {
     Some(zotriedene[index as usize])
 }
 
+/// Medián zo zoznamu ponúk. Pri párnom počte je to priemer dvoch stredných —
+/// to isté, čo robí TITrack (`calculate_reference_price(method="median")`).
+pub fn cena_median(ponuky: &[f64]) -> Option<f64> {
+    if ponuky.is_empty() {
+        return None;
+    }
+    let mut z = ponuky.to_vec();
+    z.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let n = z.len();
+    Some(if n % 2 == 0 {
+        (z[n / 2 - 1] + z[n / 2]) / 2.0
+    } else {
+        z[n / 2]
+    })
+}
+
+/// Jeden nález trhovej ceny z dvojice správ `XchgSearchPrice` (TLI 20).
+///
+/// Do TLI 20 sa z každého vyhľadania niesol len JEDEN cenový bod (p10) a všetko
+/// ostatné sa zahodilo. Tu sa drží aj medián a počet ponúk: medián je odolnejší
+/// voči jednej extrémne drahej ponuke a počet ponúk hovorí, nakoľko sa dá cene
+/// veriť (tri ponuky nie sú trh). Obe čísla idú ďalej do DB aj partii.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NalezCeny {
+    pub polozka: u32,
+    /// Referenčná cena = 10. percentil ponúk (to isté, čo robí TITrack).
+    pub p10: f64,
+    pub median: f64,
+    pub pocet_ponuk: u32,
+    pub cas: Option<Cas>,
+}
+
 /// Stavový automat nad prúdom riadkov logu.
 #[derive(Debug, Default)]
 pub struct Sledovac {
@@ -254,7 +286,7 @@ pub struct Sledovac {
     /// bez ohľadu na to, či je cieľová zóna hub.
     cakajuca_uroven: Option<(u64, u32, u64, Option<Cas>)>,
     hladania_cien: BTreeMap<u64, (u32, Option<Cas>)>,
-    ceny: Vec<(u32, f64, Option<Cas>)>,
+    ceny: Vec<NalezCeny>,
     aktivna_sprava: Option<(Smer, String, u64, Option<Cas>)>,
     telo_spravy: Vec<String>,
     neznamych_riadkov: u64,
@@ -308,7 +340,7 @@ impl Sledovac {
         self.aktualny_beh.take()
     }
 
-    pub fn odober_ceny(&mut self) -> Vec<(u32, f64, Option<Cas>)> {
+    pub fn odober_ceny(&mut self) -> Vec<NalezCeny> {
         std::mem::take(&mut self.ceny)
     }
 
@@ -658,7 +690,7 @@ fn spracuj_xchg_hladanie(
     smer: Smer,
     syn_id: u64,
     hladania_cien: &mut BTreeMap<u64, (u32, Option<Cas>)>,
-    ceny: &mut Vec<(u32, f64, Option<Cas>)>,
+    ceny: &mut Vec<NalezCeny>,
     cas_spravy: Option<Cas>,
 ) {
     match smer {
@@ -678,8 +710,19 @@ fn spracuj_xchg_hladanie(
         Smer::Prijata => {
             let Some((polozka, _)) = hladania_cien.remove(&syn_id) else { return };
             let ponuky = ponuky_z_tela(telo);
-            if let Some(p10) = cena_percentil(&ponuky, 10) {
-                ceny.push((polozka, p10, cas_spravy));
+            // TLI 20: z jedného vyhľadania berieme p10 AJ medián AJ počet
+            // ponúk. `cena_percentil` a `cena_median` si zoznam triedia samy,
+            // takže na poradí riadkov v logu nezáleží.
+            if let (Some(p10), Some(median)) =
+                (cena_percentil(&ponuky, 10), cena_median(&ponuky))
+            {
+                ceny.push(NalezCeny {
+                    polozka,
+                    p10,
+                    median,
+                    pocet_ponuk: ponuky.len() as u32,
+                    cas: cas_spravy,
+                });
             }
         }
         Smer::Push => {}
@@ -702,8 +745,32 @@ fn hodnota_riadku(riadok: &str) -> Option<&str> {
     Some(riadok[i + 1..j].trim())
 }
 
-/// Index skupiny `prices+N`, ak ho riadok uvádza.
+/// Index cenovej skupiny (`prices+N`), ak ho riadok uvádza.
+///
+/// ⚠️ **Nestačí hľadať `prices+N`.** V reálnom logu sa druhá a ďalšia skupina
+/// zapisuje SKRÁTENE, bez zopakovania slova `prices` — `|      +2+currency
+/// [100200]` (doložené vzorkami v testoch TITrack, logy z 26.1.2026). Keď sa
+/// taký riadok nerozpozná, skupina ostane na predošlej hodnote, mena druhej
+/// skupiny prepíše menu prvej a FE ponuky sa potom ticho odfiltrujú ako „iná
+/// mena" — tracker prestane mať ceny bez jedinej chybovej hlášky.
+///
+/// Preto sa index berie zo segmentu TESNE PRED `+currency`/`+unitPrices`
+/// a `prices+N` je až záloha pre tvar, kde taký segment nie je.
 fn index_skupiny(riadok: &str) -> Option<u32> {
+    for znacka in ["+currency", "+unitPrices"] {
+        if let Some(i) = riadok.find(znacka) {
+            let pred = &riadok[..i];
+            let segment = pred.rsplit('+').next().unwrap_or("").trim();
+            if !segment.is_empty() && segment.chars().all(|c| c.is_ascii_digit()) {
+                if let Ok(n) = segment.parse::<u32>() {
+                    return Some(n);
+                }
+            }
+            // Segment pred značkou nie je číslo (napr. `|   +unitPrices+1`,
+            // teda pokračovanie tej istej skupiny) — index sa nemení.
+            return None;
+        }
+    }
     let i = riadok.find("prices+")? + "prices+".len();
     let zvysok = &riadok[i..];
     let koniec = zvysok.find(|c: char| !c.is_ascii_digit()).unwrap_or(zvysok.len());
@@ -977,8 +1044,10 @@ mod testy {
         spracuj_xchg_hladanie(&prijata, Smer::Prijata, 11942, &mut hladania, &mut ceny, None);
 
         assert_eq!(ceny.len(), 1);
-        assert_eq!(ceny[0].0, 3004);
-        assert_eq!(ceny[0].1, 0.20); // p10 z piatich = najnižšia ponuka
+        assert_eq!(ceny[0].polozka, 3004);
+        assert_eq!(ceny[0].p10, 0.20); // p10 z piatich = najnižšia ponuka
+        assert_eq!(ceny[0].median, 0.22); // stredná z piatich
+        assert_eq!(ceny[0].pocet_ponuk, 5); // ponuka v inej mene sa neráta
     }
 
     #[test]
@@ -1000,8 +1069,10 @@ mod testy {
         ];
         spracuj_xchg_hladanie(&prijata, Smer::Prijata, 7, &mut hladania, &mut ceny, None);
         assert_eq!(ceny.len(), 1);
-        assert_eq!(ceny[0].0, 5080);
-        assert_eq!(ceny[0].1, 0.10);
+        assert_eq!(ceny[0].polozka, 5080);
+        assert_eq!(ceny[0].p10, 0.10);
+        assert_eq!(ceny[0].median, 0.12);
+        assert_eq!(ceny[0].pocet_ponuk, 3);
     }
 
     #[test]
@@ -1018,7 +1089,105 @@ mod testy {
         ];
         spracuj_xchg_hladanie(&prijata, Smer::Prijata, 7, &mut hladania, &mut ceny, None);
         assert_eq!(ceny.len(), 1);
-        assert_eq!(ceny[0].1, 2.0);
+        assert_eq!(ceny[0].p10, 2.0);
+        assert_eq!(ceny[0].median, 3.0);
+    }
+
+
+    // ── TLI 20: tvary tela prevzaté z TESTOV TITracku ────────────────────
+    // (github.com/astockman99/TITrack, MIT, `tests/unit/test_exchange_parser.py`
+    // — riadky pochádzajú z reálnych logov z 26./28.1.2026). Náš parser je
+    // vlastný, prevzaté sú len VZORKY FORMÁTU, nie kód.
+
+    #[test]
+    fn test_xchg_realny_tvar_mena_az_za_cenami() {
+        // „Nový" tvar: `+currency` stojí AŽ ZA zoznamom ponúk.
+        let mut hladania = BTreeMap::new();
+        let mut ceny = Vec::new();
+        spracuj_xchg_hladanie(
+            &vec!["+filters+1+key [4]".to_string(), "|       | +refer [5028]".to_string()],
+            Smer::Odoslana, 13366, &mut hladania, &mut ceny, None,
+        );
+        let prijata: Vec<String> = vec![
+            "+errCode".into(),
+            "+prices+1+unitPrices+1 [15.0]".into(),
+            "|      | |          +2 [15.5]".into(),
+            "|      | |          +3 [15.6]".into(),
+            "|      | +currency [100300]".into(),
+        ];
+        spracuj_xchg_hladanie(&prijata, Smer::Prijata, 13366, &mut hladania, &mut ceny, None);
+        assert_eq!(ceny.len(), 1);
+        assert_eq!(ceny[0].polozka, 5028);
+        assert_eq!(ceny[0].p10, 15.0);
+        assert_eq!(ceny[0].median, 15.5);
+        assert_eq!(ceny[0].pocet_ponuk, 3);
+    }
+
+    #[test]
+    fn test_xchg_realny_tvar_druha_skupina_bez_slova_prices() {
+        // REGRESIA: druhá cenová skupina sa v logu píše skrátene ako
+        // `|      +2+currency [100200]` — bez zopakovania slova `prices`.
+        // Pred TLI 20 sa index skupiny nezmenil, mena 100200 prepísala menu
+        // skupiny 1 a VŠETKY FE ponuky sa odfiltrovali ako „iná mena".
+        let mut hladania = BTreeMap::new();
+        let mut ceny = Vec::new();
+        spracuj_xchg_hladanie(
+            &vec!["|       | +refer [23444]".to_string()],
+            Smer::Odoslana, 23444, &mut hladania, &mut ceny, None,
+        );
+        let prijata: Vec<String> = vec![
+            "+errCode".into(),
+            "+prices+1+currency [100300]".into(),
+            "|      | +unitPrices+1 [0.02]".into(),
+            "|      | |          +2 [0.021]".into(),
+            "|      | |          +3 [0.022]".into(),
+            "|      +2+currency [100200]".into(),
+            "|      | +unitPrices+1 [100.0]".into(),
+        ];
+        spracuj_xchg_hladanie(&prijata, Smer::Prijata, 23444, &mut hladania, &mut ceny, None);
+        assert_eq!(ceny.len(), 1, "FE ponuky sa nesmú stratiť kvôli druhej skupine v inej mene");
+        assert_eq!(ceny[0].polozka, 23444);
+        assert_eq!(ceny[0].p10, 0.02);
+        assert_eq!(ceny[0].median, 0.021);
+        assert_eq!(ceny[0].pocet_ponuk, 3, "ponuka za 100.0 je v mene 100200, do FE nepatrí");
+    }
+
+    #[test]
+    fn test_xchg_iba_ina_mena_nedava_cenu() {
+        let mut hladania = BTreeMap::new();
+        let mut ceny = Vec::new();
+        spracuj_xchg_hladanie(
+            &vec!["+refer [100]".to_string()],
+            Smer::Odoslana, 100, &mut hladania, &mut ceny, None,
+        );
+        let prijata: Vec<String> = vec![
+            "+errCode".into(),
+            "+prices+1+unitPrices+1 [100.0]".into(),
+            "|      | +currency [100200]".into(),
+        ];
+        spracuj_xchg_hladanie(&prijata, Smer::Prijata, 100, &mut hladania, &mut ceny, None);
+        assert!(ceny.is_empty(), "cena v inej mene než FE sa nesmie zapísať");
+    }
+
+    #[test]
+    fn test_cena_median() {
+        assert_eq!(cena_median(&[]), None);
+        assert_eq!(cena_median(&[5.0]), Some(5.0));
+        assert_eq!(cena_median(&[1.0, 3.0]), Some(2.0));
+        assert_eq!(cena_median(&[3.0, 1.0, 2.0]), Some(2.0));
+        // Jedna extrémne drahá ponuka medián neposunie, priemer by áno.
+        assert_eq!(cena_median(&[1.0, 2.0, 3.0, 1000.0]), Some(2.5));
+    }
+
+    #[test]
+    fn test_index_skupiny_tvary() {
+        assert_eq!(index_skupiny("+prices+1+currency [100300]"), Some(1));
+        assert_eq!(index_skupiny("|      +2+currency [100200]"), Some(2));
+        assert_eq!(index_skupiny("+prices+3+unitPrices+1 [1.0]"), Some(3));
+        // Pokračovacie riadky index NEMENIA.
+        assert_eq!(index_skupiny("|      | +currency [100300]"), None);
+        assert_eq!(index_skupiny("|       +unitPrices+1 [0.10]"), None);
+        assert_eq!(index_skupiny("|      | |          +2 [15.5]"), None);
     }
 
     #[test]

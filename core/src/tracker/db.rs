@@ -14,16 +14,19 @@ use std::path::Path;
 
 use rusqlite::{params, Connection, OptionalExtension};
 
+use super::ceny::{Cena, Cennik, Nastavenie, Zdroj};
 use super::log::Cas;
-use super::stav::{Beh, Dovod, HracSnimka};
+use super::stav::{Beh, Dovod, HracSnimka, NalezCeny};
 
 /// Aktuálna verzia schémy. Zvyšuje sa pri KAŽDEJ zmene tabuliek; `migruj()`
 /// podľa nej vie, ktoré kroky ešte treba spustiť.
+/// `3` (TLI 20) pridalo do `ceny` stĺpce `median_fe`/`pocet_ponuk`/`sezona`/
+/// `zdroj`/`zapisane` (cez `ALTER TABLE`, dáta ostávajú).
 /// `2` (TLI 13b) pridalo `taktiky`/`taktiky_priradenie` — pomenovanie a
 /// zlúčenie signatúr taktík hráčom. Všetky `CREATE TABLE IF NOT EXISTS` sú
 /// samy o sebe idempotentné, verzia je tu najmä na diagnostiku a budúce kroky,
 /// ktoré by už idempotentné CREATE nestačili.
-pub const SCHEMA_VERZIA: i32 = 2;
+pub const SCHEMA_VERZIA: i32 = 3;
 
 /// Otvorí (alebo vytvorí) databázu na danej ceste a rovno ju zmigruje na
 /// najnovšiu schému. Jediné miesto, odkiaľ sa má DB otvárať — inak sa dá
@@ -196,6 +199,24 @@ pub fn migruj(conn: &Connection) -> rusqlite::Result<()> {
         );
         CREATE INDEX IF NOT EXISTS idx_taktiky_priradenie_taktika ON taktiky_priradenie(taktika_id);
         ",
+    )?;
+
+    // TLI 20: `ceny` dostala ďalšie stĺpce. Pridávajú sa `ALTER TABLE`-om, nie
+    // prepísaním `CREATE TABLE` — v existujúcej DB hráča už ceny sú a prepis
+    // tabuľky by znamenal migráciu dát (a riziko, že sa stratia). `ALTER TABLE
+    // ADD COLUMN` je v SQLite lacné a chyba „duplicate column name" pri druhom
+    // spustení je očakávaná, preto sa ticho prehliada.
+    for stlpec in [
+        "median_fe REAL",
+        "pocet_ponuk INTEGER",
+        "sezona TEXT",
+        "zdroj TEXT NOT NULL DEFAULT 'vlastny_trh'",
+        "zapisane INTEGER NOT NULL DEFAULT 0",
+    ] {
+        let _ = conn.execute_batch(&format!("ALTER TABLE ceny ADD COLUMN {stlpec};"));
+    }
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_ceny_zapisane ON ceny(zapisane);",
     )?;
 
     conn.execute(
@@ -410,14 +431,179 @@ pub fn uloz_build_snapshot(
     Ok(())
 }
 
-/// Uloží jednu trhovú cenu (z `Sledovac::odober_ceny()`). `INSERT OR IGNORE`
-/// kvôli dedup na `(config_base_id, cena_fe, cas)`.
-pub fn uloz_cenu(conn: &Connection, config_base_id: u32, cena_fe: f64, cas: Option<&Cas>) -> rusqlite::Result<()> {
+/// Jeden riadok tabuľky `ceny` (TLI 20). `cena_fe` je referenčná cena —
+/// pri vlastnom vyhľadaní 10. percentil ponúk, pri cene od partie medián cez
+/// hráčov. Stĺpec sa zámerne NEPREMENOVAL: v DB hráčov už dáta sú.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ZaznamCeny {
+    pub polozka: u32,
+    pub cena_fe: f64,
+    pub median_fe: Option<f64>,
+    pub pocet_ponuk: Option<u32>,
+    pub sezona: Option<String>,
+    pub zdroj: String,
+    /// Herný čas z logu (`RRRR-MM-DD HH:MM:SS`), ak ho riadok niesol.
+    pub cas: Option<String>,
+    /// Unixový čas zápisu do DB. Podľa neho sa vyberá, čo sa ešte neodoslalo
+    /// partii — herný čas na to nestačí (môže chýbať a nie je monotónny).
+    pub zapisane: i64,
+}
+
+impl ZaznamCeny {
+    /// Záznam z vlastného vyhľadania na Exchange.
+    pub fn z_nalezu(n: &NalezCeny, sezona: Option<String>, zapisane: i64) -> Self {
+        Self {
+            polozka: n.polozka,
+            cena_fe: n.p10,
+            median_fe: Some(n.median),
+            pocet_ponuk: Some(n.pocet_ponuk),
+            sezona,
+            zdroj: "vlastny_trh".to_string(),
+            cas: n.cas.as_ref().map(|c| c.text()),
+            zapisane,
+        }
+    }
+}
+
+/// Uloží jednu trhovú cenu. `INSERT OR IGNORE` kvôli dedup na
+/// `(config_base_id, cena_fe, cas)` — tá istá cena z toho istého okamihu sa
+/// pri opakovanom importe nezdvojí.
+pub fn uloz_cenu(conn: &Connection, z: &ZaznamCeny) -> rusqlite::Result<()> {
     conn.execute(
-        "INSERT OR IGNORE INTO ceny (config_base_id, cena_fe, cas) VALUES (?1,?2,?3)",
-        params![config_base_id, cena_fe, cas.map(|c| c.text())],
+        "INSERT OR IGNORE INTO ceny
+            (config_base_id, cena_fe, cas, median_fe, pocet_ponuk, sezona, zdroj, zapisane)
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+        params![
+            z.polozka, z.cena_fe, z.cas, z.median_fe, z.pocet_ponuk, z.sezona, z.zdroj, z.zapisane
+        ],
     )?;
     Ok(())
+}
+
+/// Ceny zapísané PO zadanom okamihu — rozdielový vstup pre `POST /api/ceny`.
+/// Posielajú sa len ceny z VLASTNÉHO vyhľadania: ceny stiahnuté od partie by
+/// sa inak vrátili späť a agregát by sa sám sebou potvrdzoval.
+pub fn ceny_od(conn: &Connection, od: i64, max: usize) -> rusqlite::Result<Vec<ZaznamCeny>> {
+    let mut dotaz = conn.prepare(
+        "SELECT config_base_id, cena_fe, median_fe, pocet_ponuk, sezona, zdroj, cas, zapisane
+           FROM ceny
+          WHERE zapisane > ?1 AND zdroj = 'vlastny_trh'
+          ORDER BY zapisane ASC
+          LIMIT ?2",
+    )?;
+    let riadky = dotaz.query_map(params![od, max as i64], |r| {
+        Ok(ZaznamCeny {
+            polozka: r.get::<_, i64>(0)? as u32,
+            cena_fe: r.get(1)?,
+            median_fe: r.get(2)?,
+            pocet_ponuk: r.get::<_, Option<i64>>(3)?.map(|v| v as u32),
+            sezona: r.get(4)?,
+            zdroj: r.get(5)?,
+            cas: r.get(6)?,
+            zapisane: r.get(7)?,
+        })
+    })?;
+    riadky.collect()
+}
+
+/// Postaví cenník z DB — najnovšia cena na položku podľa `zapisane`.
+///
+/// Toto je OFFLINE CACHE: appka po štarte pozná ceny aj bez siete a aj bez
+/// toho, aby znova prečítala celý log. Bez nej mal hráč po každom reštarte
+/// appky prázdny cenník a behy ocenené na 0 FE — presne ten problém, kvôli
+/// ktorému TLI 20 vzniklo.
+pub fn nacitaj_cennik(conn: &Connection) -> rusqlite::Result<Cennik> {
+    let mut dotaz = conn.prepare(
+        "SELECT c.config_base_id, c.cena_fe, c.median_fe, c.pocet_ponuk, c.zdroj, c.zapisane
+           FROM ceny c
+           JOIN (SELECT config_base_id, MAX(zapisane) AS max_z
+                   FROM ceny GROUP BY config_base_id) n
+             ON n.config_base_id = c.config_base_id AND n.max_z = c.zapisane
+          GROUP BY c.config_base_id",
+    )?;
+    let riadky = dotaz.query_map([], |r| {
+        Ok(Cena {
+            polozka: r.get::<_, i64>(0)? as u32,
+            fe: r.get(1)?,
+            median: r.get(2)?,
+            pocet_ponuk: r.get::<_, Option<i64>>(3)?.unwrap_or(0) as u32,
+            zdroj: Zdroj::z_kodu(&r.get::<_, String>(4)?),
+            kedy: r.get::<_, i64>(5)?.max(0) as u64,
+            zdrojov: 1,
+        })
+    })?;
+    let mut cennik = Cennik::novy();
+    for c in riadky {
+        let c = c?;
+        // `vloz_v_case` s časom tej istej ceny: pri rovnakej položke vyhrá
+        // novšia/dôveryhodnejšia — rovnaké pravidlo ako počas behu.
+        let kedy = c.kedy;
+        cennik.vloz_v_case(c, kedy);
+    }
+    Ok(cennik)
+}
+
+/// Prepočíta hodnoty jedného už uloženého behu podľa zadaného cenníka a zapíše
+/// ich do `behy` (TLI 20, druhý prechod spätného importu).
+///
+/// Číta `polozky` TOHO behu z DB (nie `Beh` v pamäti), takže sa dá spustiť aj
+/// dlho po importe. Vracia `true`, keď sa hodnoty naozaj zapísali — teda keď
+/// mal beh aspoň jednu položku so známou cenou. Beh, ktorého položky cenník
+/// vôbec nepozná, sa NEPREPISUJE na nuly: `NULL` („nevieme") je pravdivejšie
+/// než `0 FE` („nezarobil nič") a presne to bol pôvodný problém TLI 20.
+pub fn precen_beh(
+    conn: &Connection,
+    beh_id: i64,
+    cennik: &Cennik,
+    nastavenie: &Nastavenie,
+) -> rusqlite::Result<bool> {
+    let mut dotaz = conn.prepare(
+        "SELECT config_base_id, typ, SUM(mnozstvo) FROM polozky
+          WHERE beh_id = ?1 GROUP BY config_base_id, typ",
+    )?;
+    let mut dropy: std::collections::BTreeMap<u32, i64> = Default::default();
+    let mut vstupy: std::collections::BTreeMap<u32, i64> = Default::default();
+    let riadky = dotaz.query_map(params![beh_id], |r| {
+        Ok((r.get::<_, i64>(0)? as u32, r.get::<_, String>(1)?, r.get::<_, i64>(2)?))
+    })?;
+    for riadok in riadky {
+        let (polozka, typ, mnozstvo) = riadok?;
+        match typ.as_str() {
+            "drop" if mnozstvo > 0 => *dropy.entry(polozka).or_insert(0) += mnozstvo,
+            // `vstup_mapy` je v DB uložený záporne (spotreba) — na ocenenie
+            // potrebujeme kladný počet spotrebovaných kusov.
+            "vstup_mapy" if mnozstvo < 0 => *vstupy.entry(polozka).or_insert(0) += -mnozstvo,
+            _ => {}
+        }
+    }
+    if dropy.is_empty() && vstupy.is_empty() {
+        return Ok(false);
+    }
+
+    let ocenene_dropy = super::ceny::ocen(&dropy, cennik, nastavenie);
+    let ocenene_vstupy = super::ceny::ocen(&vstupy, cennik, nastavenie);
+    let znama_cena = ocenene_dropy.bez_ceny.len() < dropy.len()
+        || ocenene_vstupy.bez_ceny.len() < vstupy.len();
+    if !znama_cena {
+        return Ok(false);
+    }
+
+    let cisty = ocenene_dropy.fe - ocenene_vstupy.fe;
+    let trvanie: Option<i64> = conn
+        .query_row("SELECT trvanie_ms FROM behy WHERE id = ?1", params![beh_id], |r| r.get(0))
+        .optional()?
+        .flatten();
+    let fe_za_hodinu = trvanie
+        .filter(|t| *t > 0)
+        .map(|t| cisty * 3_600_000.0 / t as f64);
+
+    conn.execute(
+        "UPDATE behy SET hodnota_dropov_fe = ?1, hodnota_vstupov_fe = ?2,
+                         cisty_zisk_fe = ?3, fe_za_hodinu = ?4
+          WHERE id = ?5",
+        params![ocenene_dropy.fe, ocenene_vstupy.fe, cisty, fe_za_hodinu, beh_id],
+    )?;
+    Ok(true)
 }
 
 /// Uloží jeden zostatok meny/počítadla (z `Sledovac::odober_zostatky()`).
@@ -980,8 +1166,8 @@ mod testy {
     #[test]
     fn ceny_zostatky_a_raw_sa_ukladaju_idempotentne() {
         let conn = otvor_v_pamati().unwrap();
-        uloz_cenu(&conn, 3004, 0.21, cas(1).as_ref()).unwrap();
-        uloz_cenu(&conn, 3004, 0.21, cas(1).as_ref()).unwrap(); // duplicitný import
+        uloz_cenu(&conn, &ZaznamCeny { polozka: 3004, cena_fe: 0.21, median_fe: Some(0.3), pocet_ponuk: Some(4), sezona: None, zdroj: "vlastny_trh".into(), cas: cas(1).map(|c| c.text()), zapisane: 1000 }).unwrap();
+        uloz_cenu(&conn, &ZaznamCeny { polozka: 3004, cena_fe: 0.21, median_fe: Some(0.3), pocet_ponuk: Some(4), sezona: None, zdroj: "vlastny_trh".into(), cas: cas(1).map(|c| c.text()), zapisane: 1000 }).unwrap(); // duplicitný import
         let pocet: i64 = conn.query_row("SELECT COUNT(*) FROM ceny", [], |r| r.get(0)).unwrap();
         assert_eq!(pocet, 1);
 
@@ -1152,7 +1338,7 @@ mod testy {
             cisty_zisk_fe: Some(90.0), fe_za_hodinu: Some(32400.0),
         };
         let (beh_id, _) = uloz_beh(&mut conn, &beh, &identita, &ocenenie).unwrap();
-        uloz_cenu(&conn, 100300, 1.5, cas(2).as_ref()).unwrap();
+        uloz_cenu(&conn, &ZaznamCeny { polozka: 100300, cena_fe: 1.5, median_fe: None, pocet_ponuk: None, sezona: None, zdroj: "vlastny_trh".into(), cas: cas(2).map(|c| c.text()), zapisane: 2000 }).unwrap();
         ulozit_taktiku(&conn, &["podpisX".to_string()], "Moja taktika").unwrap();
 
         let export = export_pre_upload(&conn).unwrap();

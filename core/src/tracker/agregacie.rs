@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
-use super::ceny::{ocen, Cennik, Nastavenie};
+use super::ceny::{ocen_v_case, Cennik, Nastavenie};
 use super::stav::Beh;
 
 /// Výsledok jedného behu po ocenení.
@@ -29,17 +29,32 @@ pub struct VysledokBehu {
     pub bez_ceny: Vec<(u32, i64)>,
     /// Najstaršia použitá cena (unixový čas) — na zobrazenie veku dát.
     pub najstarsia_cena: Option<u64>,
+    /// Položky ocenené cenou staršou než 24 h (TLI 20). Prázdne, keď sa beh
+    /// oceňoval bez znalosti aktuálneho času (`ocen_beh`).
+    #[serde(default)]
+    pub zastarane: Vec<(u32, i64)>,
 }
 
 /// Ocení jeden beh. Hubové behy (`je_hub`) sa NEOCEŇUJÚ — vracia `None`,
 /// pretože pobyt v hube nie je herná mapa a skresľoval by štatistiky zárobku.
 pub fn ocen_beh(beh: &Beh, cennik: &Cennik, nastavenie: &Nastavenie) -> Option<VysledokBehu> {
+    ocen_beh_v_case(beh, cennik, nastavenie, None)
+}
+
+/// To isté ako `ocen_beh`, len s výslovne zadaným „teraz" (unixový čas), aby
+/// sa dalo povedať, ktoré položky sú ocenené zastaranou cenou (TLI 20).
+pub fn ocen_beh_v_case(
+    beh: &Beh,
+    cennik: &Cennik,
+    nastavenie: &Nastavenie,
+    teraz: Option<u64>,
+) -> Option<VysledokBehu> {
     if beh.je_hub {
         return None;
     }
 
-    let ocenene_dropy = ocen(&beh.dropy, cennik, nastavenie);
-    let ocenene_vstupy = ocen(&beh.vstupy, cennik, nastavenie);
+    let ocenene_dropy = ocen_v_case(&beh.dropy, cennik, nastavenie, teraz);
+    let ocenene_vstupy = ocen_v_case(&beh.vstupy, cennik, nastavenie, teraz);
 
     // Položky bez ceny musíme zlúčiť (sčítame ich počty), aby hráč dostal
     // jeden ucelený zoznam všetkého, čomu chýba cenovka. BTreeMap zaistí determinizmus.
@@ -48,6 +63,16 @@ pub fn ocen_beh(beh: &Beh, cennik: &Cennik, nastavenie: &Nastavenie) -> Option<V
         *bez_ceny_map.entry(polozka).or_insert(0) += pocet;
     }
     let bez_ceny = bez_ceny_map.into_iter().collect();
+
+    let mut zastarane_map = BTreeMap::new();
+    for (polozka, pocet) in ocenene_dropy
+        .zastarane
+        .iter()
+        .chain(ocenene_vstupy.zastarane.iter())
+    {
+        *zastarane_map.entry(*polozka).or_insert(0) += *pocet;
+    }
+    let zastarane = zastarane_map.into_iter().collect();
 
     // Vyberáme absolútne najstarší timestamp (najnižšie číslo), aby používateľ
     // videl, kedy bola aktualizovaná najstaršia použitá položka.
@@ -70,6 +95,7 @@ pub fn ocen_beh(beh: &Beh, cennik: &Cennik, nastavenie: &Nastavenie) -> Option<V
         cisty_zisk: ocenene_dropy.fe - ocenene_vstupy.fe,
         bez_ceny,
         najstarsia_cena,
+        zastarane,
     })
 }
 
@@ -270,6 +296,7 @@ mod testy {
             cisty_zisk: zisk,
             bez_ceny: vec![],
             najstarsia_cena: None,
+            zastarane: vec![],
         }
     }
 

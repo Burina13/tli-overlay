@@ -14,7 +14,8 @@
 
 use rusqlite::Connection;
 
-use super::db::{self, OceneneHodnoty};
+use super::ceny::{Cena, Cennik, Nastavenie};
+use super::db::{self, OceneneHodnoty, ZaznamCeny};
 use super::log::dekoduj;
 use super::stav::{HracSnimka, Sledovac};
 
@@ -29,6 +30,8 @@ pub struct VysledokImportu {
     pub pocet_cien: usize,
     pub pocet_zostatkov: usize,
     pub neznamych_riadkov: u64,
+    /// Koľko behov dostalo hodnotu až v druhom prechode (TLI 20).
+    pub pocet_precenenych_behov: usize,
 }
 
 impl VysledokImportu {
@@ -40,6 +43,7 @@ impl VysledokImportu {
         self.pocet_cien += iny.pocet_cien;
         self.pocet_zostatkov += iny.pocet_zostatkov;
         self.neznamych_riadkov += iny.neznamych_riadkov;
+        self.pocet_precenenych_behov += iny.pocet_precenenych_behov;
     }
 }
 
@@ -54,13 +58,16 @@ pub fn importuj_text(conn: &mut Connection, text: &str) -> rusqlite::Result<Vysl
     let mut sledovac = Sledovac::novy();
     let mut vysledok = VysledokImportu::default();
     let mut identita = HracSnimka::default();
+    // ID behov vložených V TOMTO importe — v druhom prechode sa im dopočíta
+    // hodnota z cien, ktoré sa našli až neskôr v tom istom súbore.
+    let mut nove_behy: Vec<i64> = Vec::new();
 
     for riadok in text.lines() {
         if let Some(beh) = sledovac.riadok(riadok) {
             if let Some(novsia) = sledovac.hrac_snimka() {
                 identita = novsia.clone();
             }
-            uloz_jeden_beh(conn, &sledovac, &beh, &identita, &mut vysledok)?;
+            uloz_jeden_beh(conn, &sledovac, &beh, &identita, &mut vysledok, &mut nove_behy)?;
         }
         vysledok.pocet_riadkov += 1;
     }
@@ -71,11 +78,28 @@ pub fn importuj_text(conn: &mut Connection, text: &str) -> rusqlite::Result<Vysl
         if let Some(novsia) = sledovac.hrac_snimka() {
             identita = novsia.clone();
         }
-        uloz_jeden_beh(conn, &sledovac, &beh, &identita, &mut vysledok)?;
+        uloz_jeden_beh(conn, &sledovac, &beh, &identita, &mut vysledok, &mut nove_behy)?;
     }
 
-    for (polozka, fe, cas) in sledovac.odober_ceny() {
-        db::uloz_cenu(conn, polozka, fe, cas.as_ref())?;
+    // Ceny z CELÉHO súboru. Zároveň sa z nich stavia cenník pre druhý prechod
+    // nižšie — pri spätnom importe sa cena položky typicky nájde až potom, ako
+    // ju hráč nafarmil, takže v čase ukladania behu ešte známa nebola.
+    let sezona = identita.season_id.clone();
+    let teraz = cas_zapisu();
+    let mut cennik = Cennik::novy();
+    for nalez in sledovac.odober_ceny() {
+        db::uloz_cenu(conn, &ZaznamCeny::z_nalezu(&nalez, sezona.clone(), teraz))?;
+        // Vek ceny sa pri spätnom importe berie z HERNÉHO času riadku, nie
+        // z „teraz" — inak by mesiac starý log vyzeral ako čerstvé ceny.
+        let kedy = nalez
+            .cas
+            .as_ref()
+            .and_then(|c| c.unix_sekundy())
+            .unwrap_or(teraz.max(0) as u64);
+        cennik.vloz_v_case(
+            Cena::vlastna(nalez.polozka, nalez.p10, nalez.median, nalez.pocet_ponuk, kedy),
+            kedy,
+        );
         vysledok.pocet_cien += 1;
     }
     for (nazov, hodnota, cas) in sledovac.odober_zostatky() {
@@ -90,8 +114,29 @@ pub fn importuj_text(conn: &mut Connection, text: &str) -> rusqlite::Result<Vysl
         db::uloz_raw(conn, None, &raw_text, cas.as_ref())?;
     }
 
+    // ── Druhý prechod (TLI 20) ─────────────────────────────────────────
+    // Behy sa ukladali s `OceneneHodnoty::default()` (teda `cisty_zisk_fe =
+    // NULL`), lebo cenník v tej chvíli ešte neexistoval. Teraz ho máme z
+    // celého súboru, tak im hodnotu dopočítame. Beh, ktorého položky cenník
+    // nepozná ani teraz, ostane bez hodnoty — nie na nule.
+    let nastavenie = Nastavenie::default();
+    for beh_id in nove_behy {
+        if db::precen_beh(conn, beh_id, &cennik, &nastavenie)? {
+            vysledok.pocet_precenenych_behov += 1;
+        }
+    }
+
     vysledok.neznamych_riadkov = sledovac.neznamych_riadkov();
     Ok(vysledok)
+}
+
+/// Unixový čas zápisu. `core` systémové hodiny inak nepoužíva, tu je to
+/// nevyhnutné: podľa `zapisane` sa vyberá, ktoré ceny sa ešte neposlali partii.
+fn cas_zapisu() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
 }
 
 fn uloz_jeden_beh(
@@ -100,15 +145,19 @@ fn uloz_jeden_beh(
     beh: &super::stav::Beh,
     identita: &HracSnimka,
     vysledok: &mut VysledokImportu,
+    nove_behy: &mut Vec<i64>,
 ) -> rusqlite::Result<()> {
     if beh.je_hub {
         return Ok(());
     }
-    let ocenenie = OceneneHodnoty::default(); // cenník sa dopĺňa priebežne, nie je tu k dispozícii — pozri BACKLOG
+    // Cenník v tejto chvíli ešte nie je úplný (ceny sa v logu nájdu aj neskôr),
+    // preto sa beh ukladá bez hodnoty a doplní ju druhý prechod v `importuj_text`.
+    let ocenenie = OceneneHodnoty::default();
     let (beh_id, bol_novy) = db::uloz_beh(conn, beh, identita, &ocenenie)?;
     if bol_novy {
         vysledok.pocet_novych_behov += 1;
         vysledok.pocet_monster += beh.monstra.len();
+        nove_behy.push(beh_id);
     } else {
         vysledok.pocet_preskocenych_behov += 1;
         return Ok(());

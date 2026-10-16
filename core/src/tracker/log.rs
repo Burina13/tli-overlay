@@ -25,6 +25,26 @@ impl Cas {
         )
     }
 
+    /// Unixový čas (sekundy) z herného času v logu — berie ho ako UTC.
+    ///
+    /// ⚠️ Hra píše do logu **lokálny** čas, takže toto je presné len na pásmo;
+    /// pre jediný účel, na ktorý sa používa (**vek ceny** pri spätnom importe
+    /// starého logu), to stačí — rozdiel hodiny-dvoch pri veku v dňoch nič
+    /// nemení a alternatíva (brať „teraz") by mesiac starý log vydávala za
+    /// čerstvé ceny. `None` pri nezmyselnom dátume.
+    pub fn unix_sekundy(&self) -> Option<u64> {
+        if self.rok < 1970 || self.mesiac == 0 || self.mesiac > 12 || self.den == 0 {
+            return None;
+        }
+        let mut dni: i64 = 0;
+        for r in 1970..self.rok {
+            let p = r % 4 == 0 && (r % 100 != 0 || r % 400 == 0);
+            dni += if p { 366 } else { 365 };
+        }
+        let sekundy_v_roku = self.ms_od_zaciatku_roka() / 1000;
+        u64::try_from(dni * 86_400 + sekundy_v_roku).ok()
+    }
+
     /// Konverzia na milisekundy slúži na rýchle výpočty trvania medzi udalosťami v logu.
     /// Zjednodušene počíta dni od 1. januára, pretože beh hry málokedy prekročí jeden rok.
     pub fn ms_od_zaciatku_roka(&self) -> i64 {

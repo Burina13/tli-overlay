@@ -161,6 +161,7 @@ mod testy {
             cisty_zisk: 130.5,
             bez_ceny: vec![],
             najstarsia_cena: None,
+            zastarane: vec![],
         }
     }
 

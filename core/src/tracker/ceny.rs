@@ -4,9 +4,10 @@ use std::collections::BTreeMap;
 /// Odkiaľ cena prišla. Poradie variantov je zároveň poradie dôveryhodnosti.
 /// Variant definovaný vyššie má menšiu číselnú hodnotu (napr. VlastnyTrh = 0),
 /// takže pri porovnávaní znamená menšia hodnota vyššiu dôveryhodnosť.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Serialize, Deserialize)]
 pub enum Zdroj {
     /// Hráč si položku sám vyhľadal na trhu — najpravdivejšie, čo vieme mať.
+    #[default]
     VlastnyTrh,
     /// Prišlo od partie cez tli.tvojtatko.sk.
     Partia,
@@ -14,16 +15,97 @@ pub enum Zdroj {
     Rucne,
 }
 
+impl Zdroj {
+    /// Dôveryhodnosť zdroja ako číslo 0–1. Používa sa spolu s váhou veku
+    /// (`vaha_veku`) pri rozhodovaní, ktorá cena v cenníku vyhrá.
+    pub fn doveryhodnost(self) -> f64 {
+        match self {
+            Zdroj::VlastnyTrh => 1.0,
+            Zdroj::Partia => 0.8,
+            Zdroj::Rucne => 0.6,
+        }
+    }
+
+    /// Krátke označenie pre UI aj pre prenos na server.
+    pub fn kod(self) -> &'static str {
+        match self {
+            Zdroj::VlastnyTrh => "vlastny_trh",
+            Zdroj::Partia => "partia",
+            Zdroj::Rucne => "rucne",
+        }
+    }
+
+    pub fn z_kodu(kod: &str) -> Zdroj {
+        match kod {
+            "partia" => Zdroj::Partia,
+            "rucne" => Zdroj::Rucne,
+            _ => Zdroj::VlastnyTrh,
+        }
+    }
+}
+
 /// Reprezentuje jednu záznamovú cenu pre položku na trhu.
 /// Udržiavame kedy a odkiaľ prišla, aby sme vedeli staršie ceny
 /// nahradiť novšími a menej presné presnejšími.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Cena {
     pub polozka: u32,
+    /// Referenčná cena, ktorou sa oceňuje. Pri vlastnom vyhľadaní je to 10.
+    /// percentil ponúk, pri cene od partie medián cez hráčov.
     pub fe: f64,
     pub zdroj: Zdroj,
     /// Unixový čas v sekundách, kedy cena vznikla.
     pub kedy: u64,
+    /// Medián ponúk z toho istého vyhľadania (TLI 20). Nepoužíva sa na
+    /// ocenenie — je to kontrolné číslo: keď je medián mnohonásobne vyšší než
+    /// p10, trh je riedky a cene sa dá veriť menej.
+    pub median: Option<f64>,
+    /// Koľko ponúk bolo v tom vyhľadaní. Tri ponuky nie sú trh.
+    pub pocet_ponuk: u32,
+    /// Koľko NEZÁVISLÝCH zdrojov (hráčov) sa na cene zhodlo. Pri vlastnom
+    /// vyhľadaní 1, pri cene od partie počet prispievateľov.
+    pub zdrojov: u32,
+}
+
+impl Cena {
+    /// Cena z vlastného vyhľadania na in-game Exchange.
+    pub fn vlastna(polozka: u32, p10: f64, median: f64, pocet_ponuk: u32, kedy: u64) -> Self {
+        Self {
+            polozka,
+            fe: p10,
+            zdroj: Zdroj::VlastnyTrh,
+            kedy,
+            median: Some(median),
+            pocet_ponuk,
+            zdrojov: 1,
+        }
+    }
+}
+
+/// Dokedy je cena „čerstvá" — do 24 hodín má plnú váhu.
+pub const CERSTVA_DO_S: u64 = 24 * 3600;
+
+/// Za koľko ďalších sekúnd po uplynutí čerstvosti klesne váha na minimum.
+const DOBEHOVE_OKNO_S: u64 = 7 * 24 * 3600;
+
+/// Najnižšia váha, na ktorú môže cena klesnúť. Zámerne NIE nula — stará cena
+/// je stále lepší odhad než žiadna; nula by znamenala, že beh s dropmi má
+/// zrazu hodnotu 0 FE, a presne to bol pôvodný problém TLI 20.
+pub const VAHA_MINIMUM: f64 = 0.25;
+
+/// Váha ceny podľa veku: 1,0 do 24 h, potom lineárny pokles na `VAHA_MINIMUM`
+/// počas nasledujúcich 7 dní, ďalej už konštantne `VAHA_MINIMUM`.
+pub fn vaha_veku(vek_s: u64) -> f64 {
+    if vek_s <= CERSTVA_DO_S {
+        return 1.0;
+    }
+    let po = vek_s - CERSTVA_DO_S;
+    if po >= DOBEHOVE_OKNO_S {
+        return VAHA_MINIMUM;
+    }
+    let podiel = po as f64 / DOBEHOVE_OKNO_S as f64;
+    1.0 - podiel * (1.0 - VAHA_MINIMUM)
 }
 
 /// Ako starú cenu ešte považujeme za použiteľnú, kým ju označíme ako zastaranú.
@@ -45,22 +127,39 @@ impl Cennik {
         }
     }
 
-    /// Vloží cenu. Staršiu cenu NEPREPÍŠE novšou z menej dôveryhodného zdroja,
-    /// ale vždy prepíše, keď je nová cena z rovnako alebo viac dôveryhodného zdroja
-    /// a je novšia. Vracia `true`, keď sa cena naozaj zmenila.
+    /// Vloží cenu. Staršia cena sa nikdy neprepíše ešte staršou; inak
+    /// rozhoduje **dôveryhodnosť zdroja vynásobená váhou veku** k času novej
+    /// ceny. Vracia `true`, keď sa cena naozaj zmenila.
+    ///
+    /// TLI 20: do tejto verzie platilo tvrdé „menej dôveryhodný zdroj
+    /// neprepíše nikdy", takže **týždeň stará cena z vlastného vyhľadania
+    /// navždy zablokovala desať minút starý medián od partie** — a cieľom
+    /// celého TLI 20 je, aby ceny neboli zastarané. Preto sa teraz do
+    /// porovnania započítava aj vek: čerstvá cena od partie starú vlastnú
+    /// prebije, čerstvú vlastnú neprebije.
     pub fn vloz(&mut self, cena: Cena) -> bool {
+        let teraz = cena.kedy;
+        self.vloz_v_case(cena, teraz)
+    }
+
+    /// To isté ako `vloz`, len s výslovne zadaným „teraz" — používa sa, keď sa
+    /// do cenníka sype dávka cien s rôznymi časmi a porovnávať sa má voči
+    /// jednému okamihu.
+    pub fn vloz_v_case(&mut self, cena: Cena, teraz: u64) -> bool {
         if let Some(stara) = self.mapa.get(&cena.polozka) {
-            // Ak je nová cena z horšieho (menej dôveryhodného) zdroja, odmietneme ju.
-            // (V enum Zdroj znamená vyššia hodnota menšiu dôveryhodnosť)
-            if cena.zdroj > stara.zdroj {
-                return false;
-            }
-            // Ak je z rovnakého alebo lepšieho zdroja, ale je staršia, odmietneme ju.
+            // Staršiu cenu nikdy nenahrádzame ešte staršou.
             if cena.kedy < stara.kedy {
                 return false;
             }
-            // Ak sa čas aj zdroj zhodujú a aj samotná cena je rovnaká, nevykonávame zmenu.
+            // Zhodný záznam netreba prepisovať.
             if cena == *stara {
+                return false;
+            }
+            let sila_novej =
+                cena.zdroj.doveryhodnost() * vaha_veku(teraz.saturating_sub(cena.kedy));
+            let sila_starej =
+                stara.zdroj.doveryhodnost() * vaha_veku(teraz.saturating_sub(stara.kedy));
+            if sila_novej < sila_starej {
                 return false;
             }
         }
@@ -119,6 +218,10 @@ pub struct Ocenenie {
     pub bez_ceny: Vec<(u32, i64)>,
     /// Najstaršia použitá cena (unixový čas) — z nej sa v UI kreslí vek celého súčtu.
     pub najstarsia_cena: Option<u64>,
+    /// Položky ocenené cenou staršou než 24 h (TLI 20). Hodnota sa NEZNIŽUJE —
+    /// stará cena je stále najlepší odhad, aký máme — ale UI pri takom súčte
+    /// ukáže, že je neistý, a Tracker to použije na výzvu „vyhľadaj na Exchange".
+    pub zastarane: Vec<(u32, i64)>,
 }
 
 /// Ocení mapu `polozka -> pocet`. Neznáma položka nesmie spadnúť ani vynulovať výsledok —
@@ -129,8 +232,22 @@ pub fn ocen(
     cennik: &Cennik,
     nastavenie: &Nastavenie,
 ) -> Ocenenie {
+    ocen_v_case(mnozstva, cennik, nastavenie, None)
+}
+
+/// To isté ako `ocen`, ale s výslovne zadaným „teraz" (unixový čas), aby sa
+/// dalo zistiť, ktoré ceny sú staršie než 24 h. Keď je `teraz` `None`,
+/// zastaranosť sa nevyhodnocuje (`Ocenenie::zastarane` ostane prázdne) —
+/// `core` zámerne nesiaha na systémové hodiny, čas dodáva volajúci.
+pub fn ocen_v_case(
+    mnozstva: &BTreeMap<u32, i64>,
+    cennik: &Cennik,
+    nastavenie: &Nastavenie,
+    teraz: Option<u64>,
+) -> Ocenenie {
     let mut celkove_fe = 0.0;
     let mut bez_ceny = Vec::new();
+    let mut zastarane = Vec::new();
     let mut najstarsia_cena: Option<u64> = None;
 
     for (&polozka, &pocet) in mnozstva {
@@ -147,6 +264,12 @@ pub fn ocen(
                 hodnota_polozky *= 0.875;
             }
             celkove_fe += hodnota_polozky;
+
+            if let Some(t) = teraz {
+                if t.saturating_sub(cena.kedy) > ZASTARANA_PO_S {
+                    zastarane.push((polozka, pocet));
+                }
+            }
 
             // Udržujeme najstaršiu použitú cenu, aby sme vedeli zobraziť vek celého ocenenia.
             match najstarsia_cena {
@@ -169,6 +292,7 @@ pub fn ocen(
         fe: celkove_fe,
         bez_ceny,
         najstarsia_cena,
+        zastarane,
     }
 }
 
@@ -212,6 +336,7 @@ mod testy {
             fe,
             zdroj,
             kedy,
+            ..Default::default()
         }
     }
 
@@ -359,6 +484,80 @@ mod testy {
 
         let vysledok = ocen(&mnozstva, &cennik, &Nastavenie::default());
         assert_eq!(vysledok.najstarsia_cena, Some(1500));
+    }
+
+
+    // ── TLI 20 ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_vaha_veku() {
+        assert_eq!(vaha_veku(0), 1.0);
+        assert_eq!(vaha_veku(CERSTVA_DO_S), 1.0, "presne 24 h je ešte plná váha");
+        // Deň po uplynutí čerstvosti je váha niekde medzi minimom a jednotkou.
+        let v = vaha_veku(CERSTVA_DO_S + 86400);
+        assert!(v < 1.0 && v > VAHA_MINIMUM, "{v}");
+        // Veľmi stará cena neklesne na nulu — stará cena je lepšia než žiadna.
+        assert_eq!(vaha_veku(365 * 86400), VAHA_MINIMUM);
+    }
+
+    #[test]
+    fn test_cerstva_partia_prebije_staru_vlastnu() {
+        // Presne to, kvôli čomu TLI 20 vzniklo: týždeň stará vlastná cena
+        // nesmie navždy blokovať čerstvý medián od partie.
+        let mut cennik = Cennik::novy();
+        cennik.vloz(vytvor_cenu(10, 50.0, Zdroj::VlastnyTrh, 0));
+        let teraz = 10 * 86400;
+        let z_partie = vytvor_cenu(10, 80.0, Zdroj::Partia, teraz - 600);
+        assert!(cennik.vloz_v_case(z_partie, teraz));
+        assert_eq!(cennik.cena(10).unwrap().fe, 80.0);
+        assert_eq!(cennik.cena(10).unwrap().zdroj, Zdroj::Partia);
+    }
+
+    #[test]
+    fn test_cerstva_vlastna_prebije_cerstvu_partiu() {
+        let mut cennik = Cennik::novy();
+        let teraz = 10 * 86400;
+        cennik.vloz_v_case(vytvor_cenu(10, 80.0, Zdroj::Partia, teraz - 600), teraz);
+        assert!(cennik.vloz_v_case(vytvor_cenu(10, 50.0, Zdroj::VlastnyTrh, teraz), teraz));
+        assert_eq!(cennik.cena(10).unwrap().zdroj, Zdroj::VlastnyTrh);
+    }
+
+    #[test]
+    fn test_ocen_oznaci_zastarane_ale_hodnotu_nezrazi() {
+        let mut cennik = Cennik::novy();
+        cennik.vloz(vytvor_cenu(1, 10.0, Zdroj::VlastnyTrh, 0));
+        cennik.vloz(vytvor_cenu(2, 20.0, Zdroj::VlastnyTrh, 0));
+
+        let mut mnozstva = BTreeMap::new();
+        mnozstva.insert(1, 2);
+        mnozstva.insert(2, 1);
+
+        let teraz = 3 * 86400; // obe ceny sú 3 dni staré
+        let v = ocen_v_case(&mnozstva, &cennik, &Nastavenie::default(), Some(teraz));
+        assert_eq!(v.fe, 40.0, "zastaranosť hodnotu NEZNIŽUJE");
+        assert_eq!(v.zastarane.len(), 2);
+
+        // To isté hneď po zápise cien — nič zastarané.
+        let v2 = ocen_v_case(&mnozstva, &cennik, &Nastavenie::default(), Some(100));
+        assert!(v2.zastarane.is_empty());
+    }
+
+    #[test]
+    fn test_cena_vlastna_nesie_median_a_pocet() {
+        let c = Cena::vlastna(400021, 1.5, 2.0, 7, 1000);
+        assert_eq!(c.fe, 1.5);
+        assert_eq!(c.median, Some(2.0));
+        assert_eq!(c.pocet_ponuk, 7);
+        assert_eq!(c.zdrojov, 1);
+        assert_eq!(c.zdroj, Zdroj::VlastnyTrh);
+    }
+
+    #[test]
+    fn test_kod_zdroja_tam_a_spat() {
+        for z in [Zdroj::VlastnyTrh, Zdroj::Partia, Zdroj::Rucne] {
+            assert_eq!(Zdroj::z_kodu(z.kod()), z);
+        }
+        assert_eq!(Zdroj::z_kodu("niečo neznáme"), Zdroj::VlastnyTrh);
     }
 
     #[test]
