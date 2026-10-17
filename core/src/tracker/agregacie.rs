@@ -255,7 +255,7 @@ pub fn prehlad(vysledky: &[VysledokBehu], behy: &[Beh]) -> Prehlad {
 mod testy {
     use super::*;
 
-    fn dummy_beh(id: u64, je_hub: bool) -> Beh {
+    pub(super) fn dummy_beh(id: u64, je_hub: bool) -> Beh {
         Beh {
             id,
             zona: "Z".to_string(),
@@ -462,5 +462,134 @@ mod testy {
         assert_eq!(p.podla_vstupov.len(), 1);
         assert_eq!(p.podla_vstupov[0].kluc, "RovnakeVstupy");
         assert_eq!(p.podla_vstupov[0].suhrn.cisty_zisk, 100.0);
+    }
+}
+// ── „Čo padlo" pre mini-panel (TLI 25, `2026-10-17-1242-mcp.md` bod 4) ──────
+// Mini-panel dovtedy ukazoval len tri čísla (zisk, čas, FE/h). Richard chcel
+// to isté, čo robia cudzie trackery z TLI 10: zoznam dropov aktuálnej mapy
+// s počtom a cenou. Rozloženie a obsah okna sa im podobá zámerne (zadanie),
+// kód je vlastný — žiadny z tých troch nástrojov nemá prevziateľnú licenciu
+// (`docs/fakty/hry/torchlight-infinite/addony-analyza.md` § Licencie).
+
+/// Jeden riadok zoznamu „čo padlo".
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DropRiadok {
+    pub polozka: u32,
+    pub pocet: i64,
+    /// Hodnota celého stohu v FE. `None` = položka nie je v cenníku; vtedy
+    /// panel ukáže počet a „bez ceny", nie nulu. Nula a „neviem" sú dve
+    /// rôzne veci a hráč ich musí rozoznať.
+    pub hodnota: Option<f64>,
+}
+
+/// Najhodnotnejšie dropy jedného behu, najviac `limit` riadkov.
+///
+/// Poradie: najprv ocenené podľa HODNOTY zostupne (to je to, čo hráča
+/// zaujíma — nie počet kusov), potom neocenené podľa počtu. Pri zhode
+/// rozhoduje id položky, aby bol výstup deterministický a testovateľný.
+///
+/// Samotná mena FE (`POLOZKA_FE`) sa do zoznamu NEDÁVA — je už v čísle
+/// „zisk" vedľa a ako riadok „Flame Essence ×1 200" by len zabrala miesto.
+pub fn top_dropy(
+    beh: &Beh,
+    cennik: &Cennik,
+    nastavenie: &Nastavenie,
+    limit: usize,
+) -> Vec<DropRiadok> {
+    let mut ocenene: Vec<DropRiadok> = Vec::new();
+    let mut bez_ceny: Vec<DropRiadok> = Vec::new();
+    for (&polozka, &pocet) in &beh.dropy {
+        if polozka == super::stav::POLOZKA_FE || pocet <= 0 {
+            continue;
+        }
+        match cennik.cena(polozka) {
+            Some(cena) => {
+                let mut hodnota = cena.fe * (pocet as f64);
+                if nastavenie.dan {
+                    hodnota *= 0.875;
+                }
+                ocenene.push(DropRiadok { polozka, pocet, hodnota: Some(hodnota) });
+            }
+            None => bez_ceny.push(DropRiadok { polozka, pocet, hodnota: None }),
+        }
+    }
+    ocenene.sort_by(|a, b| {
+        b.hodnota
+            .partial_cmp(&a.hodnota)
+            .unwrap_or(Ordering::Equal)
+            .then(a.polozka.cmp(&b.polozka))
+    });
+    bez_ceny.sort_by(|a, b| b.pocet.cmp(&a.pocet).then(a.polozka.cmp(&b.polozka)));
+    ocenene.extend(bez_ceny);
+    ocenene.truncate(limit);
+    ocenene
+}
+
+#[cfg(test)]
+mod testy_dropy {
+    use super::*;
+    use crate::tracker::ceny::Cena;
+
+    fn cennik(dvojice: &[(u32, f64)]) -> Cennik {
+        let mut c = Cennik::novy();
+        for &(polozka, fe) in dvojice {
+            c.vloz(Cena::vlastna(polozka, fe, fe, 10, 1000));
+        }
+        c
+    }
+
+    fn beh_s_dropmi(dropy: &[(u32, i64)]) -> Beh {
+        let mut b = super::testy::dummy_beh(1, false);
+        for &(polozka, pocet) in dropy {
+            b.dropy.insert(polozka, pocet);
+        }
+        b
+    }
+
+    #[test]
+    fn radi_podla_hodnoty_nie_podla_poctu() {
+        let beh = beh_s_dropmi(&[(10, 100), (20, 2)]);
+        let c = cennik(&[(10, 1.0), (20, 500.0)]);
+        let v = top_dropy(&beh, &c, &Nastavenie { dan: false }, 5);
+        assert_eq!(v[0].polozka, 20);          // 1000 FE za 2 kusy
+        assert_eq!(v[0].hodnota, Some(1000.0));
+        assert_eq!(v[1].polozka, 10);          // 100 FE za 100 kusov
+    }
+
+    #[test]
+    fn polozky_bez_ceny_idu_na_koniec_a_maju_none_nie_nulu() {
+        let beh = beh_s_dropmi(&[(10, 1), (99, 7), (98, 3)]);
+        let c = cennik(&[(10, 5.0)]);
+        let v = top_dropy(&beh, &c, &Nastavenie { dan: false }, 5);
+        assert_eq!(v.iter().map(|d| d.polozka).collect::<Vec<_>>(), vec![10, 99, 98]);
+        assert_eq!(v[1].hodnota, None);
+        assert_eq!(v[1].pocet, 7);
+    }
+
+    #[test]
+    fn samotne_fe_sa_do_zoznamu_nedava() {
+        let beh = beh_s_dropmi(&[(crate::tracker::stav::POLOZKA_FE, 1200), (10, 1)]);
+        let c = cennik(&[(10, 5.0)]);
+        let v = top_dropy(&beh, &c, &Nastavenie { dan: false }, 5);
+        assert_eq!(v.len(), 1);
+        assert_eq!(v[0].polozka, 10);
+    }
+
+    #[test]
+    fn dan_znizi_hodnotu_rovnako_ako_pri_ocenovani_behu() {
+        let beh = beh_s_dropmi(&[(10, 2)]);
+        let c = cennik(&[(10, 100.0)]);
+        let bez = top_dropy(&beh, &c, &Nastavenie { dan: false }, 5)[0].hodnota.unwrap();
+        let s_danou = top_dropy(&beh, &c, &Nastavenie { dan: true }, 5)[0].hodnota.unwrap();
+        assert_eq!(bez, 200.0);
+        assert!((s_danou - 175.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn limit_oreze_zoznam_az_po_zoradeni() {
+        let beh = beh_s_dropmi(&[(1, 1), (2, 1), (3, 1)]);
+        let c = cennik(&[(1, 1.0), (2, 9.0), (3, 5.0)]);
+        let v = top_dropy(&beh, &c, &Nastavenie { dan: false }, 2);
+        assert_eq!(v.iter().map(|d| d.polozka).collect::<Vec<_>>(), vec![2, 3]);
     }
 }

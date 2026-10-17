@@ -1,6 +1,15 @@
 use crate::rozlozenie::Rozlozenie;
 use serde::{Deserialize, Serialize};
 
+/// Poloha a veľkosť okna na ploche vo fyzických pixeloch.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
+pub struct PolohaOkna {
+    pub x: i32,
+    pub y: i32,
+    pub sirka: u32,
+    pub vyska: u32,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Nastavenia {
@@ -63,6 +72,15 @@ pub struct Nastavenia {
     /// a monitor, kým ho hráč prvýkrát nepresunie v režime „Upraviť
     /// rozloženie“ (Ctrl+F8).
     pub rozlozenie: Rozlozenie,
+    /// Poloha a veľkosť HLAVNÉHO okna appky (záložky), vo fyzických pixeloch
+    /// plochy (TLI 25, `2026-10-17-1242-mcp.md` bod 5). Do TLI 25 sa okno pri
+    /// každom otvorení vycentrovalo a hráč si ho musel zakaždým odtiahnuť
+    /// nabok. `None` = ešte ním nikto nepohol, okno sa vycentruje ako doteraz.
+    ///
+    /// Nie je to súčasť `Rozlozenie`: tam sú panely NAD HROU, ukladané ako
+    /// zlomok okna hry; toto je obyčajné okno na ploche a zlomok okna hry
+    /// preň nedáva zmysel (hra ani nemusí bežať).
+    pub okno_hlavne: Option<PolohaOkna>,
     /// Ceny z obrazovky trhu (TLI 22, `2026-10-16-1705-mcp.md`): keď appka v
     /// logu uvidí otvorenie `AuctionHouseShowItemGoodV2` (SS14 do logu ceny
     /// nepíše, len lifecycle stránky), sama odfotí a pošle na `?modul=ceny`.
@@ -100,6 +118,7 @@ impl Default for Nastavenia {
             ceny_sync: true,
             upload_logov: true,
             rozlozenie: Rozlozenie::default(),
+            okno_hlavne: None,
             ceny_obrazovka_zapnute: true,
             hotkey_trh: String::new(),
         }
@@ -393,5 +412,24 @@ mod testy {
         let json = n.do_jsonu();
         let n2 = Nastavenia::z_jsonu(&json);
         assert_eq!(n.rozlozenie, n2.rozlozenie);
+    }
+
+    /// TLI 25 — hlavné okno si má pamätať, kde ho hráč nechal.
+    #[test]
+    fn poloha_hlavneho_okna_prezije_ulozenie_a_nacitanie() {
+        let mut n = Nastavenia::default();
+        assert_eq!(n.okno_hlavne, None, "kým ním nikto nepohol, okno sa centruje");
+        n.okno_hlavne = Some(PolohaOkna { x: -1200, y: 340, sirka: 1100, vyska: 720 });
+        let n2 = Nastavenia::z_jsonu(&n.do_jsonu());
+        assert_eq!(n2.okno_hlavne, n.okno_hlavne);
+    }
+
+    /// Nastavenia uložené staršou verziou appky pole `okno_hlavne` nemajú —
+    /// načítanie nesmie spadnúť ani vyrobiť nezmyselnú nulovú polohu.
+    #[test]
+    fn stary_subor_nastaveni_bez_pola_okno_hlavne_sa_nacita() {
+        let n = Nastavenia::z_jsonu("{\"url_servera\": \"https://tli.tvojtatko.sk\"}");
+        assert_eq!(n.okno_hlavne, None);
+        assert_eq!(n.url_servera, "https://tli.tvojtatko.sk");
     }
 }

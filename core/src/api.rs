@@ -53,6 +53,33 @@ impl Default for Alternativa {
     }
 }
 
+/// Jedna kartička z obrazovky „Select a Torture Instrument" (TLI 25), už
+/// vyhodnotená serverom: tier, poradie, jedna veta prečo a súradnice, kde
+/// kartička na obrazovke leží.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct KartickaNastroja {
+    pub index: i64,
+    /// `None` = server nástroj v katalógu nepozná. Taká kartička sa kreslí
+    /// sivo, nikdy sa neodporúča a znižuje celkovú istotu.
+    pub id: Option<String>,
+    pub nazov: String,
+    pub anglicky: String,
+    /// "S" | "A" | "B" | "C" | "?" (neznámy).
+    pub tier: String,
+    pub poradie: i64,
+    pub dovod: String,
+    pub skore: Option<f64>,
+    pub odporucany: bool,
+    pub neznamy: bool,
+    /// Skóre sa opiera hlavne o simuláciu, reálnych drilov je zatiaľ málo.
+    pub malo_dat: bool,
+    /// Naša simulácia a komunitné meranie si pri tomto nástroji odporujú.
+    pub sporne: bool,
+    #[serde(rename = "box")]
+    pub box_: Option<Box01>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Analyza {
@@ -64,6 +91,18 @@ pub struct Analyza {
     pub skontroluj: Vec<String>,
     pub polia: Vec<Pole>,
     pub trvanie_ms: Option<u64>,
+    /// TLI 25: tá istá klávesa (F8) chodí na viac obrazoviek mechaniky a
+    /// server povie, ktorú práve prečítal — "doska" (predvolené, pôvodné
+    /// správanie), "vyber_nastroja" alebo "ine" (zatiaľ nepodporovaná).
+    /// Staršie servery pole neposielajú; `Default` preto vracia "doska",
+    /// aby nová appka proti starému serveru fungovala ako doteraz.
+    pub obrazovka: String,
+    pub nastroje: Vec<KartickaNastroja>,
+    /// Id riadku učenia na serveri — appka ho nikam neposiela sama, je to
+    /// len stopa do logu, aby sa dala snímka spätne nájsť.
+    pub vyber_id: Option<i64>,
+    /// Krátky popis obrazovky, keď je `obrazovka == "ine"`.
+    pub popis: String,
 }
 
 impl Default for Analyza {
@@ -77,7 +116,38 @@ impl Default for Analyza {
             skontroluj: vec![],
             polia: vec![],
             trvanie_ms: None,
+            obrazovka: "doska".to_string(),
+            nastroje: vec![],
+            vyber_id: None,
+            popis: "".to_string(),
         }
+    }
+}
+
+/// Kartičky, ktoré sa dajú nakresliť nad hrou (majú nenulový box), zoradené
+/// podľa poradia od najlepšej. Rovnaká konvencia ako `pouzitelne_polia`.
+pub fn pouzitelne_karticky(a: &Analyza) -> Vec<&KartickaNastroja> {
+    let mut v: Vec<&KartickaNastroja> = a
+        .nastroje
+        .iter()
+        .filter(|k| k.box_.map(|b| b.w > 0.0 && b.h > 0.0).unwrap_or(false))
+        .collect();
+    v.sort_by_key(|k| k.poradie);
+    v
+}
+
+/// Text toastu pre obrazovku, ktorú server zatiaľ nevie čítať. Snímka je
+/// uložená na serveri, takže z nej vie agent nový typ obrazovky zaradiť —
+/// hráč nemá čo robiť, len to vedieť.
+pub fn text_toastu_neznama(a: &Analyza) -> String {
+    if a.popis.trim().is_empty() {
+        "Túto obrazovku zatiaľ neviem prečítať. Snímku som uložil — pribudne do zoznamu v #torchlight."
+            .to_string()
+    } else {
+        format!(
+            "Túto obrazovku zatiaľ neviem prečítať ({}). Snímku som uložil — pribudne do zoznamu v #torchlight.",
+            a.popis.trim()
+        )
     }
 }
 
@@ -312,6 +382,70 @@ pub fn je_neiste(a: &Analyza, index: u32) -> bool {
 #[cfg(test)]
 mod testy {
     use super::*;
+
+    /// Staršia odpoveď servera (pred TLI 25) pole `obrazovka` neposiela —
+    /// nová appka ju musí brať ako dosku, inak by po nasadení klienta pred
+    /// serverom prestalo F8 kresliť čokoľvek.
+    #[test]
+    fn odpoved_bez_pola_obrazovka_je_doska() {
+        let a: Analyza = serde_json::from_str(r#"{"ok": true, "polia": []}"#).unwrap();
+        assert_eq!(a.obrazovka, "doska");
+        assert!(a.nastroje.is_empty());
+    }
+
+    #[test]
+    fn parsovanie_vyberu_nastroja() {
+        let json = r#"{
+            "ok": true, "modul": "tartarus-nastroj", "obrazovka": "vyber_nastroja",
+            "vyber_id": 7, "istota": 0.82,
+            "odporucanie": {"nazov": "Rozseknutá železná panna", "dovod": "Lebo."},
+            "nastroje": [
+              {"index": 0, "id": "maiden", "nazov": "Rozseknutá železná panna",
+               "anglicky": "Severed Iron Maiden", "tier": "S", "poradie": 1,
+               "dovod": "Najlepšia z troch.", "skore": 2.08, "odporucany": true,
+               "neznamy": false, "malo_dat": true, "sporne": false,
+               "box": {"x": 0.18, "y": 0.28, "w": 0.19, "h": 0.42}},
+              {"index": 1, "id": null, "nazov": "Čosi", "anglicky": "Čosi",
+               "tier": "?", "poradie": 2, "dovod": "Nepoznám.", "skore": null,
+               "odporucany": false, "neznamy": true, "malo_dat": true,
+               "sporne": false, "box": null}
+            ]
+        }"#;
+        let a: Analyza = serde_json::from_str(json).unwrap();
+        assert_eq!(a.obrazovka, "vyber_nastroja");
+        assert_eq!(a.vyber_id, Some(7));
+        assert_eq!(a.nastroje.len(), 2);
+        assert!(a.nastroje[0].odporucany && a.nastroje[0].tier == "S");
+        assert!(a.nastroje[1].neznamy && a.nastroje[1].id.is_none());
+        // Kartička bez boxu sa nad hrou nekreslí — ostáva len v paneli.
+        let kreslitelne = pouzitelne_karticky(&a);
+        assert_eq!(kreslitelne.len(), 1);
+        assert_eq!(kreslitelne[0].id.as_deref(), Some("maiden"));
+    }
+
+    #[test]
+    fn pouzitelne_karticky_su_zoradene_podla_poradia_nie_podla_indexu() {
+        let mut a = Analyza::default();
+        for (index, poradie) in [(0, 3), (1, 1), (2, 2)] {
+            a.nastroje.push(KartickaNastroja {
+                index,
+                poradie,
+                box_: Some(Box01 { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }),
+                ..Default::default()
+            });
+        }
+        let v = pouzitelne_karticky(&a);
+        assert_eq!(v.iter().map(|k| k.index).collect::<Vec<_>>(), vec![1, 2, 0]);
+    }
+
+    #[test]
+    fn toast_neznamej_obrazovky_znesie_aj_prazdny_popis() {
+        let mut a = Analyza::default();
+        a.obrazovka = "ine".to_string();
+        assert!(text_toastu_neznama(&a).contains("#torchlight"));
+        a.popis = "Warden's Cache gift selection".to_string();
+        assert!(text_toastu_neznama(&a).contains("Warden's Cache"));
+    }
 
     #[test]
     fn parsovanie_analyzy() {

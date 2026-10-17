@@ -21,6 +21,13 @@ const UKAZKA_TRACKER = {
     trvanie_ms: 96000,
     cisty_zisk: 118.4,
     podpis_vstupov: "400021x1+500101x2",
+    // TLI 25 — „čo padlo" v mini-paneli. Bez týchto dát by bol nový blok
+    // na screenshote z CI prázdny a nikto by nevidel, či sa vôbec kreslí.
+    top_dropy: [
+      { polozka: 400021, pocet: 2, hodnota: 86.0 },
+      { polozka: 500101, pocet: 5, hodnota: 24.5 },
+      { polozka: 500102, pocet: 1, hodnota: null },
+    ],
   },
   prehlad: {
     celkom: {

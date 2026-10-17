@@ -21,7 +21,11 @@ use std::time::Instant;
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 use tli_overlay_core::nastavenia::Nastavenia;
-use tli_overlay_core::rozlozenie::{Obdlznik01, PANEL_HLAVNY, PANEL_MINI, PANEL_PRIPOMIENKA};
+use tli_overlay_core::nastavenia::PolohaOkna;
+use tli_overlay_core::rozlozenie::{
+    Obdlznik01, MODULOVE_PANELY, PANEL_CANVAS, PANEL_HLAVNY, PANEL_MINI, PANEL_NASTROJ,
+    PANEL_PRIPOMIENKA, PANEL_TARTARUS,
+};
 use tli_overlay_core::suradnice::OknoFyz;
 use tli_overlay_core::{api, suradnice, zmensenie};
 
@@ -193,6 +197,8 @@ fn predvolena_poloha(panel: &str) -> Obdlznik01 {
         PANEL_PRIPOMIENKA => {
             Obdlznik01 { x: 720.0 / 1920.0, y: 40.0 / 1080.0, w: 480.0 / 1920.0, h: 110.0 / 1080.0 }
         }
+        // Hlavný panel aj všetky jeho modulové varianty (TLI 25) štartujú
+        // z toho istého rohu — líšiť sa začnú až tým, kam ich hráč posunie.
         _ => Obdlznik01 { x: 24.0 / 1920.0, y: 24.0 / 1080.0, w: 460.0 / 1920.0, h: 260.0 / 1080.0 },
     }
 }
@@ -204,6 +210,15 @@ fn poloha_alebo_predvolena(n: &Nastavenia, panel: &str, monitor_sig: &str) -> Ob
     n.rozlozenie.poloha(panel, monitor_sig).unwrap_or_else(|| predvolena_poloha(panel))
 }
 
+/// To isté pre hlavný panel, ale s pádom na spoločný kľúč `panel` (TLI 25) —
+/// modul, ktorý ešte nikdy nebol posunutý samostatne, štartuje tam, kde si
+/// hráč nechal spoločný panel, nie v rohu.
+fn poloha_alebo_predvolena_modulu(n: &Nastavenia, panel: &str, monitor_sig: &str) -> Obdlznik01 {
+    n.rozlozenie
+        .poloha_modulu(panel, monitor_sig)
+        .unwrap_or_else(|| predvolena_poloha(panel))
+}
+
 /// Postaví overlay presne nad okno hry a ukáže ho. Pozícia aj veľkosť idú vo
 /// FYZICKÝCH pixeloch — logické by sa na monitore so 150 % DPI rozišli s hrou.
 ///
@@ -211,7 +226,7 @@ fn poloha_alebo_predvolena(n: &Nastavenia, panel: &str, monitor_sig: &str) -> Ob
 /// obdĺžnika v `ukaz_chybu` (keď sa hra vôbec nenašla) — uložené rozloženie
 /// (TLI 21) je zlomok SKUTOČNÉHO okna hry, aplikovať ho na malý núdzový box by
 /// dalo nezmyselné súradnice.
-fn ukaz_overlay_nad(app: &AppHandle, obd: &OknoFyz, s_rozlozenim: bool) {
+fn ukaz_overlay_nad(app: &AppHandle, obd: &OknoFyz, s_rozlozenim: bool, panel_kluc: &str) {
     if let Some(overlay) = app.get_webview_window(OVERLAY) {
         let _ = overlay.set_position(PhysicalPosition::new(obd.x, obd.y));
         let _ = overlay.set_size(PhysicalSize::new(obd.sirka, obd.vyska));
@@ -220,30 +235,88 @@ fn ukaz_overlay_nad(app: &AppHandle, obd: &OknoFyz, s_rozlozenim: bool) {
         let _ = app.global_shortcut().register(esc());
         *app.state::<Stav>().zobrazene_od.lock().unwrap() = Some(Instant::now());
 
-        let priehladnost = app.state::<Stav>().nastavenia.lock().unwrap().rozlozenie.priehladnost;
-        let poloha = if s_rozlozenim {
+        if s_rozlozenim {
             let mierka = mierka_okna(app, obd);
-            let sig = monitor_signatura_app(app, obd);
-            app.state::<Stav>()
-                .nastavenia
-                .lock()
-                .unwrap()
-                .rozlozenie
-                .poloha(PANEL_HLAVNY, &sig)
-                .map(|o| suradnice::box01_na_css(o.x, o.y, o.w, o.h, obd, mierka))
-                .map(|css| json!({"x": css.x, "y": css.y, "w": css.w, "h": css.h}))
+            posli_polohu_panela(app, obd, mierka, panel_kluc);
         } else {
-            None
-        };
-        let _ = app.emit_to(OVERLAY, "panel-poloha", json!({ "poloha": poloha, "priehladnost": priehladnost }));
+            let priehladnost =
+                app.state::<Stav>().nastavenia.lock().unwrap().rozlozenie.priehladnost;
+            let _ = app.emit_to(
+                OVERLAY,
+                "panel-poloha",
+                json!({ "poloha": null, "priehladnost": priehladnost }),
+            );
+        }
     }
+}
+
+/// Pošle oknu `overlay` polohu hlavného panela pre KONKRÉTNY modul (TLI 25).
+/// Volá sa dvakrát za beh, keď sa modul vyjasní až z odpovede servera
+/// (F8: doska vs. výber nástroja) — druhé poslanie prvé prepíše.
+fn posli_polohu_panela(app: &AppHandle, obd: &OknoFyz, mierka: f64, panel_kluc: &str) {
+    let sig = monitor_signatura_app(app, obd);
+    let (poloha, priehladnost) = {
+        let stav = app.state::<Stav>();
+        let n = stav.nastavenia.lock().unwrap();
+        (
+            n.rozlozenie
+                .poloha_modulu(panel_kluc, &sig)
+                .map(|o| suradnice::box01_na_css(o.x, o.y, o.w, o.h, obd, mierka))
+                .map(|css| json!({"x": css.x, "y": css.y, "w": css.w, "h": css.h})),
+            n.rozlozenie.priehladnost,
+        )
+    };
+    let _ = app.emit_to(
+        OVERLAY,
+        "panel-poloha",
+        json!({ "poloha": poloha, "priehladnost": priehladnost }),
+    );
+}
+
+/// Uloží polohu a veľkosť hlavného okna do nastavení (TLI 25, bod 5). Zlyhanie
+/// zápisu sa len zaloguje — je to pohodlie, nie dáta, a nesmie zabrániť
+/// zatvoreniu okna.
+fn zapamataj_polohu_hlavneho<R: tauri::Runtime>(okno: &tauri::Window<R>) {
+    let (Ok(pozicia), Ok(velkost)) = (okno.outer_position(), okno.outer_size()) else {
+        return;
+    };
+    if velkost.width == 0 || velkost.height == 0 {
+        return;  // minimalizované okno nemá zmysel ukladať
+    }
+    let app = okno.app_handle();
+    let stav = app.state::<Stav>();
+    let kopia = {
+        let mut n = stav.nastavenia.lock().unwrap();
+        n.okno_hlavne = Some(PolohaOkna {
+            x: pozicia.x,
+            y: pozicia.y,
+            sirka: velkost.width,
+            vyska: velkost.height,
+        });
+        n.clone()
+    };
+    if let Err(e) = stav::uloz(&kopia) {
+        loguj_chybu_okna("uloženie polohy hlavného okna", &e);
+    }
+}
+
+/// Vráti hlavné okno tam, kde ho hráč nechal. Keď by padlo mimo viditeľných
+/// monitorov (odpojený monitor), `ukaz_a_zaostri` ho sám vycentruje — preto sa
+/// tu nič nekontroluje druhý raz.
+fn obnov_polohu_hlavneho(app: &AppHandle) {
+    let poloha = app.state::<Stav>().nastavenia.lock().unwrap().okno_hlavne;
+    let (Some(p), Some(okno)) = (poloha, app.get_webview_window(HLAVNE)) else {
+        return;
+    };
+    let _ = okno.set_position(PhysicalPosition::new(p.x, p.y));
+    let _ = okno.set_size(PhysicalSize::new(p.sirka, p.vyska));
 }
 
 /// Chybu musí hráč vidieť aj vtedy, keď sa okno hry vôbec nenašlo — vtedy nie je
 /// kam overlay postaviť, tak sa dá navrch hlavného monitora.
 fn ukaz_chybu(app: &AppHandle, obd: Option<&OknoFyz>, sprava: &str) {
     match obd {
-        Some(o) => ukaz_overlay_nad(app, o, true),
+        Some(o) => ukaz_overlay_nad(app, o, true, PANEL_TARTARUS),
         None => {
             if let Some(overlay) = app.get_webview_window(OVERLAY) {
                 let (x, y) = overlay
@@ -261,6 +334,7 @@ fn ukaz_chybu(app: &AppHandle, obd: Option<&OknoFyz>, sprava: &str) {
                     app,
                     &OknoFyz { x, y, sirka: CHYBA_SIRKA, vyska: CHYBA_VYSKA },
                     false,
+                    PANEL_TARTARUS,
                 );
             }
         }
@@ -418,7 +492,12 @@ V hre prepni Nastavenia → Zobrazenie → Režim okna na „Okno bez okrajov“
     // bežnom prezeraní trhu blikal nad hrou pri každom kliknutí. Výsledok
     // ukáže len toast (`ukaz_pripomienku_toast`), rovnako ako chyba.
     if modul != Modul::Ceny {
-        ukaz_overlay_nad(&app, &obdlznik, true);
+        ukaz_overlay_nad(
+            &app,
+            &obdlznik,
+            true,
+            if modul == Modul::Canvas { PANEL_CANVAS } else { PANEL_TARTARUS },
+        );
         let _ = app.emit("stav", json!({ "faza": "analyzujem" }));
     }
 
@@ -445,6 +524,69 @@ V hre prepni Nastavenia → Zobrazenie → Režim okna na „Okno bez okrajov“
                     Err(e) => denik::zapis("http", &format!("analyza CHYBA: {e}")),
                 }
                 match vysledok {
+                    // TLI 25: tá istá klávesa chodí na viac obrazoviek mechaniky
+                    // a server povie, ktorú prečítal. Doska sa kreslí ako doteraz,
+                    // výber nástroja má vlastné vykreslenie, zvyšok len toast —
+                    // appka nemá čo kresliť nad obrazovkou, ktorej nerozumie.
+                    Ok(v) if v.analyza.obrazovka == "vyber_nastroja" => {
+                        denik::zapis(
+                            "nastroj",
+                            &format!(
+                                "výber nástroja: {} kartičiek, odporúčam {}",
+                                v.analyza.nastroje.len(),
+                                v.analyza
+                                    .odporucanie
+                                    .as_ref()
+                                    .map(|o| o.nazov.clone())
+                                    .unwrap_or_else(|| "nič (nepoznám ani jednu)".to_string())
+                            ),
+                        );
+                        let karticky: Vec<_> = api::pouzitelne_karticky(&v.analyza)
+                            .into_iter()
+                            .map(|k| {
+                                let b = k.box_.expect("filtrované pouzitelne_karticky");
+                                let css = suradnice::box01_na_css(b.x, b.y, b.w, b.h, &obdlznik, mierka);
+                                json!({
+                                    "index": k.index,
+                                    "poradie": k.poradie,
+                                    "nazov": k.nazov.clone(),
+                                    "anglicky": k.anglicky.clone(),
+                                    "tier": k.tier.clone(),
+                                    "dovod": k.dovod.clone(),
+                                    "skore": k.skore,
+                                    "odporucany": k.odporucany,
+                                    "neznamy": k.neznamy,
+                                    "malo_dat": k.malo_dat,
+                                    "sporne": k.sporne,
+                                    "x": css.x, "y": css.y, "w": css.w, "h": css.h,
+                                })
+                            })
+                            .collect();
+                        // Výber nástroja má vlastnú uloženú polohu panela
+                        // (TLI 25) — že ide oň, sa vie až TERAZ, po odpovedi
+                        // servera, takže sa poloha pošle druhý raz.
+                        posli_polohu_panela(&app, &obdlznik, mierka, PANEL_NASTROJ);
+                        let (sirka_log, vyska_log) = suradnice::logicka_velkost(&obdlznik, mierka);
+                        let _ = app.emit(
+                            "stav",
+                            json!({
+                                "faza": "hotovo_nastroj",
+                                "analyza": v.analyza,
+                                "karticky": karticky,
+                                "mierka": mierka,
+                                "sirka": sirka_log,
+                                "vyska": vyska_log,
+                                "trvanie_ms": v.trvanie_ms,
+                            }),
+                        );
+                    }
+                    Ok(v) if v.analyza.obrazovka == "ine" => {
+                        denik::zapis("nastroj", &format!("neznáma obrazovka: {}", v.analyza.popis));
+                        // Žiadny veľký panel: hráč nič nerobí, len nech vie, že
+                        // sa snímka uložila a appka ho neignorovala.
+                        ukaz_pripomienku_toast(&app, &api::text_toastu_neznama(&v.analyza), "info", 8);
+                        let _ = app.emit("stav", json!({ "faza": "skry" }));
+                    }
                     Ok(v) => {
                         let obdlzniky: Vec<_> = api::pouzitelne_polia(&v.analyza)
                             .into_iter()
@@ -1161,7 +1303,8 @@ fn ukaz_pripomienku(app: AppHandle, text: String, trieda: String) -> Result<(), 
 /// Postaví/obnoví náhľad všetkých troch panelov v aktuálnej (uloženej alebo
 /// predvolenej) polohe — spoločné pre vstup do režimu úpravy aj pre tlačidlo
 /// „Obnoviť predvolené" (to iba vymaže uložené hodnoty a zavolá toto znova).
-fn posli_seed_rozlozenia(app: &AppHandle, okno_hry: &OknoFyz, mierka: f64, sig: &str) {
+fn posli_seed_rozlozenia(app: &AppHandle, okno_hry: &OknoFyz, mierka: f64, sig: &str,
+                         panel_kluc: &str) {
     let n = app.state::<Stav>().nastavenia.lock().unwrap().clone();
     let priehladnost = n.rozlozenie.priehladnost;
 
@@ -1171,7 +1314,7 @@ fn posli_seed_rozlozenia(app: &AppHandle, okno_hry: &OknoFyz, mierka: f64, sig: 
         let _ = overlay.set_ignore_cursor_events(false);
         let _ = overlay.show();
 
-        let obd = poloha_alebo_predvolena(&n, PANEL_HLAVNY, sig);
+        let obd = poloha_alebo_predvolena_modulu(&n, panel_kluc, sig);
         let css = suradnice::box01_na_css(obd.x, obd.y, obd.w, obd.h, okno_hry, mierka);
         let (sirka_log, vyska_log) = suradnice::logicka_velkost(okno_hry, mierka);
         let _ = app.emit_to(
@@ -1182,6 +1325,12 @@ fn posli_seed_rozlozenia(app: &AppHandle, okno_hry: &OknoFyz, mierka: f64, sig: 
                 "panel": {"x": css.x, "y": css.y, "w": css.w, "h": css.h},
                 "priehladnost": priehladnost,
                 "okno": {"sirka": sirka_log, "vyska": vyska_log},
+                // TLI 25 — prepínač modulov v náhľade. Zoznam ide z jadra,
+                // nie z HTML: keď pribudne ďalší modul, prepínač sa doplní sám.
+                "moduly": MODULOVE_PANELY.iter()
+                    .map(|(kluc, popis)| json!({"kluc": kluc, "popis": popis}))
+                    .collect::<Vec<_>>(),
+                "aktivny_modul": panel_kluc,
             }),
         );
     }
@@ -1218,12 +1367,17 @@ a nechaj ho otvorené.",
         let stav = app.state::<Stav>();
         *stav.rezim_upravy.lock().unwrap() = true;
         *stav.rezim_upravy_kontext.lock().unwrap() =
-            Some(RezimUpravyKontext { okno_hry, mierka, monitor_sig: sig.clone() });
+            Some(RezimUpravyKontext {
+                okno_hry,
+                mierka,
+                monitor_sig: sig.clone(),
+                panel_kluc: PANEL_TARTARUS.to_string(),
+            });
     }
     let _ = app.global_shortcut().register(esc());
     let _ = app.global_shortcut().register(enter());
 
-    posli_seed_rozlozenia(app, &okno_hry, mierka, &sig);
+    posli_seed_rozlozenia(app, &okno_hry, mierka, &sig, PANEL_TARTARUS);
 }
 
 /// Požiada JS v okne `overlay`, nech nahlási živú polohu panela — Rust vtedy
@@ -1321,8 +1475,57 @@ fn rezim_upravy_obnov_predvolene(app: AppHandle) -> Result<(), String> {
         drop(n);
         stav::uloz(&kopia)?;
     }
-    posli_seed_rozlozenia(&app, &kontext.okno_hry, kontext.mierka, &kontext.monitor_sig);
+    posli_seed_rozlozenia(&app, &kontext.okno_hry, kontext.mierka, &kontext.monitor_sig,
+                          &kontext.panel_kluc);
     Ok(())
+}
+
+/// Prepínač modulov v náhľade režimu úpravy (TLI 25). Uloží polohu práve
+/// upravovaného modulu a vráti polohu toho, na ktorý sa prepína — hráč tak
+/// vie posunúť panel F8 dosky inam než panel F9 Canvasu, bez toho, že by
+/// musel režim opustiť a znova doň vojsť.
+#[tauri::command]
+fn rezim_upravy_prepni_panel(
+    app: AppHandle,
+    kluc: String,
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+) -> Result<serde_json::Value, String> {
+    if !MODULOVE_PANELY.iter().any(|(k, _)| *k == kluc) {
+        return Err(format!("Panel „{kluc}“ nepoznám."));
+    }
+    let mut kontext = {
+        let stav = app.state::<Stav>();
+        let k = stav.rezim_upravy_kontext.lock().unwrap().clone();
+        k.ok_or_else(|| "Režim úpravy rozloženia nie je zapnutý.".to_string())?
+    };
+
+    let novy_css = {
+        let stav = app.state::<Stav>();
+        let mut n = stav.nastavenia.lock().unwrap();
+        let css = suradnice::ObdlznikCss { x, y, w, h };
+        let p = suradnice::css_na_box01(&css, &kontext.okno_hry, kontext.mierka);
+        n.rozlozenie.uloz_polohu(
+            &kontext.panel_kluc,
+            &kontext.monitor_sig,
+            Obdlznik01 { x: p.x, y: p.y, w: p.w, h: p.h },
+        );
+        n.normalizuj();
+        let kopia = n.clone();
+        drop(n);
+        // Zapisuje sa hneď pri prepnutí, nie až na konci: keby appka medzitým
+        // spadla alebo hráč zavrel hru, prácu na predošlom module by stratil.
+        stav::uloz(&kopia)?;
+        let obd = poloha_alebo_predvolena_modulu(&kopia, &kluc, &kontext.monitor_sig);
+        suradnice::box01_na_css(obd.x, obd.y, obd.w, obd.h, &kontext.okno_hry, kontext.mierka)
+    };
+
+    kontext.panel_kluc = kluc.clone();
+    *app.state::<Stav>().rezim_upravy_kontext.lock().unwrap() = Some(kontext);
+    Ok(json!({"kluc": kluc, "panel": {"x": novy_css.x, "y": novy_css.y,
+                                      "w": novy_css.w, "h": novy_css.h}}))
 }
 
 /// JS v okne `overlay` odpovedá na `rezim-upravy-nahlas` touto hodnotou — CSS
@@ -1344,8 +1547,11 @@ fn rezim_upravy_ulozit_panel(app: AppHandle, x: f64, y: f64, w: f64, h: f64) -> 
 
         let css = suradnice::ObdlznikCss { x, y, w, h };
         let p = suradnice::css_na_box01(&css, &kontext.okno_hry, kontext.mierka);
+        // TLI 25: ukladá sa pod kľúč PRÁVE upravovaného modulu, nie pod
+        // spoločný `panel` — ten ostáva ako záloha pre moduly, ktoré hráč
+        // nikdy samostatne neposunul.
         n.rozlozenie.uloz_polohu(
-            PANEL_HLAVNY,
+            &kontext.panel_kluc,
             &kontext.monitor_sig,
             Obdlznik01 { x: p.x, y: p.y, w: p.w, h: p.h },
         );
@@ -1653,6 +1859,7 @@ fn main() {
             ukaz_pripomienku,
             rezim_upravy_zapni,
             rezim_upravy_hotovo,
+            rezim_upravy_prepni_panel,
             rezim_upravy_je_aktivny,
             rezim_upravy_obnov_predvolene,
             rezim_upravy_ulozit_panel,
@@ -1669,6 +1876,13 @@ fn main() {
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
+                // TLI 25: polohu hlavného okna si appka zapamätá v momente
+                // zatvorenia — nie pri každom posune, lebo `Moved` chodí počas
+                // ťahania desiatky ráz za sekundu a zapisovať pri ňom na disk
+                // by bol zbytočný tlak.
+                if window.label() == HLAVNE {
+                    zapamataj_polohu_hlavneho(window);
+                }
                 if let Err(e) = window.hide() {
                     loguj_chybu_okna(&format!("zatvorenie okna '{}' (hide)", window.label()), &e.to_string());
                 }
@@ -1743,7 +1957,10 @@ fn main() {
                 .menu(&menu)
                 .on_menu_event(|app, udalost| match udalost.id.as_ref() {
                     "koniec" => app.exit(0),
-                    "hlavne" => ukaz_a_zaostri(app, HLAVNE),
+                    "hlavne" => {
+                        obnov_polohu_hlavneho(app);
+                        ukaz_a_zaostri(app, HLAVNE)
+                    }
                     "nastavenia" => ukaz_a_zaostri(app, NASTAVENIA),
                     _ => {}
                 });

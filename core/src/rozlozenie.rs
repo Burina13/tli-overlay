@@ -24,6 +24,26 @@ pub const PANEL_HLAVNY: &str = "panel";
 pub const PANEL_MINI: &str = "mini";
 pub const PANEL_PRIPOMIENKA: &str = "pripomienka";
 
+/// Hlavný panel mal do TLI 25 JEDEN kľúč pre všetky moduly, takže sa F8 doska,
+/// F9 Canvas aj Artistry museli deliť o to isté miesto nad hrou. Richard chcel
+/// (úloha `2026-10-17-1242-mcp.md` bod 5) posúvať každý zvlášť — preto má
+/// odteraz každý modul vlastný kľúč a `panel` ostáva ako SPOLOČNÁ ZÁLOHA:
+/// kto si rozloženie uložil pred TLI 25, nájde ho po aktualizácii tam, kde ho
+/// nechal, kým si niektorý modul neposunie samostatne.
+pub const PANEL_TARTARUS: &str = "panel:tartarus";
+pub const PANEL_NASTROJ: &str = "panel:nastroj";
+pub const PANEL_CANVAS: &str = "panel:canvas";
+pub const PANEL_ARTISTRY: &str = "panel:artistry";
+
+/// Moduly v poradí, v akom ich ponúka prepínač v režime úpravy
+/// (`kľúč`, `čo to je pre hráča`).
+pub const MODULOVE_PANELY: [(&str, &str); 4] = [
+    (PANEL_TARTARUS, "F8 — doska"),
+    (PANEL_NASTROJ, "F8 — výber nástroja"),
+    (PANEL_CANVAS, "F9 — Frozen Canvas"),
+    (PANEL_ARTISTRY, "Artistry"),
+];
+
 /// Najmenšia prípustná šírka/výška — bez nej by sa dal panel pretiahnutím
 /// zmenšiť na nulu a zmiznúť bez spôsobu, ako ho znova nájsť (okrem
 /// „Obnoviť predvolené“).
@@ -77,6 +97,15 @@ impl Rozlozenie {
         self.polohy.get(&kluc(panel, monitor_sig)).copied()
     }
 
+    /// Poloha panela modulu s pádom na spoločný `panel` (TLI 25). Používa sa
+    /// všade, kde sa panel SKUTOČNE kreslí — `poloha()` ostáva presná (bez
+    /// pádu), lebo režim úpravy musí vedieť rozoznať „nič uložené" od
+    /// „zdedené zo spoločného".
+    pub fn poloha_modulu(&self, panel: &str, monitor_sig: &str) -> Option<Obdlznik01> {
+        self.poloha(panel, monitor_sig)
+            .or_else(|| self.poloha(PANEL_HLAVNY, monitor_sig))
+    }
+
     pub fn uloz_polohu(&mut self, panel: &str, monitor_sig: &str, obd: Obdlznik01) {
         self.polohy.insert(kluc(panel, monitor_sig), obd.normalizuj());
     }
@@ -92,6 +121,9 @@ impl Rozlozenie {
     /// práve v režime úpravy vidieť, nie len jeden panel.
     pub fn obnov_predvolene_vsetky(&mut self, monitor_sig: &str) {
         for panel in [PANEL_HLAVNY, PANEL_MINI, PANEL_PRIPOMIENKA] {
+            self.obnov_predvolene(panel, monitor_sig);
+        }
+        for (panel, _) in MODULOVE_PANELY {
             self.obnov_predvolene(panel, monitor_sig);
         }
     }
@@ -280,5 +312,52 @@ mod testy {
         let css_a = box01_na_css(obd.x, obd.y, obd.w, obd.h, &okno, m_a.mierka);
         let css_b = box01_na_css(obd.x, obd.y, obd.w, obd.h, &okno, m_b.mierka);
         assert_ne!(css_a.w, css_b.w);
+    }
+}
+
+#[cfg(test)]
+mod testy_moduly {
+    use super::*;
+    use crate::suradnice::{monitor_signatura, Monitor};
+
+    fn sig() -> String {
+        monitor_signatura(&Monitor { x: 0, y: 0, sirka: 1920, vyska: 1080, mierka: 1.0 })
+    }
+
+    /// Kto si rozloženie uložil pred TLI 25 (kľúč `panel`), musí ho po
+    /// aktualizácii nájsť tam, kde ho nechal — vo VŠETKÝCH moduloch.
+    #[test]
+    fn modul_bez_vlastnej_polohy_zdedi_spolocnu() {
+        let mut r = Rozlozenie::default();
+        let obd = Obdlznik01 { x: 0.5, y: 0.1, w: 0.2, h: 0.2 };
+        r.uloz_polohu(PANEL_HLAVNY, &sig(), obd);
+        for (panel, _) in MODULOVE_PANELY {
+            assert_eq!(r.poloha_modulu(panel, &sig()), Some(obd));
+            // `poloha()` naopak musí priznať, že vlastnú uloženú nemá.
+            assert_eq!(r.poloha(panel, &sig()), None);
+        }
+    }
+
+    #[test]
+    fn vlastna_poloha_modulu_prebije_spolocnu_a_ostatne_nechaju_tak() {
+        let mut r = Rozlozenie::default();
+        let spolocna = Obdlznik01 { x: 0.5, y: 0.1, w: 0.2, h: 0.2 };
+        let vlastna = Obdlznik01 { x: 0.05, y: 0.6, w: 0.3, h: 0.25 };
+        r.uloz_polohu(PANEL_HLAVNY, &sig(), spolocna);
+        r.uloz_polohu(PANEL_CANVAS, &sig(), vlastna);
+        assert_eq!(r.poloha_modulu(PANEL_CANVAS, &sig()), Some(vlastna));
+        assert_eq!(r.poloha_modulu(PANEL_TARTARUS, &sig()), Some(spolocna));
+    }
+
+    #[test]
+    fn obnova_predvolenych_zmaze_aj_modulove_kluce() {
+        let mut r = Rozlozenie::default();
+        let obd = Obdlznik01 { x: 0.5, y: 0.1, w: 0.2, h: 0.2 };
+        r.uloz_polohu(PANEL_HLAVNY, &sig(), obd);
+        for (panel, _) in MODULOVE_PANELY {
+            r.uloz_polohu(panel, &sig(), obd);
+        }
+        r.obnov_predvolene_vsetky(&sig());
+        assert!(r.polohy.is_empty());
     }
 }

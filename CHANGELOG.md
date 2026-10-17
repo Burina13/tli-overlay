@@ -2,6 +2,48 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.18.0 — 17.10.2026 (TLI 25 — výber „Torture Instrument" na F8)
+
+Úloha `2026-10-17-1242-mcp.md`. Sezóna SS14 začína obrazovkou **Select a Torture
+Instrument**: tri kartičky, z ktorých si hráč vyberie jednu a späť sa to vziať nedá.
+
+- **F8 na tejto obrazovke konečne niečo robí.** Nad každou kartičkou je rámik
+  s tierom (S/A/B/C), poradím 1–3 a jednou vetou prečo po slovensky;
+  odporúčaná je zlatá a hrubá. Netreba na to novú klávesu ani prepínač —
+  server z jedného volania modelu sám pozná, či pred sebou máš dosku alebo
+  výber nástroja (pole `obrazovka` v odpovedi). Nástroj, ktorý server nepozná,
+  sa **nikdy neodporučí**: ide na koniec poradia, kreslí sa sivo a zníži
+  celkovú istotu.
+- **Tier list má pod sebou dve nezávislé merania**, nie dojem: vlastnú
+  simuláciu 8 000 celých 20-dňových drilov na každý z 31 nástrojov
+  a zverejnené výsledky fanúšikovského simulátora (22 mil. behov). Kde si
+  odporujú, je pri nástroji napísané „sporné" — nezhoda sa nespriemerovala
+  do ticha. Celý zoznam s vysvetlením je na `tli.tvojtatko.sk/nastroje`.
+- **Odporúčanie berie do úvahy, čo už máš.** Niektoré dvojice sú oveľa silnejšie
+  než súčet ich častí (`Squirming Iron Box` je sama najhoršia karta v hre, ale
+  k `Skewered Rat Heads` patrí k najlepším dvojiciam sezóny) — appka to vie
+  z nameranej synergie a napíše to do dôvodu.
+- **Appka sa učí z toho, ako to dopadlo.** Každá F8 snímka výberu sa uloží,
+  a keď na ďalšej snímke dosky pribudne v lište nový nástroj, server si sám
+  zapíše, ktorý si vzal a koľko Chromatic väzňov ten dril nakoniec dal.
+  Nič nemusíš klikať. Reálne výsledky partie postupne prebíjajú simuláciu.
+- **Obrazovka, ktorej appka nerozumie, sa už nezahodí** — uloží sa a objaví sa
+  v nočnom zozname v `#torchlight`, aby sa dala podporiť.
+- **Mini-panel ukazuje „čo padlo"** — najhodnotnejšie dropy aktuálnej mapy
+  s ikonou, počtom a cenou; po návrate do hubu ostane zoznam z poslednej mapy.
+  Položka bez známej ceny sa píše „bez ceny", nie „0 FE". Ikony chodia z
+  `tli.tvojtatko.sk`, nie z cudzieho CDN — z tvojho počítača nikam inam nič
+  nejde.
+- **Ctrl+F8 posúva každý modul zvlášť.** Doteraz mali F8 doska, F8 výber
+  nástroja, F9 Canvas aj Artistry jednu spoločnú polohu panela; teraz je
+  v náhľade prepínač a každý si drží svoju. Kto mal rozloženie uložené pred
+  touto verziou, nájde ho po aktualizácii tam, kde ho nechal.
+- **Hlavné okno appky si pamätá, kde a aké veľké bolo.** Dovtedy sa pri každom
+  otvorení vycentrovalo.
+- *Zvýraznenia nad hrou (rámiky ciel, rámiky kartičiek) sa posúvať NEDAJÚ
+  a nikdy nebudú* — sedia presne na tom, na čo ukazujú; keby sa dali posunúť,
+  ukazovali by vedľa.
+
 ## 0.17.2 — 17.10.2026 (TLI 24 — F8 „nič nespraví" u Richarda)
 
 Vyšetrenie `2026-10-17-1238-mcp.md`: na serveri (CT 114) neprišiel za 17.10.

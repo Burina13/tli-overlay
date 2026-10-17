@@ -42,6 +42,10 @@ pub struct RezimUpravyKontext {
     pub okno_hry: tli_overlay_core::suradnice::OknoFyz,
     pub mierka: f64,
     pub monitor_sig: String,
+    /// Kľúč panela, ktorý sa PRÁVE upravuje (TLI 25) — hlavný panel má od
+    /// TLI 25 vlastnú polohu pre každý modul a prepínač v náhľade ho mení
+    /// za behu. Pri vstupe do režimu je to `PANEL_TARTARUS`.
+    pub panel_kluc: String,
 }
 
 /// Sluzi na bezpecne ziskanie zlozky na ulozenie konfiguracie pre hracie konto z operacneho systemu.

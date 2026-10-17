@@ -52,6 +52,81 @@ function analyzujCestuMapy(cesta) {
     return subor;
 }
 
+// ── „Čo padlo" (TLI 25) ───────────────────────────────────────────────────
+// Mená položiek z toho istého balíka, aký používa záložka Tracker
+// (`polozky-seed-en.json`, pôvod v NOTICE.md). Keď sa nenačíta, ukáže sa
+// `#400021` — panel na mene položky nesmie stáť.
+let MENA_POLOZIEK = window.__MENA_POLOZIEK__ || {};
+if (typeof fetch === "function") {
+    fetch("polozky-seed-en.json")
+        .then((o) => (o.ok ? o.json() : null))
+        .then((d) => { if (d && d.polozky) MENA_POLOZIEK = d.polozky; })
+        .catch(() => {});
+}
+
+function nazovPolozky(id) {
+    return MENA_POLOZIEK[String(id)] || "#" + id;
+}
+
+// Ikony sa ťahajú z NÁŠHO servera (`/ikony/polozka/<id>`), nie priamo z
+// cudzieho CDN: appka hráča tak nikam inam nechodí a obrázok sa sťahuje raz
+// za celú partiu. Keď ikona nie je, `onerror` ju schová a ostane len text.
+let ZAKLAD_IKON = null;
+
+function vykresliDropy(zivo, bezi) {
+    const obal = document.getElementById("mini-dropy");
+    const zoznam = document.getElementById("mini-dropy-zoznam");
+    const popis = document.getElementById("mini-dropy-popis");
+    if (!obal || !zoznam) return;
+
+    const dropy = (zivo && zivo.top_dropy) || [];
+    if (dropy.length === 0) {
+        obal.classList.add("skryte");
+        zoznam.textContent = "";
+        return;
+    }
+    popis.textContent = bezi ? "čo padlo" : "čo padlo (posledná mapa)";
+    zoznam.textContent = "";
+    dropy.forEach((d) => {
+        const li = document.createElement("li");
+
+        if (ZAKLAD_IKON) {
+            const img = document.createElement("img");
+            img.className = "ikona";
+            img.loading = "lazy";
+            img.alt = "";
+            img.src = ZAKLAD_IKON + "/ikony/polozka/" + d.polozka;
+            img.addEventListener("error", () => img.remove());
+            li.appendChild(img);
+        }
+
+        const meno = document.createElement("span");
+        meno.className = "meno";
+        meno.textContent = nazovPolozky(d.polozka);
+        li.appendChild(meno);
+
+        const pocet = document.createElement("span");
+        pocet.className = "pocet";
+        pocet.textContent = "×" + d.pocet;
+        li.appendChild(pocet);
+
+        const hodnota = document.createElement("span");
+        // `null` = položku nemáme v cenníku. To NIE JE nula a panel to musí
+        // rozlíšiť, inak by hráč videl „0 FE" pri veci, ktorá môže byť drahá.
+        if (typeof d.hodnota === "number") {
+            hodnota.className = "hodnota";
+            hodnota.textContent = fe(d.hodnota);
+        } else {
+            hodnota.className = "hodnota bez-ceny";
+            hodnota.textContent = "bez ceny";
+        }
+        li.appendChild(hodnota);
+
+        zoznam.appendChild(li);
+    });
+    obal.classList.remove("skryte");
+}
+
 // Stiahne udaje z backandu a prekresli panel.
 async function obnov() {
     try {
@@ -63,7 +138,9 @@ async function obnov() {
         const casEl = document.getElementById("mini-cas");
         const zahEl = document.getElementById("mini-zah");
 
-        // Ked nebezi mapa
+        // Ked nebezi mapa — čísla sú prázdne, ale „čo padlo" z POSLEDNEJ
+        // mapy ostáva (TLI 25): hráč sa práve vrátil do hubu a chce vidieť,
+        // čo si z mapy odniesol.
         if (!p || !p.zivo) {
             panel.classList.add("necinny");
             mapaEl.textContent = "Žiadna mapa nebeží";
@@ -71,6 +148,7 @@ async function obnov() {
             ziskEl.className = "cislo"; // Zrusime farebne triedy
             casEl.textContent = "—";
             zahEl.textContent = "—";
+            vykresliDropy(p && p.posledna_mapa, false);
             return;
         }
 
@@ -102,6 +180,8 @@ async function obnov() {
             zahEl.textContent = "—";
         }
 
+        vykresliDropy(zivo, true);
+
     } catch (chyba) {
         // Zachytavame a logujeme chyby bez padu skriptu, aby sa dalsi interval vykonal
         console.error("Chyba pri stahovani dat do mini-panela:", chyba);
@@ -120,7 +200,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // TLI 21 — posúvanie/zmena veľkosti tohto okna v režime „Upraviť rozloženie".
     invoke("nacitaj_nastavenia")
-        .then((n) => nastavPriehladnost(n && n.rozlozenie && n.rozlozenie.priehladnost))
+        .then((n) => {
+            nastavPriehladnost(n && n.rozlozenie && n.rozlozenie.priehladnost);
+            // Odkiaľ brať ikony položiek (TLI 25) — z nášho servera, nie
+            // z cudzieho CDN. Keď sa adresa nenačíta, zoznam dropov sa
+            // vykreslí bez obrázkov; text je to podstatné.
+            if (n && n.url_servera) {
+                ZAKLAD_IKON = String(n.url_servera).replace(/\/+$/, "");
+            }
+        })
         .catch(() => {});
 
     if (window.__TAURI__.event) {

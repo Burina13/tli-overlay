@@ -55,6 +55,13 @@ listen("stav", (event) => {
     else if (payload.faza === "hotovo") {
         vykresliHotovo(payload);
     }
+    else if (payload.faza === "hotovo_nastroj") {
+        vykresliHotovoNastroj(payload);
+    }
+    else if (payload.faza === "skry") {
+        // Všetko už schoval `skryVsetko()` vyššie — appka len povedala, že
+        // nad touto obrazovkou nemá čo kresliť (TLI 25, neznámy typ).
+    }
     else if (payload.faza === "hotovo_canvas") {
         vykresliHotovoCanvas(payload);
     }
@@ -133,9 +140,49 @@ listen("rezim-upravy", (event) => {
         "zmeníš veľkosť. Enter alebo Esc uloží a vráti hru.";
     if (pIkony) pIkony.classList.add("skryte");
     pSkontroluj.classList.add("skryte");
-    pAlternativy.classList.add("skryte");
+    // TLI 25: prepínač, KTORÉMU modulu sa poloha práve nastavuje. Do TLI 25
+    // mali F8 doska, F9 Canvas aj Artistry jednu spoločnú polohu, takže sa
+    // nedali rozmiestniť po obrazovke zvlášť.
+    vykresliPrepinacModulov(p.moduly || [], p.aktivny_modul || "");
     elPanel.classList.remove("skryte");
 });
+
+function vykresliPrepinacModulov(moduly, aktivny) {
+    pAlternativy.innerHTML = "";
+    if (moduly.length === 0) {
+        pAlternativy.classList.add("skryte");
+        return;
+    }
+    const popis = document.createElement("div");
+    popis.className = "prepinac-popis";
+    popis.textContent = "Nastavuješ polohu pre:";
+    pAlternativy.appendChild(popis);
+
+    const riadok = document.createElement("div");
+    riadok.className = "prepinac";
+    moduly.forEach((m) => {
+        const tlacidlo = document.createElement("button");
+        tlacidlo.type = "button";
+        tlacidlo.className = "prepinac-tlacidlo" + (m.kluc === aktivny ? " aktivny" : "");
+        tlacidlo.textContent = m.popis;
+        tlacidlo.addEventListener("click", () => {
+            if (!rezimUpravy) return;
+            const r = elPanel.getBoundingClientRect();
+            invoke("rezim_upravy_prepni_panel",
+                   { kluc: m.kluc, x: r.left, y: r.top, w: r.width, h: r.height })
+                .then((odpoved) => {
+                    if (odpoved && odpoved.panel) aplikujPolohuPanela(odpoved.panel);
+                    riadok.querySelectorAll(".prepinac-tlacidlo")
+                        .forEach((t) => t.classList.remove("aktivny"));
+                    tlacidlo.classList.add("aktivny");
+                })
+                .catch((e) => console.error("Prepnutie panela zlyhalo:", e));
+        });
+        riadok.appendChild(tlacidlo);
+    });
+    pAlternativy.appendChild(riadok);
+    pAlternativy.classList.remove("skryte");
+}
 
 // Rust požiada o nahlásenie živej polohy tesne pred uložením (Esc/Enter alebo
 // tlačidlo „Hotovo“ v Nastaveniach) — JS je jediné miesto, ktoré ju pozná.
@@ -357,6 +404,140 @@ function vykresliHotovo(data) {
             elSipka.classList.remove("skryte");
         });
     }
+}
+
+// ── Výber „Torture Instrument" (TLI 25) ────────────────────────────────────
+// Nad každou kartičkou rámik s tierom a poradím, odporúčaná zlatá a hrubá.
+// Nekreslí sa šípka ani cieľové políčko — hráč nevyberá KAM klikať na doske,
+// ale KTORÚ z troch kariet pred sebou si vziať.
+const FARBY_TIEROV = {
+    S: "#ffce54",   // zlatá — ber takmer vždy
+    A: "#a0d468",
+    B: "#7fb3d5",
+    C: "#b0b4bd",
+};
+const FARBA_NEZNAMY = "#8a8f9a";
+
+function farbaTieru(tier, neznamy) {
+    if (neznamy) return FARBA_NEZNAMY;
+    return FARBY_TIEROV[tier] || FARBA_NEZNAMY;
+}
+
+function vykresliHotovoNastroj(data) {
+    const karticky = data.karticky || [];
+    const analyza = data.analyza || {};
+
+    if (karticky.length === 0) {
+        pNadpis.textContent = "Výber nástroja — kartičky sa nepodarilo umiestniť";
+        pDovod.textContent = "Server kartičky prečítal, ale nevrátil ich polohu na obrazovke, "
+            + "takže ich neviem orámovať. Poradie je v paneli nižšie.";
+        pIstota.textContent = "";
+        pIkony.classList.add("skryte");
+        pSkontroluj.classList.add("skryte");
+        vypisKartickyDoPanela(analyza.nastroje || []);
+        elPanel.classList.remove("skryte");
+        return;
+    }
+
+    // --- 1. Rámik + štítok nad každou kartičkou ---
+    karticky.forEach((k) => {
+        const farba = farbaTieru(k.tier, k.neznamy);
+        const div = document.createElement("div");
+        div.className = "pole karticka" + (k.odporucany ? " karticka-odporucana" : "");
+        div.style.left = k.x + "px";
+        div.style.top = k.y + "px";
+        div.style.width = k.w + "px";
+        div.style.height = k.h + "px";
+        div.style.borderColor = farba;
+        if (k.odporucany) {
+            div.style.boxShadow = `inset 0 0 26px ${farba}55, 0 0 14px ${farba}88`;
+        }
+
+        const stitok = document.createElement("div");
+        stitok.className = "karticka-stitok";
+        stitok.style.background = farba;
+
+        const znakTieru = document.createElement("span");
+        znakTieru.className = "karticka-tier";
+        znakTieru.textContent = k.neznamy ? "?" : k.tier;
+        stitok.appendChild(znakTieru);
+
+        const text = document.createElement("span");
+        text.className = "karticka-poradie";
+        text.textContent = k.neznamy
+            ? "nepoznám"
+            : (k.odporucany ? `${k.poradie}. — ber túto` : `${k.poradie}.`);
+        stitok.appendChild(text);
+        div.appendChild(stitok);
+
+        // Dôvod priamo pod štítkom — hráč sa nemusí pozerať do panela.
+        const dovod = document.createElement("div");
+        dovod.className = "karticka-dovod";
+        dovod.textContent = k.dovod || "";
+        div.appendChild(dovod);
+
+        elVrstva.appendChild(div);
+    });
+
+    // --- 2. Panel: poradie všetkých kartičiek pod sebou ---
+    const najlepsia = karticky.find((k) => k.odporucany);
+    pNadpis.textContent = najlepsia
+        ? `Ber: ${najlepsia.nazov}`
+        : "Ani jednu z týchto kartičiek nepoznám";
+
+    const istotaPercenta = Math.round((analyza.istota || 0) * 100);
+    pIstota.textContent = `Istota odporúčania: ${istotaPercenta} %`;
+    pIstota.classList.toggle("nizka", istotaPercenta < 50);
+
+    pDovod.textContent = najlepsia
+        ? najlepsia.dovod
+        : "Tieto nástroje nemám v katalógu — rozhodni sa sám a pošli screenshot do #torchlight.";
+    pIkony.classList.add("skryte");
+
+    vypisKartickyDoPanela(karticky);
+
+    if (analyza.skontroluj && analyza.skontroluj.length > 0) {
+        pSkontroluj.textContent = analyza.skontroluj.slice(0, 3).join("; ");
+        pSkontroluj.classList.remove("skryte");
+    } else {
+        pSkontroluj.classList.add("skryte");
+    }
+    elPanel.classList.remove("skryte");
+}
+
+// Zoznam pod hlavným textom panela — používa sa aj vtedy, keď sa rámiky
+// nedajú nakresliť, preto je to samostatná funkcia.
+function vypisKartickyDoPanela(karticky) {
+    pAlternativy.innerHTML = "";
+    const zoradene = karticky.slice().sort((a, b) => (a.poradie || 99) - (b.poradie || 99));
+    zoradene.forEach((k) => {
+        const div = document.createElement("div");
+        div.className = "alternativa";
+
+        const znak = document.createElement("span");
+        znak.className = "alt-tier";
+        znak.style.background = farbaTieru(k.tier, k.neznamy);
+        znak.textContent = k.neznamy ? "?" : k.tier;
+        div.appendChild(znak);
+
+        const nazov = document.createElement("span");
+        nazov.className = "alt-nazov";
+        nazov.textContent = k.nazov;
+        div.appendChild(nazov);
+
+        const pozn = [];
+        if (typeof k.skore === "number") pozn.push(`${k.skore.toFixed(2)}×`);
+        if (k.malo_dat && !k.neznamy) pozn.push("málo dát");
+        if (k.sporne) pozn.push("sporné");
+        if (pozn.length > 0) {
+            const span = document.createElement("span");
+            span.className = "alt-pozn";
+            span.textContent = ` (${pozn.join(", ")})`;
+            div.appendChild(span);
+        }
+        pAlternativy.appendChild(div);
+    });
+    pAlternativy.classList.remove("skryte");
 }
 
 // ── Frozen Canvas (TLI 4b) — sekvencia krokov ČO (zdroj v ruke) → KAM (cieľ

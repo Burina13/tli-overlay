@@ -21,7 +21,9 @@ use std::time::Duration;
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
-use tli_overlay_core::tracker::agregacie::{ocen_beh, ocen_beh_v_case, prehlad, Prehlad, VysledokBehu};
+use tli_overlay_core::tracker::agregacie::{
+    ocen_beh, ocen_beh_v_case, prehlad, top_dropy, DropRiadok, Prehlad, VysledokBehu,
+};
 use tli_overlay_core::tracker::ceny::{vek_text, Cena, Cennik, Nastavenie};
 use tli_overlay_core::tracker::chvost::StavChvosta;
 use tli_overlay_core::nastavenia::Nastavenia;
@@ -485,7 +487,13 @@ pub struct Zivo {
     pub trvanie_ms: i64,
     pub cisty_zisk: f64,
     pub podpis_vstupov: String,
+    /// „Čo padlo" pre mini-panel (TLI 25) — najhodnotnejšie dropy tejto mapy.
+    pub top_dropy: Vec<DropRiadok>,
 }
+
+/// Koľko riadkov „čo padlo" sa posiela do mini-panela. Päť je horná hranica
+/// toho, čo sa dá za behu mapy prebehnúť očami; zvyšok je v záložke Tracker.
+const TOP_DROPOV: usize = 5;
 
 /// Všetko, čo záložka Tracker potrebuje na jedno vykreslenie.
 #[derive(Debug, Clone, Serialize)]
@@ -515,6 +523,9 @@ pub struct PrehladProUi {
     /// Koľko cien appka prečítala z obrazovky trhu (TLI 22) za posledných
     /// 24 h — počítadlo „dnešných cien" zo zadania bod 3.
     pub pocet_cien_z_obrazovky_24h: i64,
+    /// Posledná DOKONČENÁ mapa (TLI 25) — mini-panel ukazuje „čo padlo"
+    /// aj medzi mapami, keď `zivo` je `None`. Hubové behy sa preskakujú.
+    pub posledna_mapa: Option<Zivo>,
 }
 
 /// Koľko položiek najviac vypíše výzva „vyhľadaj na Exchange". Viac než tri
@@ -587,7 +598,7 @@ pub fn prehlad_pre_ui(stav: &StavTrackera, zapnuty: bool, dan: bool) -> PrehladP
         vek_cien.insert(cena.polozka.to_string(), vek_text(vek));
     }
 
-    let zivo = stav.sledovac.aktualny().and_then(|b| {
+    let na_zivo = |b: &Beh| -> Option<Zivo> {
         if b.je_hub {
             return None;
         }
@@ -597,8 +608,13 @@ pub fn prehlad_pre_ui(stav: &StavTrackera, zapnuty: bool, dan: bool) -> PrehladP
             trvanie_ms: v.trvanie_ms,
             cisty_zisk: v.cisty_zisk,
             podpis_vstupov: v.podpis_vstupov,
+            top_dropy: top_dropy(b, &stav.cennik, &nastavenie, TOP_DROPOV),
         })
-    });
+    };
+    let zivo = stav.sledovac.aktualny().and_then(na_zivo);
+    // Posledná dokončená mapa — `behy` sú v poradí, v akom ich log priniesol,
+    // takže posledný nehubový je ten, z ktorého hráč práve vyšiel.
+    let posledna_mapa = stav.behy.iter().rev().find_map(na_zivo);
 
     PrehladProUi {
         zapnuty,
@@ -621,6 +637,7 @@ pub fn prehlad_pre_ui(stav: &StavTrackera, zapnuty: bool, dan: bool) -> PrehladP
             .as_ref()
             .and_then(|c| db::pocet_cien_z_obrazovky_od(c, teraz.saturating_sub(24 * 3600) as i64).ok())
             .unwrap_or(0),
+        posledna_mapa,
     }
 }
 
