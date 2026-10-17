@@ -1,6 +1,6 @@
 {
-  "version": "0.18.3",
-  "notes": "TLI 26 hotfix: v režime „Upraviť rozloženie“ (Ctrl+F8) sa teraz dá ťahať aj mini-panel aj pripomienka „Enable Log“, nielen ľavý panel — `pripomienka.js` mal od verzie 0.17.0 syntaktickú chybu, ktorá mu bránila spustiť sa vôbec, a mini-panel prekrýval čerstvo zobrazený overlay. Keď hra nebeží, overlay sa teraz postaví na primárny monitor, nie na naposledy aktívne okno na ktoromkoľvek displeji. Dva monitory s rovnakým rozlíšením si už neprepisujú uloženú polohu panelov. Log appky (Nastavenia → „Otvoriť log“) sa zapisuje hneď od spustenia appky, nie až po prvom F8/F9.",
-  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.18.3/Tvoj-Tatko-TLI-Overlay_0.18.3_x64_en-US.msi",
-  "msiSha256": "2a48a8923bba01df8132b414ad2549ee292ddeced75ac0a1e293aee39943c046"
+  "version": "0.18.4",
+  "notes": "TLI 28: F8 nič neodosielal a v logu po ňom nebol ani riadok — appka doteraz logovala len stlačenie klávesy, nie samotný pokus o REGISTRÁCIU hotkey pri štarte. Od tejto verzie sa registrácia každej zo 4 skratiek (Tartarus, Frozen Canvas, ceny z trhu, Ctrl+F8) vždy zaloguje — OK / „obsadená iným programom“ / iná chyba s dôvodom od Windows. Nastavenia ukážu červený stav pod poľom hneď pri otvorení okna, appka pri kolízii pošle aj toast. Pribudlo tlačidlo „Nahrať…“ pri každej skratke (zaznamenanie priamo stlačením) a tlačidlá „Odfotiť Tartarus/Canvas teraz“ v tray menu aj hlavnom okne — fungujú úplne bez klávesy, s 2s oneskorením na prepnutie do hry. Opravené aj kódovanie log súboru (diakritika sa predtým zobrazovala poškodená).",
+  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.18.4/Tvoj-Tatko-TLI-Overlay_0.18.4_x64_en-US.msi",
+  "msiSha256": "881e9165a6a25d8fc2e23d431e06f63a35bb7c6a1c14d12d9ee004549d1385c7"
 }
