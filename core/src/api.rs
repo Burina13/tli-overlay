@@ -7,7 +7,12 @@ pub struct Odporucanie {
     pub akcia: String,
     pub nazov: String,
     pub ciel: Option<i64>,
-    pub cez_scratch: bool,
+    /// TLI 29: `Option<bool>`, NIE holý `bool` — server túto kartu vôbec
+    /// nepošle pre ťahy, ktoré nie sú `devour` (patrol/swap/koniec_dňa), a
+    /// predtým sa to prejavilo ako `null` proti neoptionálnemu typu, čo
+    /// zhodilo parsovanie CELEJ odpovede („Server odpovedal niečím, čomu
+    /// nerozumiem."), hoci server inak odpovedal úplne správne.
+    pub cez_scratch: Option<bool>,
     pub nastroj: Option<String>,
     pub dar: Option<String>,
     pub dovod: String,
@@ -20,7 +25,7 @@ impl Default for Odporucanie {
             akcia: "".to_string(),
             nazov: "".to_string(),
             ciel: None,
-            cez_scratch: false,
+            cez_scratch: None,
             nastroj: None,
             dar: None,
             dovod: "".to_string(),
@@ -366,6 +371,18 @@ pub fn sprava_siete(detail: &str) -> String {
     )
 }
 
+/// TLI 29: odpoveď s HTTP 2xx, ktorej telo sa nedalo rozobrať na očakávaný
+/// tvar (napr. server pridá pole nekompatibilného typu, alebo medzi appkou
+/// a serverom je proxy, čo vracia HTML). Predtým appka ukázala len generické
+/// „Server odpovedal niečím, čomu nerozumiem." bez HTTP kódu — hráč aj
+/// Richard tak nevedeli rozlíšiť, či ide o server, proxy alebo appku samu.
+/// Celé telo (do 200 znakov) ide len do denníka (`klient::posli_analyzu*`),
+/// toto je krátky text pre toast.
+pub fn sprava_neparsovatelnej_odpovede(stav: u16) -> String {
+    format!("Server {stav} poslal odpoveď, ktorej appka nerozumie — skús znova. \
+Detail je v logu (Nastavenia → Otvoriť log).")
+}
+
 /// Filtruje poškodené či zámerne skryté oblasti (vrátené s nulovou veľkosťou),
 /// aby sme sa nepokúšali vykresliť v overlayi neviditeľné alebo poškodené štvorce.
 pub fn pouzitelne_polia(a: &Analyza) -> Vec<&Pole> {
@@ -391,6 +408,32 @@ mod testy {
         let a: Analyza = serde_json::from_str(r#"{"ok": true, "polia": []}"#).unwrap();
         assert_eq!(a.obrazovka, "doska");
         assert!(a.nastroje.is_empty());
+    }
+
+    /// TLI 29 regresia — reálny incident 18.10.2026 01:34:21: server odpovedal
+    /// 200 OK a správne rozpoznal dosku (deň 19, `destinations` otvorené), ale
+    /// top odporúčanie bolo `patrol` (nie `devour`), ktorý `cez_scratch` vôbec
+    /// nemá — `naj.get("cez_scratch")` na serveri vtedy vrátilo `None` →
+    /// `null` v JSON-e. Keď bol `cez_scratch` holý `bool`, celé parsovanie
+    /// `Analyza` zlyhalo a appka ukázala „Server odpovedal niečím, čomu
+    /// nerozumiem." namiesto odporúčania — presne telo z uloženej analýzy
+    /// `2026-10-18-013422-16348a9c.json` na CT 114 (skrátené na podstatné polia).
+    #[test]
+    fn odporucanie_s_cez_scratch_null_sa_parsuje() {
+        let json = r#"{
+            "ok": true, "modul": "tartarus", "obrazovka": "doska",
+            "odporucanie": {
+                "akcia": "patrol", "nazov": "Patrola", "ciel": 4,
+                "cez_scratch": null, "nastroj": null, "dar": null,
+                "dovod": "Zamknuté dvere prinášajú nový materiál pre reťaz.",
+                "hodnota": 13.9417
+            },
+            "istota": 0.057
+        }"#;
+        let a: Analyza = serde_json::from_str(json).unwrap();
+        let odporucanie = a.odporucanie.unwrap();
+        assert_eq!(odporucanie.akcia, "patrol");
+        assert_eq!(odporucanie.cez_scratch, None);
     }
 
     #[test]

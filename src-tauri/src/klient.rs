@@ -3,6 +3,21 @@ use tli_overlay_core::api;
 use tli_overlay_core::api::{Analyza, AnalyzaCanvas, AnalyzaCeny};
 use tli_overlay_core::nastavenia::Nastavenia;
 
+/// TLI 29: keď server odpovie 2xx, ale telo sa nedá rozobrať na očakávaný
+/// tvar (napr. pole nekompatibilného typu — presne to sa stalo 18.10.2026,
+/// `cez_scratch: null` proti neoptionálnemu `bool`), predtým appka ukázala
+/// len „Server odpovedal niečím, čomu nerozumiem." bez stopy, kde hľadať.
+/// Celé telo (do 200 znakov, nech log neopuchne pri veľkej odpovedi) ide do
+/// denníka, hráč v toaste vidí len HTTP kód a odkaz na log.
+fn loguj_neparsovatelnu_odpoved(kontext: &str, stav: u16, telo: &str) -> String {
+    let ukazka: String = telo.chars().take(200).collect();
+    crate::denik::zapis(
+        "analyza",
+        &format!("{kontext}: HTTP {stav} sa nedalo rozobrať, telo (prvých 200 znakov): {ukazka}"),
+    );
+    api::sprava_neparsovatelnej_odpovede(stav)
+}
+
 #[derive(Debug)]
 pub struct Vysledok {
     pub analyza: Analyza,
@@ -35,9 +50,10 @@ pub fn posli_analyzu(n: &Nastavenia, jpeg: Vec<u8>) -> Result<Vysledok, String> 
 
     match odpoved {
         Ok(res) => {
+            let stav = res.status();
             let telo = res.into_string().unwrap_or_default();
             let analyza: Analyza = serde_json::from_str(&telo)
-                .map_err(|_| "Server odpovedal niečím, čomu nerozumiem.".to_string())?;
+                .map_err(|_| loguj_neparsovatelnu_odpoved("posli_analyzu", stav, &telo))?;
 
             Ok(Vysledok {
                 analyza,
@@ -68,9 +84,10 @@ pub fn posli_analyzu_canvas(n: &Nastavenia, jpeg: Vec<u8>) -> Result<VysledokCan
 
     match odpoved {
         Ok(res) => {
+            let stav = res.status();
             let telo = res.into_string().unwrap_or_default();
             let analyza: AnalyzaCanvas = serde_json::from_str(&telo)
-                .map_err(|_| "Server odpovedal niečím, čomu nerozumiem.".to_string())?;
+                .map_err(|_| loguj_neparsovatelnu_odpoved("posli_analyzu_canvas", stav, &telo))?;
 
             Ok(VysledokCanvas {
                 analyza,
@@ -99,9 +116,10 @@ pub fn posli_analyzu_ceny(n: &Nastavenia, jpeg: Vec<u8>) -> Result<VysledokCeny,
 
     match odpoved {
         Ok(res) => {
+            let stav = res.status();
             let telo = res.into_string().unwrap_or_default();
             let analyza: AnalyzaCeny = serde_json::from_str(&telo)
-                .map_err(|_| "Server odpovedal niečím, čomu nerozumiem.".to_string())?;
+                .map_err(|_| loguj_neparsovatelnu_odpoved("posli_analyzu_ceny", stav, &telo))?;
 
             Ok(VysledokCeny {
                 analyza,

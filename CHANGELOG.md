@@ -2,6 +2,39 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.18.5 — 18.10.2026 (TLI 29 — F8 dorazí, ale appka hlási „Server odpovedal niečím, čomu nerozumiem.")
+
+Úloha `2026-10-18-0135-mcp.md`. Richard na 0.18.4 dostal po F8 dvakrát (01:34:21
+a 01:36:45) nečitateľnú odpoveď namiesto odporúčania, hoci server podľa
+uloženej analýzy dosku rozpoznal správne (istota rozpoznania 0,98) a vrátil
+HTTP 200. **Skutočná príčina NIE JE v Gemini ani v module `tartarus-nastroj`**
+(pôvodné podozrenie z faktu zapísaného pri hlásení) — je to nezhoda typu medzi
+serverom a appkou:
+
+- **Server (`tli-web/app.py`):** keď je top odporúčanie iný ťah než „devour"
+  (typicky „patrol", keď má doska otvorené `destinations` — bežný stav, nie
+  okrajový prípad), pole `cez_scratch` v odpovedi chýba a server ho posielal
+  ako `null`. Appka mala `cez_scratch` ako **neoptionálny** `bool` — `null`
+  proti nemu zhodil parsovanie CELEJ odpovede, nielen toho poľa. Opravené na
+  serveri (vždy `bool`) aj v appke (`Option<bool>`, defenzívne, pre prípad
+  podobnej chyby nabudúce). Pridaný regresný test na oboch stranách s presne
+  týmto reálnym tvarom odpovede.
+- **Server:** jeden retry volania `gemini-beh.py` pri rýchlom zlyhaní
+  (nenulový návratový kód, nečitateľný vonkajší JSON, `is_error`) — NIE pri
+  timeoute, aby druhý pokus spolu s prvým nepresiahol 60 s, ktoré appka na
+  odpoveď čaká.
+- **Appka:** keď sa telo úspešnej (2xx) odpovede nedá rozobrať, appka teraz
+  do `tli-overlay.log` zapíše HTTP kód aj prvých 200 znakov tela a v toaste
+  ukáže kód a odkaz na log namiesto generickej vety bez stopy.
+- **Overené, NIE je to bug:** Richardovo podozrenie, že F8 funguje len s
+  otvoreným oknom Nastavení, log appky z 01:31:15–01:34:21 vyvracia — obe
+  volania (01:31:31 aj 01:34:21) prebehli bez akejkoľvek interakcie s
+  Nastaveniami medzi nimi. Globálne skratky (`tauri-plugin-global-shortcut`)
+  sa registrujú pri štarte appky, nie pri otvorení okna.
+- Screenshot a JSON z 01:34:21 (`2026-10-18-013422-16348a9c.{jpg,json}` na
+  CT 114) ostávajú uložené ako doteraz (analýzy sa nemažú) a počítajú do
+  50 potrebných pre TLI 5 (lokálne rozpoznávanie).
+
 ## 0.18.4 — 18.10.2026 (TLI 28 — F8 nič neodošle: diagnostika registrácie, odfotenie bez klávesy)
 
 Úloha `2026-10-18-0048-mcp.md`, nahlásené Richardom naživo z PC: 0.18.3 beží,
