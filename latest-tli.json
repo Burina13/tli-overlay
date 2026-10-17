@@ -1,6 +1,6 @@
 {
-  "version": "0.17.2",
-  "notes": "TLI 24: appka teraz píše lokálny log (hotkey/okno/snímka/HTTP/upload) a tlačidlo „Otvoriť log“ v Nastaveniach; oprava — upload logu (tracker_upload_stav) bol v DB prázdny, lebo bol omylom viazaný na farm tracker; párovanie okna hry je teraz primárne podľa mena procesu, titulok je už len záloha; pribudla fáza „Odoslané, čakám na radu…“ medzi snímkou a výsledkom.",
-  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.17.2/Tvoj-Tatko-TLI-Overlay_0.17.2_x64_en-US.msi",
-  "msiSha256": "021b79eab0425aba7e757b4970e002daba1fee2bb26c915366e41e02bb61dd5b"
+  "version": "0.18.0",
+  "notes": "TLI 25: F8 funguje aj na obrazovke „Select a Torture Instrument“ — nad každou z troch kartičiek ukáže tier (S/A/B/C), poradie a jednu vetu prečo, odporúčanú zvýrazní; tier je zmeraný vlastnou simuláciou 8 000 drilov na každý z 31 nástrojov a berie do úvahy aj nástroje, ktoré už máš. Appka sa učí z toho, čo si naozaj vzal a ako dril dopadol — bez klikania. Mini-panel ukazuje aj „čo padlo“ (dropy mapy s ikonou, počtom a cenou). Ctrl+F8 posúva každý panel zvlášť (F8 doska, F8 nástroje, F9 Canvas, Artistry) a hlavné okno appky si pamätá polohu a veľkosť.",
+  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.18.0/Tvoj-Tatko-TLI-Overlay_0.18.0_x64_en-US.msi",
+  "msiSha256": "5691d3a907612ce1edbb2838f96cb62333c3d9d7376880d0e3eb3fcc5dbbe87b"
 }
