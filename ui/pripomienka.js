@@ -52,7 +52,7 @@ document.addEventListener("DOMContentLoaded", () => {
         document.body.classList.toggle("rezim-upravy", zapnute);
         nastavPriehladnost(p.priehladnost);
         if (zapnute) {
-            vykresli("Náhľad pripomienky „Enable Log" — presuň ma a stlač Enter alebo Esc.", "varovanie");
+            vykresli('Náhľad pripomienky „Enable Log" — presuň ma a stlač Enter alebo Esc.', "varovanie");
         }
     });
     window.__TAURI__.event.listen("priehladnost", (udalost) => {

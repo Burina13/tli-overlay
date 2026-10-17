@@ -10,14 +10,26 @@ padlo) a pripomienka „Enable Log" sa nehýbali; overlay sa pri vypnutej hre
 postavil na nesprávny monitor a nedal sa presunúť na primárny; priečinok
 `logs` neexistoval, hoci 0.17.2 ho malo pridať.
 
-- **Prečo sa mini-panel a pripomienka nedali ťahať:** nebola to chyba v ich
-  JS (úchyty aj natívne `startDragging()`/`startResizeDragging()` tam boli
-  už od 0.18.2) — `.show()` v tao/Windows z princípu NEMENÍ poradie okien
-  (`SetWindowPos` sa volá s `SWP_NOZORDER`), takže keď mal hráč mini-panel
-  zapnutý natrvalo (bol teda viditeľný UŽ PRED vstupom do edit módu), čerstvo
-  zobrazený priehľadný `overlay` nad ním ostal navrchu a prekryl mu klik.
-  Appka teraz po zobrazení mini-panela a pripomienky v edit móde explicitne
-  zavolá `.set_focus()`, nech sú vždy nad `overlay`.
+- **⚠️ `pripomienka.js` mal od 0.17.0 (TLI 21, keď pribudlo ťahanie okien)
+  SYNTAKTICKÚ CHYBU, ktorá appke bránila spustiť z neho VÔBEC ČOKOĽVEK** —
+  reťazec `"Náhľad pripomienky „Enable Log" — presuň…"` používal obyčajnú
+  ASCII úvodzovku `"` namiesto správnej uzatváracej slovenskej `“`, takže
+  JS reťazec sa skončil uprostred vety a zvyšok (`— presuň ma…`) bol mimo
+  reťazca — neplatný JavaScript. Prehliadač/WebView2 pri takejto chybe
+  NESPUSTÍ CELÝ SÚBOR, nielen ten jeden riadok — **toast „Enable Log“ teda
+  od 0.17.0 nefungoval vôbec, ani mimo edit módu** (žiadne drôtovanie
+  `DOMContentLoaded`, žiadne úchyty, žiadne upozornenie na vypnuté
+  logovanie), nielen že sa nedal ťahať. Odhalil to nový JS test
+  (`ui/testy-rezim-upravy-prenosne-okna.e2e.mjs`) hneď pri prvom spustení
+  v CI — doteraz nad `pripomienka.js` žiadny test nebežal. Opravené na
+  jednoduchú úvodzovku okolo celého reťazca.
+- **Prečo sa mini-panel nedal ťahať (jeho JS chybu nemal):** `.show()`
+  v tao/Windows z princípu NEMENÍ poradie okien (`SetWindowPos` sa volá
+  s `SWP_NOZORDER`), takže keď mal hráč mini-panel zapnutý natrvalo (bol
+  teda viditeľný UŽ PRED vstupom do edit módu), čerstvo zobrazený priehľadný
+  `overlay` nad ním ostal navrchu a prekryl mu klik. Appka teraz po
+  zobrazení mini-panela aj pripomienky v edit móde explicitne zavolá
+  `.set_focus()`, nech sú vždy nad `overlay`.
 - **Overlay na nesprávnom monitore, keď hra nebeží:** appka padala na
   `okno::popredie()` (naposledy aktívne okno) — čokoľvek malo focus
   (prehliadač, editor), tam sa postavil aj edit mód, pokojne na úplne inom

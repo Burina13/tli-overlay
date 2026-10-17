@@ -11,13 +11,22 @@
 // posun okna robí Windows, nie appka, a to sa z Linuxu/jsdom otestovať nedá
 // (rovnaké obmedzenie ako pri `okna.rs`, pozri hlavičku toho súboru).
 //
-// Skutočná PRÍČINA, prečo sa v appke 0.18.2 mini-panel/pripomienka v edit
-// móde reálne nedali ťahať (okno `overlay` nad nimi prekrývalo klik, lebo
-// `.show()` v tao/Windows z princípu NEMENÍ z-poradie — `SWP_NOZORDER`), je
-// v Ruste (`main.rs::posli_seed_rozlozenia`, `.set_focus()`) a nie je to
-// testovateľné bez živého Windows okna — tento test preto dokazuje, že
-// DRÔTOVANIE úchytov existuje a nezmizne pri budúcej úprave, nie že sa bug
-// z 0.18.2 opakuje (na ten niet spôsobu, ako tu padnúť).
+// Skutočná PRÍČINA, prečo sa mini-panel v edit móde reálne nedal ťahať (okno
+// `overlay` nad ním prekrývalo klik, lebo `.show()` v tao/Windows z princípu
+// NEMENÍ z-poradie — `SWP_NOZORDER`), je v Ruste (`main.rs::posli_seed_rozlozenia`,
+// `.set_focus()`) a nie je to testovateľné bez živého Windows okna — tento
+// test preto dokazuje, že DRÔTOVANIE úchytov existuje a nezmizne pri budúcej
+// úprave, nie že sa bug z 0.18.2 opakuje (na ten niet spôsobu, ako tu padnúť).
+//
+// U `pripomienka.js` tento test NAOZAJ padol na niečo iné pri prvom spustení
+// (TLI 26, 17.10.2026): `window.eval(JS)` hodil `SyntaxError: missing ) after
+// argument list`, lebo reťazec v edit-módovom náhľade používal obyčajnú ASCII
+// úvodzovku `"` namiesto uzatváracej slovenskej `“` — JS string sa tým skončil
+// uprostred vety a zvyšok súboru bol neplatný JavaScript. To znamená, že CELÝ
+// `pripomienka.js` (vrátane drôtovania úchytov aj bežného toastu „Enable Log")
+// bol od 0.17.0 mŕtvy — žiadny test naň dovtedy neexistoval. Oprava je
+// jednoriadková (iné úvodzovky okolo reťazca), ale tento test je jediná vec,
+// čo takú chybu v budúcnosti ešte PRED vydaním odhalí.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
