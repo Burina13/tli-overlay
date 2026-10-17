@@ -20,10 +20,12 @@ ZALOZKY = ["panel-tracker", "panel-solvery", "panel-analyza", "panel-guide", "pa
 TU = pathlib.Path(__file__).resolve().parent
 
 
-def vyrob(zdroj: str, ciel: str, css: str, panel: str = "") -> None:
+def vyrob(zdroj: str, ciel: str, css: str, panel: str = "", styl: str = "") -> None:
     t = (TU / zdroj).read_text(encoding="utf-8")
     assert t.count(css) == 1, f"v {zdroj} sa zmenil odkaz na CSS"
     t = t.replace(css, '<script src="nahlad-stub.js"></script>\n    ' + css, 1)
+    if styl:
+        t = t.replace(css, css + f'\n    <style>{styl}</style>', 1)
     t = t.replace("<title>Tvoj Tatko TLI Overlay</title>",
                   "<title>Náhľad hlavného okna</title>", 1)
     if panel:
@@ -45,7 +47,15 @@ def main() -> None:
     for panel in ZALOZKY:
         vyrob("hlavne.html", f"nahlad-hlavne-{panel}.html",
               '<link rel="stylesheet" href="hlavne.css">', panel)
-    vyrob("mini.html", "nahlad-mini.html", '<link rel="stylesheet" href="mini.css">')
+    # Mini-panel je natívne okno s PEVNOU veľkosťou (280×196, `tauri.conf.json`),
+    # ale náhľad je obyčajná stránka a `.mini` je `width: 100%` — bez tohto
+    # obmedzenia by sa rozťahoval na šírku okna prehliadača. A Edge headless má
+    # minimálnu šírku okna (~500 px), takže `--window-size=320,…` sa NEDODRŽÍ:
+    # panel sa vykreslil 500 px široký a tretia hodnota (FE/h) aj ceny dropov
+    # padli mimo snímku. Zistené 17.10.2026 (TLI 25) po troch pokusoch opraviť
+    # to v CSS — chyba nebola v CSS, ale v náhľade.
+    vyrob("mini.html", "nahlad-mini.html", '<link rel="stylesheet" href="mini.css">',
+          styl="html, body { width: 280px; height: 196px; margin: 0; }")
 
 
 if __name__ == "__main__":

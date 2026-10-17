@@ -168,11 +168,12 @@ body.rezim-upravy .mini {
 }
 .dropy ul { list-style: none; margin: 0; padding: 0; }
 .dropy li {
-    /* Tiež grid, a z toho istého dôvodu ako `.spodny-riadok`: stĺpce sú
-       ikona (0 px, keď ikona nie je) — meno (zvyšok, oreže sa) — počet —
-       cena. Vo flexe počet a cena z riadku vypadli. */
+    /* Tiež grid, a z toho istého dôvodu ako `.spodny-riadok`: meno (zvyšok,
+       oreže sa) — počet — cena. Ikona je VNÚTRI bunky s menom, nie vo
+       vlastnom stĺpci: keď sa nenačíta, stĺpec by ostal prázdny a riadky
+       by sa rozišli. */
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    grid-template-columns: minmax(0, 1fr) auto auto;
     align-items: center;
     gap: 6px;
     font-size: 12px;
@@ -187,6 +188,9 @@ body.rezim-upravy .mini {
     object-fit: contain;
 }
 .dropy .meno {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     /* `min-width: 0` je tu NUTNÉ: bez neho sa flex položka nezmenší pod šírku
        svojho obsahu, meno položky vytlačí počet a cenu za okraj a `overflow:
        hidden` ich odreže. Presne to bolo vidieť na náhľade z CI pri 0.18.1 —
@@ -201,3 +205,4 @@ body.rezim-upravy .mini {
     font-variant-numeric: tabular-nums;
 }
 .dropy .hodnota.bez-ceny { color: #b0b4bd; font-style: italic; }
+.dropy .meno-text { overflow: hidden; text-overflow: ellipsis; }

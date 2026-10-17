@@ -257,9 +257,12 @@ jobs:
           $cesta = (Resolve-Path "ui/nahlad-mini.html").Path
           $p = Start-Process -FilePath $edge -ArgumentList @(
             "--headless", "--disable-gpu", "--screenshot=$PWD\mini-nahlad.png",
-            # TLI 25: okno mini-panela je 280×196 (pribudol zoznam „čo padlo"),
-            # predtým 260×92 — v starom 300×120 sa zoznam na snímke orezal.
-            "--window-size=320,230", "--virtual-time-budget=4000",
+            # TLI 25: Edge headless má MINIMÁLNU šírku okna (~500 px) a menšiu
+            # hodnotu ticho ignoruje — pri `320` sa stránka vykreslila 500 px
+            # široká a pravý okraj panela (FE/h, ceny dropov) padol mimo snímku.
+            # Šírku panela drží `html, body { width: 280px }` z `nahlad-generuj.py`,
+            # okno je zámerne väčšie, nech je vidieť aj jeho okraj.
+            "--window-size=520,260", "--virtual-time-budget=4000",
             "file:///$($cesta -replace '\\','/')"
           ) -NoNewWindow -Wait -PassThru
           Write-Host "Edge exit code: $($p.ExitCode)"

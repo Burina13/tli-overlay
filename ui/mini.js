@@ -90,6 +90,11 @@ function vykresliDropy(zivo, bezi) {
     dropy.forEach((d) => {
         const li = document.createElement("li");
 
+        // Ikona ide DOVNÚTRA bunky s menom, nie do vlastného stĺpca mriežky:
+        // keď sa nenačíta (alebo adresa servera nie je známa), prázdny stĺpec
+        // by rozhodil zarovnanie ostatných riadkov.
+        const meno = document.createElement("span");
+        meno.className = "meno";
         if (ZAKLAD_IKON) {
             const img = document.createElement("img");
             img.className = "ikona";
@@ -97,12 +102,12 @@ function vykresliDropy(zivo, bezi) {
             img.alt = "";
             img.src = ZAKLAD_IKON + "/ikony/polozka/" + d.polozka;
             img.addEventListener("error", () => img.remove());
-            li.appendChild(img);
+            meno.appendChild(img);
         }
-
-        const meno = document.createElement("span");
-        meno.className = "meno";
-        meno.textContent = nazovPolozky(d.polozka);
+        const text = document.createElement("span");
+        text.className = "meno-text";
+        text.textContent = nazovPolozky(d.polozka);
+        meno.appendChild(text);
         li.appendChild(meno);
 
         const pocet = document.createElement("span");
