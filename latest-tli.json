@@ -1,6 +1,6 @@
 {
-  "version": "0.18.2",
-  "notes": "TLI 25: F8 funguje aj na obrazovke „Select a Torture Instrument“ — nad každou z troch kartičiek ukáže tier (S/A/B/C), poradie a jednu vetu prečo, odporúčanú zvýrazní; tier je zmeraný vlastnou simuláciou 8 000 drilov na každý z 31 nástrojov a berie do úvahy aj nástroje, ktoré už máš. Appka sa učí z toho, čo si naozaj vzal a ako dril dopadol — bez klikania. Mini-panel ukazuje aj „čo padlo“ (dropy mapy s ikonou, počtom a cenou) a je kvôli tomu väčší. Ctrl+F8 posúva každý panel zvlášť (F8 doska, F8 nástroje, F9 Canvas, Artistry) a hlavné okno appky si pamätá polohu a veľkosť.",
-  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.18.2/Tvoj-Tatko-TLI-Overlay_0.18.2_x64_en-US.msi",
-  "msiSha256": "0551051b4f26347ec2899eaa9a6426b75e55f681207756d65aaf48e1f8de4715"
+  "version": "0.18.3",
+  "notes": "TLI 26 hotfix: v režime „Upraviť rozloženie“ (Ctrl+F8) sa teraz dá ťahať aj mini-panel aj pripomienka „Enable Log“, nielen ľavý panel — `pripomienka.js` mal od verzie 0.17.0 syntaktickú chybu, ktorá mu bránila spustiť sa vôbec, a mini-panel prekrýval čerstvo zobrazený overlay. Keď hra nebeží, overlay sa teraz postaví na primárny monitor, nie na naposledy aktívne okno na ktoromkoľvek displeji. Dva monitory s rovnakým rozlíšením si už neprepisujú uloženú polohu panelov. Log appky (Nastavenia → „Otvoriť log“) sa zapisuje hneď od spustenia appky, nie až po prvom F8/F9.",
+  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.18.3/Tvoj-Tatko-TLI-Overlay_0.18.3_x64_en-US.msi",
+  "msiSha256": "2a48a8923bba01df8132b414ad2549ee292ddeced75ac0a1e293aee39943c046"
 }
