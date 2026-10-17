@@ -4,14 +4,21 @@ Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú ozna
 
 ## 0.18.2 — 17.10.2026 (TLI 25, mini-panel po druhý raz)
 
-Náhľad z CI po 0.18.1 ukázal ďalšie dve veci, ktoré testy nevedia zachytiť,
-lebo sú čisto o šírke v pixeloch:
+Po 0.18.1 vyzeral mini-panel na snímke z CI tak, že v ňom chýba hodnota **FE/h**
+aj **ceny dropov**. Dve verzie sa to hľadalo v CSS — a **chyba tam nebola**:
+Edge headless má minimálnu šírku okna (~500 px) a menšie `--window-size` ticho
+ignoruje, takže sa panel vykreslil 500 px široký a jeho pravý okraj padol mimo
+snímku. Appka bola celý čas v poriadku (`ui/mini.js` spustené nad vlastným DOM
+shimom vracia všetky tri hodnoty aj všetky ceny). Opravený je **náhľad**, nie
+appka: `nahlad-generuj.py` drží šírku stránky na 280 px a okno v CI je väčšie.
 
-- **Pri dropoch chýbal počet a cena** — zostalo len meno položky. Flex položka
-  sa bez `min-width: 0` nezmenší pod šírku svojho obsahu, takže dlhé meno
-  vytlačilo zvyšok riadku za okraj a `overflow: hidden` ho odrezal.
-- **Z horného riadku vypadla hodnota FE/h.** Teraz sa pri nedostatku šírky
-  zalomí na ďalší riadok namiesto toho, aby potichu zmizla za okrajom.
+Pri tom hľadaní sa aj tak dve veci zlepšili a ostávajú:
+
+- **Horný riadok (zisk/čas/FE/h) aj riadky dropov kreslí CSS grid, nie flex.**
+  Každá hodnota má vlastný stĺpec a dlhší text sa oreže v ňom, namiesto aby
+  vytlačil susedov. Pri úzkom paneli je to predvídateľnejšie.
+- **Ikona dropu je vnútri bunky s menom**, nie vo vlastnom stĺpci — keď sa
+  nenačíta, riadky sa už nerozídu.
 
 ## 0.18.1 — 17.10.2026 (TLI 25, oprava mini-panela)
 
