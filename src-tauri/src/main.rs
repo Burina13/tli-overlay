@@ -83,6 +83,40 @@ fn ctrl_f8() -> Shortcut {
     Shortcut::new(Some(Modifiers::CONTROL), Code::F8)
 }
 
+/// Zaregistruje jednu skratku a VŽDY zaloguje presný výsledok (TLI 28, bod 1):
+/// appka doteraz logovala len samotné STLAČENIE klávesy (`spusti_analyzu`),
+/// nie pokus o registráciu — keď ju Windows pri štarte odmietol, log o tom
+/// nehovoril vôbec nič a nedalo sa odlíšiť „hotkey nedorazil" od „hotkey sa
+/// ani nezaregistroval". Vracia chybový text aj volajúcemu (nielen do logu),
+/// nech ho appka vie ukázať aj hráčovi — ten text obsahuje dôvod od Windows
+/// vrátane kódu chyby (`GetLastError`, cez `std::io::Error::last_os_error()`
+/// v `global-hotkey`), nielen „nejde to".
+fn zaregistruj_a_zaloguj(app: &AppHandle, novy: &str, nazov: &str) -> Result<(), String> {
+    match app.global_shortcut().register(novy) {
+        Ok(()) => {
+            denik::zapis("hotkey", &format!("{nazov} „{novy}“ registrácia OK"));
+            Ok(())
+        }
+        Err(chyba) => {
+            let text = chyba.to_string();
+            // `global-hotkey` na Windowse vracia pre tento prípad samostatný
+            // variant `AlreadyRegistered`, ktorého `Display` obsahuje presne
+            // túto frázu — bezpečnejšie rozlíšenie, keď sa k nám (cez
+            // `tauri_plugin_global_shortcut::Error::GlobalHotkey(String)`)
+            // dostane už len hotový text, nie pôvodný enum.
+            let obsadena = text.to_lowercase().contains("already registered");
+            denik::zapis(
+                "hotkey",
+                &format!(
+                    "{nazov} „{novy}“ {}: {text}",
+                    if obsadena { "OBSADENÁ iným programom" } else { "CHYBA registrácie" }
+                ),
+            );
+            Err(text)
+        }
+    }
+}
+
 /// Prepíše globálnu skratku na novú (Tartarus — hlavná, historicky jediná).
 /// Pri nezmyselnom zápise sa vracia k F8, nech appka neostane bez jedinej
 /// ovládacej klávesy. Zruší VŠETKY skratky vrátane canvas — volajúci preto
@@ -92,10 +126,10 @@ pub fn prehlas_hotkey(app: &AppHandle, novy: &str) -> Result<(), String> {
     let skratky = app.global_shortcut();
     let _ = skratky.unregister_all();
 
-    if skratky.register(novy).is_err() {
-        let _ = skratky.register("F8");
+    if let Err(dovod) = zaregistruj_a_zaloguj(app, novy, "Tartarus") {
+        let _ = zaregistruj_a_zaloguj(app, "F8", "Tartarus (záložná F8)");
         return Err(format!(
-            "Skratku „{novy}“ Windows neprijal (môže ju držať iná appka). Vraciam sa k F8."
+            "Skratku „{novy}“ Windows neprijal ({dovod}). Vraciam sa k F8."
         ));
     }
     Ok(())
@@ -108,11 +142,11 @@ pub fn prehlas_hotkey_canvas(app: &AppHandle, novy: &str) -> Result<(), String> 
     let skratky = app.global_shortcut();
     let _ = skratky.unregister(novy);
 
-    if skratky.register(novy).is_err() {
-        let _ = skratky.register("F9");
+    if let Err(dovod) = zaregistruj_a_zaloguj(app, novy, "Frozen Canvas") {
+        let _ = zaregistruj_a_zaloguj(app, "F9", "Frozen Canvas (záložná F9)");
         return Err(format!(
-            "Skratku pre Frozen Canvas „{novy}“ Windows neprijal (môže ju držať iná appka \
-alebo kolíduje s hlavnou skratkou). Vraciam sa k F9."
+            "Skratku pre Frozen Canvas „{novy}“ Windows neprijal ({dovod}) — môže kolidovať \
+s hlavnou skratkou. Vraciam sa k F9."
         ));
     }
     Ok(())
@@ -129,15 +163,77 @@ pub fn prehlas_hotkey_trh(app: &AppHandle, novy: &str) -> Result<(), String> {
     if novy.is_empty() {
         return Ok(());
     }
-    let skratky = app.global_shortcut();
-    if skratky.register(novy).is_err() {
+    if let Err(dovod) = zaregistruj_a_zaloguj(app, novy, "ceny z trhu") {
         return Err(format!(
-            "Skratku pre ceny z trhu „{novy}“ Windows neprijal (môže ju držať iná appka \
-alebo kolíduje s inou skratkou). Automatická detekcia z logu funguje ďalej bez nej."
+            "Skratku pre ceny z trhu „{novy}“ Windows neprijal ({dovod}) — môže kolidovať \
+s inou skratkou. Automatická detekcia z logu funguje ďalej bez nej."
         ));
     }
     Ok(())
 }
+
+/// Spoločné miesto, odkiaľ sa registrujú VŠETKY štyri skratky naraz (Tartarus,
+/// Frozen Canvas, ceny z trhu, Ctrl+F8) — pri štarte appky aj pri každom
+/// uložení Nastavení (TLI 28, bod 2a). Zapamätá si prípadné upozornenia do
+/// `Stav::hotkey_upozornenia`, nech ich Nastavenia vedia ukázať červeným aj
+/// vtedy, keď sa otvoria AŽ PO štarte appky — nielen priamo pri uložení
+/// formulára, ktoré malo chybovú hlášku už predtým.
+///
+/// `posli_toast` je zapnuté LEN pri štarte: pri uložení Nastavení chybu
+/// uvidí hráč rovno vo formulári, druhý toast navyše by bol len hluk.
+fn zaregistruj_vsetky_hotkeys(
+    app: &AppHandle,
+    hotkey: &str,
+    hotkey_canvas: &str,
+    hotkey_trh: &str,
+    posli_toast: bool,
+) -> Vec<String> {
+    let chyby: Vec<String> = [
+        prehlas_hotkey(app, hotkey).err(),
+        prehlas_hotkey_canvas(app, hotkey_canvas).err(),
+        prehlas_hotkey_trh(app, hotkey_trh).err(),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    // Ctrl+F8 (TLI 21) sa registruje cez typovaný `Shortcut`, nie cez reťazec
+    // ako predošlé tri — ide o tú istú hodnotu, akú porovnáva handler
+    // (`skratka == &ctrl_f8()`), preto sa tu nepoužíva `zaregistruj_a_zaloguj`
+    // (ten by skratku musel znova naparsovať z textu).
+    match app.global_shortcut().register(ctrl_f8()) {
+        Ok(()) => denik::zapis("hotkey", "Upraviť rozloženie „CONTROL+F8“ registrácia OK"),
+        Err(e) => denik::zapis(
+            "hotkey",
+            &format!("Upraviť rozloženie „CONTROL+F8“ CHYBA registrácie: {e}"),
+        ),
+    }
+
+    *app.state::<Stav>().hotkey_upozornenia.lock().unwrap() = chyby.clone();
+    let _ = app.emit("hotkey-upozornenia", json!({ "chyby": chyby }));
+    if posli_toast && !chyby.is_empty() {
+        let text = chyby.join(" ");
+        posli_toast_hotkey(app, &text);
+        ukaz_pripomienku_toast(app, &text, "upozornenie", PRIPOMIENKA_UPOZORNENIE_S);
+    }
+    chyby
+}
+
+/// Windows notifikácia (mimo appky, teda viditeľná aj keď appka sedí len
+/// v tray a žiadne jej okno nie je zobrazené) — rovnaký vzor ako
+/// `tracker::posli_windows_notifikaciu` pre pripomienku „Enable Log".
+#[cfg(windows)]
+fn posli_toast_hotkey(app: &AppHandle, text: &str) {
+    use tauri_plugin_notification::NotificationExt;
+    let _ = app
+        .notification()
+        .builder()
+        .title("Tvoj Tatko TLI Overlay")
+        .body(text)
+        .show();
+}
+
+#[cfg(not(windows))]
+fn posli_toast_hotkey(_app: &AppHandle, _text: &str) {}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Overlay
@@ -755,6 +851,33 @@ pub(crate) fn spusti_analyzu(app: AppHandle, _modul: Modul) {
     ukaz_chybu(&app, None, "Appka funguje len na Windowse.");
 }
 
+/// Oneskorenie pred „Odfotiť teraz" z tray menu/hlavného okna (TLI 28, bod 3)
+/// — nech hráč stihne kliknúť späť do hry predtým, než appka odfotí.
+const ODFOTENIE_TERAZ_ONESKORENIE_S: u64 = 2;
+
+/// Spustí analýzu bez klávesy, s oneskorením (TLI 28, bod 3: „funguje bez
+/// klávesy" — poistka pre prípad, že RegisterHotKey zlyhá, obsadí ju iný
+/// program, alebo appka ešte nemá vyriešený spôsob, ako klávesu zistiť).
+/// Rovnaký vzor ako `naplanuj_skrytie` — appka už takto plánuje prácu na
+/// pozadí z handleru, ktorý sám nesmie čakať (tray menu, príkaz z JS).
+fn naplanuj_odfotenie(app: AppHandle, modul: Modul) {
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_secs(ODFOTENIE_TERAZ_ONESKORENIE_S));
+        spusti_analyzu(app, modul);
+    });
+}
+
+#[tauri::command]
+fn odfot_tartarus_teraz(app: AppHandle) -> Result<(), String> {
+    naplanuj_odfotenie(app, Modul::Tartarus);
+    Ok(())
+}
+
+#[tauri::command]
+fn odfot_canvas_teraz(app: AppHandle) -> Result<(), String> {
+    naplanuj_odfotenie(app, Modul::Canvas);
+    Ok(())
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Farm tracker (TLI 11/11b)
@@ -1662,6 +1785,15 @@ fn nacitaj_nastavenia(stav: tauri::State<Stav>) -> Result<Nastavenia, String> {
     Ok(stav.nastavenia.lock().unwrap().clone())
 }
 
+/// Upozornenia z POSLEDNÉHO pokusu zaregistrovať klávesové skratky (TLI 28,
+/// bod 2a) — Nastavenia si ich vypýtajú pri OTVORENÍ okna, nie len po uložení
+/// formulára, lebo appka ich vie zistiť (napr. že F8 drží Overwolf) už pri
+/// vlastnom štarte, dávno predtým, než hráč Nastavenia vôbec otvorí.
+#[tauri::command]
+fn hotkey_upozornenia(stav: tauri::State<Stav>) -> Vec<String> {
+    stav.hotkey_upozornenia.lock().unwrap().clone()
+}
+
 #[tauri::command]
 fn uloz_nastavenia(
     app: AppHandle,
@@ -1677,12 +1809,9 @@ fn uloz_nastavenia(
     // `prehlas_hotkey` ruší VŠETKY skratky — canvas aj trh sa preto
     // registrujú až po nej, nie súbežne/pred. Ctrl+F8 (TLI 21) z rovnakého
     // dôvodu tiež: inak by zmena F8/F9/F10 v Nastaveniach appku o „Upraviť
-    // rozloženie" nenávratne pripravila až do reštartu.
-    let chyba1 = prehlas_hotkey(&app, &hotkey).err();
-    let chyba2 = prehlas_hotkey_canvas(&app, &hotkey_canvas).err();
-    let chyba3 = prehlas_hotkey_trh(&app, &hotkey_trh).err();
-    let _ = app.global_shortcut().register(ctrl_f8());
-    let chyby: Vec<String> = [chyba1, chyba2, chyba3].into_iter().flatten().collect();
+    // rozloženie" nenávratne pripravila až do reštartu. `posli_toast = false`
+    // — formulár chybu ukáže rovno sám, druhý toast navyše by bol len hluk.
+    let chyby = zaregistruj_vsetky_hotkeys(&app, &hotkey, &hotkey_canvas, &hotkey_trh, false);
     if chyby.is_empty() {
         Ok(())
     } else {
@@ -1882,6 +2011,7 @@ fn main() {
             pripomienka_zobrazena_od: Mutex::new(None),
             rezim_upravy: Mutex::new(false),
             rezim_upravy_kontext: Mutex::new(None),
+            hotkey_upozornenia: Mutex::new(Vec::new()),
         })
         .manage(tracker::Tracker::default())
         // Sprievodca sa načíta z disku hneď pri štarte — záložka Guide
@@ -1927,7 +2057,10 @@ fn main() {
             rezim_upravy_obnov_predvolene,
             rezim_upravy_ulozit_panel,
             uloz_priehladnost,
-            otvor_priecinok_logov
+            otvor_priecinok_logov,
+            hotkey_upozornenia,
+            odfot_tartarus_teraz,
+            odfot_canvas_teraz
         ])
         // TLI 23: Tauri v2 by zatvorením (X) KAŽDÉ okno ZNIČILO — appka by
         // potom na druhý klik (tray menu, `otvor_nastavenia`) narazila na
@@ -1957,16 +2090,28 @@ fn main() {
             // Keď skratku z nastavení Windows neprijme, `prehlas_hotkey` sa sám
             // vráti k F8 — appka teda nikdy neostane bez ovládacej klávesy.
             // Canvas aj trh sa registrujú AŽ PO nej (tá ruší všetky skratky).
-            let _ = prehlas_hotkey(&handle, &hotkey_pri_starte);
-            let _ = prehlas_hotkey_canvas(&handle, &hotkey_canvas_pri_starte);
-            let _ = prehlas_hotkey_trh(&handle, &hotkey_trh_pri_starte);
-            // Ctrl+F8 (TLI 21) — registruje sa AŽ PO predošlých riadkoch,
-            // lebo `prehlas_hotkey` ruší VŠETKY skratky (`unregister_all`) bez
-            // ohľadu na modifikátor. `uloz_nastavenia` volá tú istú trojicu
-            // znova (zmena skratky v Nastaveniach za behu appky) — preto aj
-            // ona po nich musí Ctrl+F8 zaregistrovať nanovo, inak by po zmene
-            // F8/F9/F10 appka o Ctrl+F8 nenávratne prišla až do reštartu.
-            let _ = handle.global_shortcut().register(ctrl_f8());
+            // `posli_toast = true` — pri štarte appky hráč inak upozornenie
+            // neuvidí vôbec (Nastavenia ešte nemusí mať otvorené). TLI 28, bod 2a.
+            //
+            // Poznámka k poradiu (TLI 28, bod 4 — regresný test na TLI 23):
+            // `setup()` beží AŽ PO tom, čo Tauri vytvorilo všetky okná z
+            // `tauri.conf.json` (dôkaz je pár riadkov nižšie — `app.get_webview_
+            // window(OVERLAY)` tu už vracia `Some`, rovnako ako predtým), takže
+            // `zaregistruj_vsetky_hotkeys` (cezeň prípadný toast cez okno
+            // `pripomienka`) má nad čím pracovať. Samotné `RegisterHotKey` navyše
+            // nepotrebuje bežiaci event loop — len existujúce okno (vytvorené už
+            // pri inicializácii pluginu `tauri_plugin_global_shortcut`, teda PRED
+            // týmto `setup()`); hlavná slučka tao/winit, ktorá mu po `run()`
+            // začne doručovať `WM_HOTKEY`, sa rozbehne hneď po návrate z tohto
+            // uzáveru. TLI 23 (zatváranie okien na `hide` namiesto zničenia)
+            // tento vzťah nemenilo — žiadna regresia tu nie je.
+            let _ = zaregistruj_vsetky_hotkeys(
+                &handle,
+                &hotkey_pri_starte,
+                &hotkey_canvas_pri_starte,
+                &hotkey_trh_pri_starte,
+                true,
+            );
 
             // Tracker (TLI 11c): číta log na pozadí nezávisle od toho, či je
             // niektoré okno otvorené, aby appka fungovala aj schovaná v tray.
@@ -2001,6 +2146,22 @@ fn main() {
                 tauri::menu::MenuItem::with_id(app, "hlavne", "Otvoriť", true, None::<&str>)?;
             let polozka_nastavenia =
                 tauri::menu::MenuItem::with_id(app, "nastavenia", "Nastavenia", true, None::<&str>)?;
+            // TLI 28, bod 3: funguje bez klávesy, aj keď RegisterHotKey zlyhá
+            // alebo F8/F9 drží iný program.
+            let polozka_odfot_tartarus = tauri::menu::MenuItem::with_id(
+                app,
+                "odfot_tartarus",
+                "Odfotiť Tartarus teraz",
+                true,
+                None::<&str>,
+            )?;
+            let polozka_odfot_canvas = tauri::menu::MenuItem::with_id(
+                app,
+                "odfot_canvas",
+                "Odfotiť Canvas teraz",
+                true,
+                None::<&str>,
+            )?;
             let polozka_verzia = tauri::menu::MenuItem::with_id(
                 app,
                 "verzia",
@@ -2012,7 +2173,14 @@ fn main() {
                 tauri::menu::MenuItem::with_id(app, "koniec", "Ukončiť", true, None::<&str>)?;
             let menu = tauri::menu::Menu::with_items(
                 app,
-                &[&polozka_hlavne, &polozka_nastavenia, &polozka_verzia, &polozka_koniec],
+                &[
+                    &polozka_hlavne,
+                    &polozka_nastavenia,
+                    &polozka_odfot_tartarus,
+                    &polozka_odfot_canvas,
+                    &polozka_verzia,
+                    &polozka_koniec,
+                ],
             )?;
 
             let mut tray = tauri::tray::TrayIconBuilder::with_id("tray")
@@ -2025,6 +2193,8 @@ fn main() {
                         ukaz_a_zaostri(app, HLAVNE)
                     }
                     "nastavenia" => ukaz_a_zaostri(app, NASTAVENIA),
+                    "odfot_tartarus" => naplanuj_odfotenie(app.clone(), Modul::Tartarus),
+                    "odfot_canvas" => naplanuj_odfotenie(app.clone(), Modul::Canvas),
                     _ => {}
                 });
             if let Some(ikona) = app.default_window_icon().cloned() {

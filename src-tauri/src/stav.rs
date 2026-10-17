@@ -33,6 +33,12 @@ pub struct Stav {
     /// tým istým oknom/monitorom, nie ho zisťovať znova (hráč mohol medzitým
     /// prepnúť okno alebo presunúť myš na iný monitor).
     pub rezim_upravy_kontext: Mutex<Option<RezimUpravyKontext>>,
+    /// Upozornenia z POSLEDNÉHO pokusu zaregistrovať klávesové skratky (TLI 28,
+    /// bod 2a) — prázdne, keď všetky tri prešli. Nastavuje sa pri štarte appky
+    /// aj pri každom uložení Nastavení (`zaregistruj_vsetky_hotkeys`), aby
+    /// Nastavenia vedeli ukázať červený stav aj vtedy, keď sa otvoria AŽ PO
+    /// štarte appky, nie len priamo pri uložení formulára.
+    pub hotkey_upozornenia: Mutex<Vec<String>>,
 }
 
 /// Kontext jedného behu režimu úpravy rozloženia (TLI 21) — pozri

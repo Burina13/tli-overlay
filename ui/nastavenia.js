@@ -7,6 +7,12 @@ const inpKluc = document.getElementById("inp-kluc");
 const inpHotkey = document.getElementById("inp-hotkey");
 const inpHotkeyCanvas = document.getElementById("inp-hotkey-canvas");
 const inpHotkeyTrh = document.getElementById("inp-hotkey-trh");
+const btnNahrajHotkey = document.getElementById("btn-nahraj-hotkey");
+const btnNahrajHotkeyCanvas = document.getElementById("btn-nahraj-hotkey-canvas");
+const btnNahrajHotkeyTrh = document.getElementById("btn-nahraj-hotkey-trh");
+const elStavHotkey = document.getElementById("stav-hotkey");
+const elStavHotkeyCanvas = document.getElementById("stav-hotkey-canvas");
+const elStavHotkeyTrh = document.getElementById("stav-hotkey-trh");
 const inpProces = document.getElementById("inp-proces");
 const inpAutoskrytie = document.getElementById("inp-autoskrytie");
 const inpZvuk = document.getElementById("inp-zvuk");
@@ -84,6 +90,76 @@ inpPriehladnost.addEventListener("input", async () => {
     }
 });
 
+// --- Nahratie klávesovej skratky priamo stlačením (TLI 28, bod 2b) ---
+// Hráč doteraz musel poznať presný textový formát (`CommandOrControl+Shift+T`)
+// — teraz stačí kliknúť na „Nahrať…“ a stlačiť kombináciu. `event.code` sa
+// posiela appke takmer bez úprav: Rust (`global-hotkey`) parsuje presne tie
+// isté názvy („F8“, „KeyA“, „Digit1“, „ArrowUp“…), takže tu nie je žiadny
+// preklad okrem zoradenia modifikátorov pred hlavnú klávesu.
+const KODY_SAMOTNYCH_MODIFIKATOROV = [
+    "ShiftLeft", "ShiftRight", "ControlLeft", "ControlRight",
+    "AltLeft", "AltRight", "MetaLeft", "MetaRight",
+];
+
+function nahrajSkratku(input, button) {
+    const povodnyText = button.textContent;
+    button.textContent = "Stlač klávesu…";
+    button.disabled = true;
+
+    const zachyt = (udalost) => {
+        udalost.preventDefault();
+        if (udalost.code === "Escape") {
+            koniec(); // zrušenie nahrávania bez zmeny — Escape appka používa inde
+            return;
+        }
+        // Čaká sa na HLAVNÚ klávesu — samotné stlačenie modifikátora
+        // (napr. držanie Ctrl pred druhou klávesou) ešte nahrávanie neukončí.
+        if (KODY_SAMOTNYCH_MODIFIKATOROV.includes(udalost.code)) {
+            return;
+        }
+        const casti = [];
+        if (udalost.ctrlKey) casti.push("CONTROL");
+        if (udalost.altKey) casti.push("ALT");
+        if (udalost.shiftKey) casti.push("SHIFT");
+        if (udalost.metaKey) casti.push("SUPER");
+        casti.push(udalost.code);
+        input.value = casti.join("+");
+        koniec();
+    };
+    const koniec = () => {
+        window.removeEventListener("keydown", zachyt, true);
+        button.textContent = povodnyText;
+        button.disabled = false;
+    };
+    window.addEventListener("keydown", zachyt, true);
+}
+
+btnNahrajHotkey.addEventListener("click", () => nahrajSkratku(inpHotkey, btnNahrajHotkey));
+btnNahrajHotkeyCanvas.addEventListener("click", () => nahrajSkratku(inpHotkeyCanvas, btnNahrajHotkeyCanvas));
+btnNahrajHotkeyTrh.addEventListener("click", () => nahrajSkratku(inpHotkeyTrh, btnNahrajHotkeyTrh));
+
+// --- Červený stav „F8 používa iný program" pod poľom (TLI 28, bod 2a) ---
+// Appka vie o kolízii už od ŠTARTU (nielen po uložení formulára) — preto sa
+// toto volá aj hneď pri otvorení okna, nie len z `catch` pri uložení.
+function aktualizujStavHotkeys(chyby) {
+    const priraduj = (el, zhoda) => {
+        const text = chyby.find(zhoda) || "";
+        el.textContent = text;
+        el.classList.toggle("chyba", !!text);
+    };
+    priraduj(elStavHotkey, (t) => !t.includes("Frozen Canvas") && !t.includes("ceny z trhu"));
+    priraduj(elStavHotkeyCanvas, (t) => t.includes("Frozen Canvas"));
+    priraduj(elStavHotkeyTrh, (t) => t.includes("ceny z trhu"));
+}
+
+async function obnovStavHotkeys() {
+    try {
+        aktualizujStavHotkeys(await invoke("hotkey_upozornenia"));
+    } catch (chyba) {
+        console.error("Načítanie stavu klávesových skratiek zlyhalo:", chyba);
+    }
+}
+
 // --- Inicializácia ---
 document.addEventListener("DOMContentLoaded", async () => {
     try {
@@ -112,6 +188,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     } catch (chyba) {
         console.error("Chyba pri načítaní nastavení:", chyba);
     }
+
+    await obnovStavHotkeys();
 });
 
 // --- Ukázať/skryť heslo ---
@@ -172,6 +250,12 @@ formular.addEventListener("submit", async (e) => {
     } catch (chybaText) {
         // Rust reject vracia priamo text
         zobrazSpravu(elVysledokUlozenia, chybaText, false);
+    } finally {
+        // Backend (`zaregistruj_vsetky_hotkeys`) si upozornenia zapamätal
+        // nezávisle od toho, či `uloz_nastavenia` skončilo OK alebo chybou —
+        // červený stav pod poľom sa preto vždy dotiahne nanovo z neho, nielen
+        // z `chybaText` vyššie (ten je jeden spojený text pre `elVysledokUlozenia`).
+        obnovStavHotkeys();
     }
 });
 

@@ -190,3 +190,11 @@ button:active {
 
 .uspech { color: var(--zelena); }
 .chyba { color: var(--cervena); }
+
+/* Červený/žiadny stav pod klávesovou skratkou (TLI 28, bod 2a) — „F8 používa
+   iný program". Prázdne, keď je skratka v poriadku, appka triedu nepridáva. */
+.stav-skratky {
+    display: block;
+    font-weight: 600;
+}
+.stav-skratky.chyba { color: var(--cervena); }

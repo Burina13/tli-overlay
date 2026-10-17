@@ -2,7 +2,47 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
-## 0.18.3 — 17.10.2026 (TLI 26 — hotfix: edit mód nad VŠETKÝMI panelmi, viac monitorov, log)
+## 0.18.4 — 18.10.2026 (TLI 28 — F8 nič neodošle: diagnostika registrácie, odfotenie bez klávesy)
+
+Úloha `2026-10-18-0048-mcp.md`, nahlásené Richardom naživo z PC: 0.18.3 beží,
+hra beží, ale po F8 v logu nie je ani riadok — appka doteraz logovala len
+STLAČENIE klávesy (`spusti_analyzu`), nie pokus appku o REGISTRÁCIU hotkey pri
+štarte, takže sa nedalo odlíšiť „hotkey nedorazil" od „hotkey sa ani
+nezaregistroval" (Overwolf, AION2, Discord aj Logitech boli naraz spustené a
+F8/F9/Ctrl+F8 môžu byť obsadené ktorýmkoľvek z nich).
+
+- **Registrácia každej skratky (Tartarus, Frozen Canvas, ceny z trhu, Ctrl+F8)
+  sa od tejto verzie VŽDY loguje** — OK / „OBSADENÁ iným programom" / iná
+  CHYBA, vrátane textu od Windows (ten v sebe nesie aj kód chyby, ekvivalent
+  `GetLastError`, cez `global-hotkey`/`std::io::Error::last_os_error()`).
+  Ďalší beh appky u Richarda už ukáže, ktorý presne program F8 drží.
+- **Nastavenia ukážu červený stav pod poľom** („Skratku „F8“ Windows neprijal…")
+  hneď pri OTVORENÍ okna, nie len po uložení formulára — appka o kolízii vie
+  už od vlastného štartu. Pri kolízii appka navyše pošle Windows notifikáciu
+  (toast mimo appky, viditeľný aj keď appka sedí v tray) aj toast nad hrou
+  (rovnaký mechanizmus ako pripomienka „Enable Log").
+- **Výber klávesy nahrávaním** — tlačidlo „Nahrať…" vedľa každého z troch polí
+  v Nastaveniach: klikni a stlač kombináciu priamo, appka ju sama poskladá do
+  textového tvaru (Escape nahrávanie zruší bez zmeny).
+- **Tray menu aj hlavné okno majú „Odfotiť Tartarus teraz"/„Odfotiť Canvas
+  teraz"** — spustí analýzu bez klávesy vôbec, s oneskorením 2 s na prepnutie
+  do hry. Funguje aj keď je RegisterHotKey úplne zablokovaný.
+- **Nízkoúrovňový klávesový hook (WH_KEYBOARD_LL / `SetWindowsHookEx`) sa
+  NEPOUŽIL** — CI test `pravidla` (`.github/workflows/ci.yml`) má
+  `SetWindowsHookEx` v zozname zakázaných API (zásah/sledovanie mimo appky);
+  appka sa ho preto ani nepokúša obísť. Diagnostika + manuálna záloha
+  (tlačidlá „Odfotiť teraz") rieši symptóm bez neho.
+- **Oprava kódovania `tli-overlay.log`** — súbor je UTF-8, ale bez BOM si ho
+  staršie prehliadače logov (Poznámkový blok a pod.) prečítali ako
+  ANSI/CP1250 a diakritika vyšla ako „Upravi��". Appka teraz na začiatok
+  ČERSTVÉHO/PRÁVE ROTOVANÉHO súboru zapíše UTF-8 BOM (`EF BB BF`).
+- **Overené (nie zmenené):** poradie `setup()` vs. vytvorenie okien a bežiaci
+  event loop (podozrenie na regresiu z TLI 23) — `RegisterHotKey` potrebuje len
+  existujúce okno (vytvorené pri inicializácii pluginu, PRED `setup()`), nie
+  bežiaci message pump; ten sa rozbehne hneď po návrate zo `setup()`. Žiadna
+  zmena kódu, len komentár s odôvodnením pri registrácii. Skutočné overenie v
+  hre (čo presne F8 držalo) je na ďalšom Richardovom teste — appka to po tejto
+  verzii uvidí v logu.
 
 Úloha `2026-10-17-2231-mcp.md`, nahlásené Richardom naživo z PC: v režime
 „Upraviť rozloženie" (Ctrl+F8) sa dal ťahať len ľavý panel, mini-panel (zisk/čo

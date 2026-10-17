@@ -51,13 +51,22 @@ pub fn zapis(kontext: &str, text: &str) {
     }
     rotuj_ak_treba(&priecinok);
 
+    let cesta = cesta_suboru(logika::NAZOV_AKTUALNEHO);
+    // Súbor je UTF-8 (diakritika v slovenských vetách), ale Poznámkový blok aj
+    // staršie prehliadače logov bez BOM hádajú kódovanie z obsahu a bez neho
+    // si to niekedy prečítajú ako ANSI/CP1250 — presne preto Richard 18.10.2026
+    // videl „Upravi��" namiesto „Upraviť" (TLI 28, bod 5). BOM sa zapisuje LEN
+    // raz, keď súbor ešte neexistuje alebo je prázdny (čerstvo vytvorený/práve
+    // rotovaný) — pri bežnom pripisovaní by `\u{FEFF}` v strede súboru naopak
+    // kódovanie pokazilo.
+    let novy_alebo_prazdny = std::fs::metadata(&cesta).map(|m| m.len() == 0).unwrap_or(true);
+
     let cas = crate::tracker::unixovy_cas();
     let riadok = logika::riadok(cas, kontext, text);
-    if let Ok(mut f) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(cesta_suboru(logika::NAZOV_AKTUALNEHO))
-    {
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&cesta) {
+        if novy_alebo_prazdny {
+            let _ = f.write_all(b"\xEF\xBB\xBF");
+        }
         let _ = writeln!(f, "{riadok}");
     }
 }

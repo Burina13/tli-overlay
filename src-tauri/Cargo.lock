@@ -4145,7 +4145,7 @@ checksum = "fd3ca314f692efd6c868f8408f53fe444634a845f96c028b97d35f6a1f79f0ee"
 
 [[package]]
 name = "tli-overlay"
-version = "0.18.3"
+version = "0.18.4"
 dependencies = [
  "flate2",
  "image",

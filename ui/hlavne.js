@@ -1099,6 +1099,37 @@ document.getElementById("btn-taktiky-json").addEventListener("click", async () =
     }
 });
 
+// --- „Odfotiť teraz" (TLI 28, bod 3) — funguje bez klávesy, s oneskorením
+// 2 s, aby hráč stihol prepnúť späť do hry. Tlačidlo sa na tú chvíľu zablokuje
+// a odpočítava, nech je jasné, že appka naozaj niečo robí. ---
+function odfotTerazTlacidlo(button, prikaz, nazov) {
+    button.addEventListener("click", async () => {
+        const povodnyText = button.textContent;
+        button.disabled = true;
+        try {
+            await invoke(prikaz);
+            let zostava = 2;
+            button.textContent = `Odfotím o ${zostava} s…`;
+            const odpocet = setInterval(() => {
+                zostava -= 1;
+                if (zostava > 0) {
+                    button.textContent = `Odfotím o ${zostava} s…`;
+                } else {
+                    clearInterval(odpocet);
+                    button.textContent = povodnyText;
+                    button.disabled = false;
+                }
+            }, 1000);
+        } catch (e) {
+            console.error(`Odfotenie (${nazov}) zlyhalo:`, e);
+            button.textContent = povodnyText;
+            button.disabled = false;
+        }
+    });
+}
+odfotTerazTlacidlo(document.getElementById("btn-odfot-tartarus"), "odfot_tartarus_teraz", "Tartarus");
+odfotTerazTlacidlo(document.getElementById("btn-odfot-canvas"), "odfot_canvas_teraz", "Canvas");
+
 document.getElementById("btn-taktiky-pomenuj").addEventListener("click", async () => {
     const stavEl = document.getElementById("taktiky-pomenovanie-stav");
     const nazov = document.getElementById("taktiky-f-nazov").value.trim();

@@ -37,22 +37,35 @@
 
             <div class="skupina">
                 <label for="inp-hotkey">Klávesová skratka — Tartarus</label>
-                <input type="text" id="inp-hotkey" value="F8">
-                <small>Napríklad: <code>F8</code> alebo <code>CommandOrControl+Shift+T</code></small>
+                <div class="heslo-obal">
+                    <input type="text" id="inp-hotkey" value="F8">
+                    <button type="button" id="btn-nahraj-hotkey" class="btn-maly">Nahrať…</button>
+                </div>
+                <small>Napríklad: <code>F8</code> alebo <code>CommandOrControl+Shift+T</code> —
+                    alebo klikni „Nahrať…" a rovno stlač klávesu/kombináciu.</small>
+                <small id="stav-hotkey" class="stav-skratky"></small>
             </div>
 
             <div class="skupina">
                 <label for="inp-hotkey-canvas">Klávesová skratka — Frozen Canvas</label>
-                <input type="text" id="inp-hotkey-canvas" value="F9">
+                <div class="heslo-obal">
+                    <input type="text" id="inp-hotkey-canvas" value="F9">
+                    <button type="button" id="btn-nahraj-hotkey-canvas" class="btn-maly">Nahrať…</button>
+                </div>
                 <small>Iná obrazovka hry, iná skratka — oddelená od Tartarus hotkey vyššie.</small>
+                <small id="stav-hotkey-canvas" class="stav-skratky"></small>
             </div>
 
             <div class="skupina">
                 <label for="inp-hotkey-trh">Klávesová skratka — ceny z trhu (nepovinné)</label>
-                <input type="text" id="inp-hotkey-trh" value="">
+                <div class="heslo-obal">
+                    <input type="text" id="inp-hotkey-trh" value="">
+                    <button type="button" id="btn-nahraj-hotkey-trh" class="btn-maly">Nahrať…</button>
+                </div>
                 <small>Appka ceny z trhu fotí SAMA, len čo v hre otvoríš detail ponuky — tento
                     hotkey je len ručná záloha pre prípad, že by to automatika nezachytila.
                     Nechaj prázdne, ak ho nepotrebuješ.</small>
+                <small id="stav-hotkey-trh" class="stav-skratky"></small>
             </div>
 
             <div class="skupina">
