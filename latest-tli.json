@@ -1,6 +1,6 @@
 {
-  "version": "0.18.0",
-  "notes": "TLI 25: F8 funguje aj na obrazovke „Select a Torture Instrument“ — nad každou z troch kartičiek ukáže tier (S/A/B/C), poradie a jednu vetu prečo, odporúčanú zvýrazní; tier je zmeraný vlastnou simuláciou 8 000 drilov na každý z 31 nástrojov a berie do úvahy aj nástroje, ktoré už máš. Appka sa učí z toho, čo si naozaj vzal a ako dril dopadol — bez klikania. Mini-panel ukazuje aj „čo padlo“ (dropy mapy s ikonou, počtom a cenou). Ctrl+F8 posúva každý panel zvlášť (F8 doska, F8 nástroje, F9 Canvas, Artistry) a hlavné okno appky si pamätá polohu a veľkosť.",
-  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.18.0/Tvoj-Tatko-TLI-Overlay_0.18.0_x64_en-US.msi",
-  "msiSha256": "5691d3a907612ce1edbb2838f96cb62333c3d9d7376880d0e3eb3fcc5dbbe87b"
+  "version": "0.18.1",
+  "notes": "TLI 25: F8 funguje aj na obrazovke „Select a Torture Instrument“ — nad každou z troch kartičiek ukáže tier (S/A/B/C), poradie a jednu vetu prečo, odporúčanú zvýrazní; tier je zmeraný vlastnou simuláciou 8 000 drilov na každý z 31 nástrojov a berie do úvahy aj nástroje, ktoré už máš. Appka sa učí z toho, čo si naozaj vzal a ako dril dopadol — bez klikania. Mini-panel ukazuje aj „čo padlo“ (dropy mapy s ikonou, počtom a cenou). Ctrl+F8 posúva každý panel zvlášť (F8 doska, F8 nástroje, F9 Canvas, Artistry) a hlavné okno appky si pamätá polohu a veľkosť. 0.18.1 opravuje veľkosť mini-panela, do ktorej sa zoznam dropov nezmestil.",
+  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.18.1/Tvoj-Tatko-TLI-Overlay_0.18.1_x64_en-US.msi",
+  "msiSha256": "09a3f484c5c09d4f171b49f4391acc21fe51dc0c6bd8a90eb49afbcb56eda75c"
 }
