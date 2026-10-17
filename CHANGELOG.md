@@ -2,6 +2,37 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.17.2 — 17.10.2026 (TLI 24 — F8 „nič nespraví" u Richarda)
+
+Vyšetrenie `2026-10-17-1238-mcp.md`: na serveri (CT 114) neprišiel za 17.10.
+ani jeden `POST /api/analyza` — appka teda zlyhala skôr, než stihla čokoľvek
+poslať, a dovtedy nemala ŽIADEN spôsob, ako to ukázať alebo zapísať.
+
+- **Lokálny rotovaný denník appky** (`%APPDATA%\sk.tvojtatko.tli-overlay\logs\`,
+  5× 2 MB) — zapisuje hotkey, nájdené/nenájdené okno hry, snímku, HTTP
+  požiadavky aj kolá uploadu logu. Tlačidlo „Otvoriť log" v Nastaveniach.
+  Rozhodovacia logika rotácie je v `core/src/denik.rs` (jednotkové testy).
+- **Zámok `beh` (ochrana proti dvojitému F8) je teraz jediné miesto, kde appka
+  vedela úplne potichu „nič nespraviť"** — keby raz zostal `true` navždy
+  (napr. nečakaná panika vo vlákne analýzy pred jeho uvoľnením), KAŽDÝ ďalší
+  F8/F9 by mlčal presne takto. Celé telo vlákna je teraz v `catch_unwind`:
+  pri panike appka ukáže chybu a zámok vždy uvoľní, namiesto ticha navždy.
+- **Oprava: upload logu (`tracker_upload_stav`) bol v DB prázdny aj v 0.17.1**
+  — kolo uploadu aj synchronizácia cien partie boli omylom za tým istým
+  `continue`, ktorý závisel od farm trackera (`tracker_zapnuty` + nájdený
+  herný log). Keď farm tracker nebol zapnutý alebo log ešte nenašiel, upload
+  sa nikdy nespustil, hoci je to vlastné, nezávislé nastavenie. Obe teraz
+  bežia na vlastnom časovači nezávisle od farm trackera.
+  (`src-tauri/src/tracker.rs::spusti_vlakno`)
+- **Párovanie okna hry je teraz PRIMÁRNE podľa mena procesu**
+  (`torchlight_infinite.exe`), titulok okna („Torchlight: Infinite") je už len
+  záloha pre prípad, že sa meno procesu nedá zistiť. Titulok sa vie medzi
+  verziami hry zmeniť a appka ho vidí rovnako ako titulky iných bežiacich
+  programov (Overwolf, AION 2, launcher).
+- **Vždy viditeľná spätná väzba po F8/F9** — pribudla samostatná fáza
+  „Odoslané, čakám na radu…" medzi snímkou („Snímam…") a výsledkom/chybou;
+  predtým bola jedna spoločná fáza pre oba kroky.
+
 ## 0.16.0 — 16.10.2026 (TLI 19 dokončenie + TLI 14)
 
 **TLI 19 akceptačné kritérium OVERENÉ nad reálnym celodenným logom.** Richard

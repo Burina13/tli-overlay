@@ -4,6 +4,7 @@ const { invoke } = window.__TAURI__.core;
 
 // Referencie na DOM prvky
 const elIndikator = document.getElementById("indikator");
+const elIndikatorText = document.getElementById("indikator-text");
 const elChyba = document.getElementById("chyba");
 const elVrstva = document.getElementById("vrstva");
 const elPanel = document.getElementById("panel");
@@ -33,9 +34,18 @@ listen("stav", (event) => {
     const payload = event.payload;
     skryVsetko();
 
+    // TLI 24 (`2026-10-17-1238-mcp.md` bod 3): VŽDY viditeľná spätná väzba —
+    // "Snímam…" hneď po stlačení F8/F9 (okno hry nájdené, snímka urobená),
+    // "Odoslané, čakám na radu…" len čo appka pošle HTTP požiadavku. Predtým
+    // bola jediná fáza "analyzujem" pre oba kroky naraz.
     if (payload.faza === "analyzujem") {
+        elIndikatorText.textContent = "Snímam…";
         elIndikator.classList.remove("skryte");
-    } 
+    }
+    else if (payload.faza === "odosielam") {
+        elIndikatorText.textContent = "Odoslané, čakám na radu…";
+        elIndikator.classList.remove("skryte");
+    }
     else if (payload.faza === "chyba") {
         // VŽDY používame textContent pre ochranu pred XSS. 
         // Sprava môže prísť z neovereného zdroja alebo z jazykového modelu.

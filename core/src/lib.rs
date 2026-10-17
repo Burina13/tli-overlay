@@ -7,6 +7,7 @@
 
 pub mod api;
 pub mod aktualizacia;
+pub mod denik;
 pub mod nastavenia;
 pub mod obraz;
 pub mod rozlozenie;

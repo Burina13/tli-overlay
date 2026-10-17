@@ -149,12 +149,41 @@ pub fn zoznam_okien() -> Vec<NajdeneOkno> {
     zoznam
 }
 
-/// Najde najvacsie okno odpovedajuce poziadavke hladaneho retazca (titulok alebo meno procesu).
-/// DOVOD: Hra moze mat otvorene rozne sekundarne okna (napr. spustatela, hlasenia chyb).
-/// Rozmerova priorita zabezpeci, ze cielom nasho zachytenia bude samotne herne prostredie a nie launcher.
+/// Rovnaké ako `sedi`, ale pozerá sa LEN na meno procesu, nikdy na titulok
+/// okna (TLI 24, `2026-10-17-1238-mcp.md` bod 2).
+fn sedi_proces(proces: &str, hladane: &str) -> bool {
+    let norm_proces = normalizuj(proces);
+    hladane.split(',').any(|cast| {
+        let norm_cast = normalizuj(cast);
+        norm_cast.len() > 2 && norm_proces.contains(&norm_cast)
+    })
+}
+
+/// Najde najvacsie okno odpovedajuce hladanemu retazcu — PRIMÁRNE podľa mena
+/// procesu (`torchlight_infinite.exe`), titulok okna je len ZÁLOHA (TLI 24,
+/// `2026-10-17-1238-mcp.md` bod 2).
+///
+/// DOVOD: Titulok okna sa vie medzi verziami hry zmeniť (napr. dvojbodka
+/// „Torchlight: Infinite") a appka ho navyše vidí rovnako ako titulky iných
+/// bežiacich programov (Overwolf, AION 2, launcher) — meno spusteného .exe sa
+/// nemení a je oveľa menej náchylné na falošnú zhodu. Keď sa meno procesu
+/// nedá zistiť (`OpenProcess` v `enum_windows_callback` zlyhá, `proces` je
+/// prázdne), appka padá na pôvodné správanie (titulok ALEBO proces).
 pub fn najdi_hru(hladane: &str) -> Option<NajdeneOkno> {
-    zoznam_okien()
-        .into_iter()
+    let mut okna = zoznam_okien();
+
+    let index_podla_procesu = okna
+        .iter()
+        .enumerate()
+        .filter(|(_, o)| sedi_proces(&o.proces, hladane))
+        .max_by_key(|(_, o)| o.obdlznik.sirka * o.obdlznik.vyska)
+        .map(|(i, _)| i);
+
+    if let Some(i) = index_podla_procesu {
+        return Some(okna.swap_remove(i));
+    }
+
+    okna.into_iter()
         .filter(|o| sedi(&o.nazov, &o.proces, hladane))
         .max_by_key(|o| o.obdlznik.sirka * o.obdlznik.vyska)
 }
@@ -237,6 +266,35 @@ mod testy {
             "tli-overlay.exe",
             "Torchlight Infinite"
         ));
+    }
+
+    /// Regresia TLI 24 (`2026-10-17-1238-mcp.md` bod 2): skutočný titulok okna
+    /// hry má dvojbodku („Torchlight: Infinite"), zatiaľ čo predvolené
+    /// nastavenie `proces_hry` v `core/src/nastavenia.rs` je bez nej
+    /// ("Torchlight Infinite, Torchlight") — normalizácia (odstránenie
+    /// interpunkcie) ich musí spárovať.
+    #[test]
+    fn test_sedi_titulok_s_dvojbodkou_proti_predvolenemu_nastaveniu() {
+        assert!(sedi(
+            "Torchlight: Infinite",
+            "torchlight_infinite.exe",
+            "Torchlight Infinite, Torchlight"
+        ));
+    }
+
+    #[test]
+    fn test_sedi_proces_hlada_len_v_mene_procesu() {
+        assert!(sedi_proces(
+            "c:\\hry\\torchlight_infinite.exe",
+            "Torchlight Infinite, Torchlight"
+        ));
+        // Titulok v mene procesu nie je — na rozdiel od `sedi` tu nesmie sedieť.
+        assert!(!sedi_proces("c:\\hry\\ine.exe", "Torchlight Infinite, Torchlight"));
+    }
+
+    #[test]
+    fn test_sedi_proces_kratka_polozka_sa_ignoruje() {
+        assert!(!sedi_proces("c:\\hry\\xy.exe", "x"));
     }
 
     #[test]

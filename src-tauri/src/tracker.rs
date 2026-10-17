@@ -1104,51 +1104,63 @@ pub fn spusti_vlakno(app: AppHandle) {
             // čítanie na koniec frontu, netreba spracovať každú zvlášť.
             while rx.try_recv().is_ok() {}
 
-            if !zapnuty {
-                continue;
-            }
-            let Some(cesta) = cesta else { continue };
-
-            let tracker = app.state::<Tracker>();
-            let (novych, pripomienka_udalosti, trh_otvoreny) = {
-                let mut t = tracker.0.lock().unwrap();
-                t.pripomienka.nastav_zapnute(pripominat);
-                let vysledok = precitaj(&mut t, &cesta);
-                let novych = match &vysledok {
-                    Ok(n) => *n,
-                    Err(e) => {
-                        t.chyba = Some(e.clone());
-                        0
+            // TLI 24 (`2026-10-17-1238-mcp.md` bod 5): donedávna bol celý
+            // zvyšok tejto iterácie — VRÁTANE synchronizácie cien partie aj
+            // uploadu logov nižšie — za jedným `continue`, ktorý závisel od
+            // farm trackera (`zapnuty` aj úspešné `najdi_log`). Keď hráč
+            // farm tracker nemal zapnutý alebo appka log ešte nenašla,
+            // `upload_kolo`/`sync_cien_kolo` sa NIKDY nedostali na rad —
+            // `tracker_upload_stav` tak v DB zostávalo prázdne bez ohľadu na
+            // to, že `upload_logov` je VLASTNÉ, nezávislé nastavenie. Čítanie
+            // samotného herného logu (nižšie v tomto bloku) zostáva viazané
+            // na `zapnuty`/`cesta` — len sa už neťahá za sebou zvyšok tiku.
+            if zapnuty {
+                if let Some(cesta) = cesta {
+                    let tracker = app.state::<Tracker>();
+                    let (novych, pripomienka_udalosti, trh_otvoreny) = {
+                        let mut t = tracker.0.lock().unwrap();
+                        t.pripomienka.nastav_zapnute(pripominat);
+                        let vysledok = precitaj(&mut t, &cesta);
+                        let novych = match &vysledok {
+                            Ok(n) => *n,
+                            Err(e) => {
+                                t.chyba = Some(e.clone());
+                                0
+                            }
+                        };
+                        if vysledok.is_ok() {
+                            t.chyba = None;
+                        }
+                        // Tik beží KAŽDÚ iteráciu (á najviac 1 s), nezávisle od toho,
+                        // či `precitaj` našlo nové bajty — lehota sa počíta aj vtedy,
+                        // keď sa v logu nedeje ÚPLNE NIČ.
+                        t.pripomienka.tik(unixovy_cas());
+                        (novych, t.pripomienka.odober_udalosti(), t.odober_trh_otvoreny())
+                    };
+                    if novych > 0 {
+                        let _ = app.emit(UDALOST_ZMENA, novych);
                     }
-                };
-                if vysledok.is_ok() {
-                    t.chyba = None;
+                    for udalost in pripomienka_udalosti {
+                        oznam_pripomienku(&app, udalost);
+                    }
+
+                    // TLI 22: appka SAMA odfotí a pošle, len čo log ukáže otvorenie
+                    // obrazovky trhu — žiadny hotkey netreba (ten je len nepovinný
+                    // ručný fallback, `hotkey_trh`). `spusti_analyzu` má vlastný
+                    // zámok `beh` proti súbehu s F8/F9 aj proti dvom rýchlo za sebou
+                    // idúcim otvoreniam.
+                    if trh_otvoreny && ceny_obrazovka_zapnute {
+                        crate::spusti_analyzu(app.clone(), crate::Modul::Ceny);
+                    }
                 }
-                // Tik beží KAŽDÚ iteráciu (á najviac 1 s), nezávisle od toho,
-                // či `precitaj` našlo nové bajty — lehota sa počíta aj vtedy,
-                // keď sa v logu nedeje ÚPLNE NIČ.
-                t.pripomienka.tik(unixovy_cas());
-                (novych, t.pripomienka.odober_udalosti(), t.odober_trh_otvoreny())
-            };
-            if novych > 0 {
-                let _ = app.emit(UDALOST_ZMENA, novych);
-            }
-            for udalost in pripomienka_udalosti {
-                oznam_pripomienku(&app, udalost);
             }
 
-            // TLI 22: appka SAMA odfotí a pošle, len čo log ukáže otvorenie
-            // obrazovky trhu — žiadny hotkey netreba (ten je len nepovinný
-            // ručný fallback, `hotkey_trh`). `spusti_analyzu` má vlastný
-            // zámok `beh` proti súbehu s F8/F9 aj proti dvom rýchlo za sebou
-            // idúcim otvoreniam.
-            if trh_otvoreny && ceny_obrazovka_zapnute {
-                crate::spusti_analyzu(app.clone(), crate::Modul::Ceny);
-            }
-
-            // Ceny partie (TLI 20) — á 5 minút, v tom istom vlákne. Vlastné
-            // vlákno by si pýtalo ďalší zámok a nič by nepridalo: toto beží
-            // aj tak každú sekundu a HTTP ide mimo zámku nad trackerom.
+            // Ceny partie (TLI 20) a upload logov (TLI 14) — á niekoľko minút,
+            // v tom istom vlákne. Vlastné vlákno by si pýtalo ďalší zámok
+            // a nič by nepridalo: toto beží aj tak každú sekundu a HTTP ide
+            // mimo zámku nad trackerom. ZÁMERNE mimo bloku vyššie — obe sú
+            // vlastné, nezávislé nastavenia (`ceny_sync`/`upload_logov`) a
+            // nemajú dôvod čakať na farm tracker.
             let teraz = unixovy_cas();
             if teraz.saturating_sub(posledny_sync_cien)
                 >= tli_overlay_core::tracker::ceny_sync::INTERVAL_S

@@ -2,6 +2,7 @@
 // vyskočilo čierne okno `cmd`.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod denik;
 mod guide;
 mod klient;
 mod okna;
@@ -309,10 +310,18 @@ pub enum Modul {
 
 #[cfg(windows)]
 pub(crate) fn spusti_analyzu(app: AppHandle, modul: Modul) {
+    // Zapísané VŽDY, ako prvé — nezávisle od všetkých early-returnov nižšie.
+    // Predtým appka nemala žiadnu stopu po tom, že hotkey vôbec dorazil do
+    // Rustu (TLI 24, `2026-10-17-1238-mcp.md` bod 1/4): keď appka „nič
+    // nespraví", nedalo sa ani odlíšiť „hotkey nedorazil" od „appka ho
+    // dostala a niečo potichu zlyhalo".
+    denik::zapis("hotkey", &format!("{modul:?} stlačené"));
+
     // Kým hráč posúva/zväčšuje panely (TLI 21), F8/F9 nemajú spustiť analýzu
     // nad práve upravovaným rozložením — zmazalo by to náhľad aj vrátilo
     // priechodnosť myši uprostred ťahania.
     if *app.state::<Stav>().rezim_upravy.lock().unwrap() {
+        denik::zapis("hotkey", "ignorované — beží režim úpravy rozloženia");
         return;
     }
 
@@ -324,6 +333,7 @@ pub(crate) fn spusti_analyzu(app: AppHandle, modul: Modul) {
     };
 
     if let Some(chyba) = nastavenia.chyba_konfiguracie() {
+        denik::zapis("hotkey", &format!("chyba konfigurácie: {chyba}"));
         ukaz_chybu(&app, None, &chyba);
         return;
     }
@@ -331,10 +341,18 @@ pub(crate) fn spusti_analyzu(app: AppHandle, modul: Modul) {
     // Dvojité stlačenie hotkey (ktoréhokoľvek z dvoch) nemá poslať dve
     // požiadavky — server púšťa 30 za minútu a zámok je zdieľaný medzi
     // Tartarus aj Frozen Canvas, nemajú bežať naraz nad tým istým oknom.
+    //
+    // TLI 24: tento zámok je JEDINÉ miesto, kde appka vie úplne potichu
+    // „nič nespraviť" (žiadny event, žiadny log) — keby z nejakého dôvodu
+    // ostal `true` navždy (napr. nečakaný panic vo vlákne nižšie pred jeho
+    // vrátením na `false`), appka by od tej chvíle na KAŽDÝ ďalší F8/F9
+    // mlčala presne tak, ako to opísal Richard. Preto je zápis do logu tu
+    // PRED early-returnom — keby sa to niekedy zopakovalo, log to ukáže.
     {
         let stav = app.state::<Stav>();
         let mut beh = stav.beh.lock().unwrap();
         if *beh {
+            denik::zapis("hotkey", "ignorované — predošlá analýza ešte nedobehla (beh=true)");
             return;
         }
         *beh = true;
@@ -349,6 +367,7 @@ pub(crate) fn spusti_analyzu(app: AppHandle, modul: Modul) {
         None => okno::popredie(),
     };
     let Some(okno_hry) = okno_hry else {
+        denik::zapis("okno", "okno hry sa nenašlo (ani podľa nastavení, ani popredie)");
         ukaz_chybu(
             &app,
             None,
@@ -359,19 +378,29 @@ ak sa hra volá inak, dopíš jej názov v nastaveniach do poľa „Okno hry“.
         return;
     };
     let obdlznik = okno_hry.obdlznik;
+    denik::zapis(
+        "okno",
+        &format!(
+            "nájdené: „{}“ ({}), {}x{} @ ({},{})",
+            okno_hry.nazov, okno_hry.proces, obdlznik.sirka, obdlznik.vyska, obdlznik.x, obdlznik.y
+        ),
+    );
 
     // Fotí sa EŠTE PRED zobrazením overlayu — inak by bol overlay na snímke
     // a server by rozpoznával vlastné rámčeky namiesto dosky.
     let snimok = match snimka::zachyt(&obdlznik) {
         Ok(s) => s,
         Err(e) => {
+            denik::zapis("snimka", &format!("zlyhala: {e}"));
             ukaz_chybu(&app, Some(&obdlznik), &e);
             koniec(&app);
             return;
         }
     };
+    denik::zapis("snimka", &format!("zachytená, {}x{}", snimok.sirka, snimok.vyska));
 
     if snimka::je_cierna(&snimok) {
+        denik::zapis("snimka", "obraz je takmer čierny (exkluzívny fullscreen?)");
         ukaz_chybu(
             &app,
             Some(&obdlznik),
@@ -395,11 +424,26 @@ V hre prepni Nastavenia → Zobrazenie → Režim okna na „Okno bez okrajov“
 
     // Kódovanie JPEGu aj sieť idú mimo hlavného vlákna — inak by sa na tých
     // pár sekúnd zasekla celá appka vrátane tray ikony.
+    //
+    // TLI 24: celé telo je v `catch_unwind` — keby niečo vo vnútri nečakane
+    // spanikárilo (dosiaľ sa to nestalo, žiadny `unwrap`/`expect` v tejto
+    // ceste nie je, ale appka to nesmie len predpokladať navždy), `beh` by
+    // bez tejto poistky ostal `true` navždy a appka by od tej chvíle na
+    // KAŽDÝ ďalší F8/F9 ticho mlčala. Takto appka aj pri panike ukáže chybu
+    // a zámok uvoľní.
     std::thread::spawn(move || {
+        let vysledok_behu = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         match modul {
             Modul::Tartarus => {
-                let vysledok = snimka::do_jpegu(&snimok, zmensenie::MAX_DLZKA, 80)
-                    .and_then(|jpeg| klient::posli_analyzu(&nastavenia, jpeg));
+                let vysledok = snimka::do_jpegu(&snimok, zmensenie::MAX_DLZKA, 80).and_then(|jpeg| {
+                    denik::zapis("http", &format!("POST /api/analyza ({} B JPEG)", jpeg.len()));
+                    let _ = app.emit("stav", json!({ "faza": "odosielam" }));
+                    klient::posli_analyzu(&nastavenia, jpeg)
+                });
+                match &vysledok {
+                    Ok(v) => denik::zapis("http", &format!("analyza OK, {} ms", v.trvanie_ms)),
+                    Err(e) => denik::zapis("http", &format!("analyza CHYBA: {e}")),
+                }
                 match vysledok {
                     Ok(v) => {
                         let obdlzniky: Vec<_> = api::pouzitelne_polia(&v.analyza)
@@ -436,8 +480,15 @@ V hre prepni Nastavenia → Zobrazenie → Režim okna na „Okno bez okrajov“
                 }
             }
             Modul::Canvas => {
-                let vysledok = snimka::do_jpegu(&snimok, zmensenie::MAX_DLZKA, 80)
-                    .and_then(|jpeg| klient::posli_analyzu_canvas(&nastavenia, jpeg));
+                let vysledok = snimka::do_jpegu(&snimok, zmensenie::MAX_DLZKA, 80).and_then(|jpeg| {
+                    denik::zapis("http", &format!("POST /api/analyza?modul=canvas ({} B JPEG)", jpeg.len()));
+                    let _ = app.emit("stav", json!({ "faza": "odosielam" }));
+                    klient::posli_analyzu_canvas(&nastavenia, jpeg)
+                });
+                match &vysledok {
+                    Ok(v) => denik::zapis("http", &format!("canvas OK, {} ms", v.trvanie_ms)),
+                    Err(e) => denik::zapis("http", &format!("canvas CHYBA: {e}")),
+                }
                 match vysledok {
                     // Zber dát (TLI 4c): server ULOŽIL stav (robí to vždy, bez
                     // ohľadu na istotu solvera — nezmenené od TLI 4b), takže
@@ -501,10 +552,13 @@ V hre prepni Nastavenia → Zobrazenie → Režim okna na „Okno bez okrajov“
                 // `true`: server pri zlyhaní rozpoznania vráti != 200, čo
                 // `klient::posli_analyzu_ceny` premení na `Err`, nie na
                 // `Ok(AnalyzaCeny { ok: false, .. })`.
-                let vysledok = snimka::do_jpegu(&snimok, zmensenie::MAX_DLZKA, 80)
-                    .and_then(|jpeg| klient::posli_analyzu_ceny(&nastavenia, jpeg));
+                let vysledok = snimka::do_jpegu(&snimok, zmensenie::MAX_DLZKA, 80).and_then(|jpeg| {
+                    denik::zapis("http", &format!("POST /api/analyza?modul=ceny ({} B JPEG)", jpeg.len()));
+                    klient::posli_analyzu_ceny(&nastavenia, jpeg)
+                });
                 match vysledok {
                     Ok(v) => {
+                        denik::zapis("http", &format!("ceny OK, {} ms", v.trvanie_ms));
                         let a = &v.analyza;
                         if let (Some(cena), Some(cbid)) = (a.p10, a.config_base_id) {
                             let tracker = app.state::<tracker::Tracker>();
@@ -514,10 +568,25 @@ V hre prepni Nastavenia → Zobrazenie → Režim okna na „Okno bez okrajov“
                         ukaz_pripomienku_toast(&app, &api::text_toastu_ceny(a), "cena", 8);
                     }
                     Err(e) => {
+                        denik::zapis("http", &format!("ceny CHYBA: {e}"));
                         ukaz_pripomienku_toast(&app, &format!("Ceny z trhu: {e}"), "chyba", 8);
                     }
                 }
             }
+        }
+        })); // koniec catch_unwind
+
+        if let Err(panika) = vysledok_behu {
+            let text = panika
+                .downcast_ref::<&str>()
+                .map(|s| s.to_string())
+                .or_else(|| panika.downcast_ref::<String>().cloned())
+                .unwrap_or_else(|| "neznáma panika".to_string());
+            denik::zapis("hotkey", &format!("NEOČAKÁVANÁ CHYBA počas analýzy: {text}"));
+            let _ = app.emit(
+                "stav",
+                json!({ "faza": "chyba", "sprava": "Nastala neočakávaná chyba. Skús hotkey znova; ak sa to opakuje, pošli log cez #torchlight." }),
+            );
         }
 
         *app.state::<Stav>().beh.lock().unwrap() = false;
@@ -1431,6 +1500,27 @@ fn otvor_v_prehliadaci(_adresa: &str) -> Result<(), String> {
     Err("Otváranie prehliadača je dostupné len na Windowse.".to_string())
 }
 
+/// Tlačidlo „Otvoriť log" v Nastaveniach (TLI 24, bod 4) — appka doteraz
+/// nemala žiadny viditeľný log, takže aj toto tlačidlo je nové.
+#[tauri::command]
+fn otvor_priecinok_logov() -> Result<(), String> {
+    otvor_priecinok(&denik::cesta_na_otvorenie().display().to_string())
+}
+
+#[cfg(windows)]
+fn otvor_priecinok(cesta: &str) -> Result<(), String> {
+    std::process::Command::new("explorer")
+        .arg(cesta)
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("Nepodarilo sa otvoriť priečinok: {e}"))
+}
+
+#[cfg(not(windows))]
+fn otvor_priecinok(_cesta: &str) -> Result<(), String> {
+    Err("Otváranie priečinka je dostupné len na Windowse.".to_string())
+}
+
 #[tauri::command]
 fn verzia() -> String {
     env!("CARGO_PKG_VERSION").to_string()
@@ -1566,7 +1656,8 @@ fn main() {
             rezim_upravy_je_aktivny,
             rezim_upravy_obnov_predvolene,
             rezim_upravy_ulozit_panel,
-            uloz_priehladnost
+            uloz_priehladnost,
+            otvor_priecinok_logov
         ])
         // TLI 23: Tauri v2 by zatvorením (X) KAŽDÉ okno ZNIČILO — appka by
         // potom na druhý klik (tray menu, `otvor_nastavenia`) narazila na

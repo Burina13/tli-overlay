@@ -15,6 +15,8 @@ const inpZberDat = document.getElementById("inp-zber-dat");
 const btnUkazatKluc = document.getElementById("btn-ukazat-kluc");
 const btnTest = document.getElementById("btn-test");
 const elVysledokTestu = document.getElementById("vysledok-testu");
+const btnOtvorLog = document.getElementById("btn-otvor-log");
+const elVysledokLogu = document.getElementById("vysledok-logu");
 const elVysledokUlozenia = document.getElementById("vysledok-ulozenia");
 
 const odkazKluc = document.getElementById("odkaz-kluc");
@@ -183,6 +185,16 @@ btnTest.addEventListener("click", async () => {
         zobrazSpravu(elVysledokTestu, uspechVeta, true);
     } catch (chybaText) {
         zobrazSpravu(elVysledokTestu, chybaText, false);
+    }
+});
+
+// --- Diagnostika: otvoriť priečinok s logom (TLI 24, bod 4) ---
+btnOtvorLog.addEventListener("click", async () => {
+    try {
+        await invoke("otvor_priecinok_logov");
+        zobrazSpravu(elVysledokLogu, "Otvorené.", true);
+    } catch (chybaText) {
+        zobrazSpravu(elVysledokLogu, chybaText, false);
     }
 });
 
