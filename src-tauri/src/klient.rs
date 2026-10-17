@@ -9,9 +9,22 @@ use tli_overlay_core::nastavenia::Nastavenia;
 /// len „Server odpovedal niečím, čomu nerozumiem." bez stopy, kde hľadať.
 /// Celé telo (do 200 znakov, nech log neopuchne pri veľkej odpovedi) ide do
 /// denníka, hráč v toaste vidí len HTTP kód a odkaz na log.
+///
+/// `#[cfg(not(test))]`: `tests/e2e_mock.rs` pridáva tento súbor do VLASTNEJ
+/// testovacej binárky cez `#[path]` bez zvyšku appky (`denik`/`stav` tam
+/// nie sú a ani nemajú byť — mock test nemá prístup k priečinku appky na
+/// disku). `cfg(test)` je v tejto binárke pravdivé, takže sa namiesto
+/// reálneho zápisu použije no-op a `crate::denik` sa vôbec nemusí nájsť.
+#[cfg(not(test))]
+fn zapis_do_denika(kontext: &str, text: &str) {
+    crate::denik::zapis(kontext, text);
+}
+#[cfg(test)]
+fn zapis_do_denika(_kontext: &str, _text: &str) {}
+
 fn loguj_neparsovatelnu_odpoved(kontext: &str, stav: u16, telo: &str) -> String {
     let ukazka: String = telo.chars().take(200).collect();
-    crate::denik::zapis(
+    zapis_do_denika(
         "analyza",
         &format!("{kontext}: HTTP {stav} sa nedalo rozobrať, telo (prvých 200 znakov): {ukazka}"),
     );
