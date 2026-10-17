@@ -24,6 +24,7 @@
 //! `tauri::test` predsa len dalo rozbehnúť.
 
 use tauri::{AppHandle, Manager, Runtime, WebviewWindow};
+use tli_overlay_core::suradnice::OknoFyz;
 
 /// Je bod `(x, y)` vo vnútri obdĺžnika so začiatkom `(rx, ry)` a rozmermi
 /// `(rw, rh)`? Čistá geometria bez Tauri — jediná časť tohto súboru, ktorá
@@ -127,9 +128,57 @@ pub fn ukaz_a_zaostri<R: Runtime>(app: &AppHandle<R>, label: &str) -> Vec<(Strin
     chyby
 }
 
+/// Rozhodne, aké okno použiť ako základ pre „Upraviť rozloženie" (TLI 26,
+/// bod 2): skutočné okno hry, keď sa nájde; inak celý primárny monitor —
+/// NIKDY naposledy aktívne okno (`okno::popredie`), ktoré môže byť na
+/// ktoromkoľvek pripojenom monitore a viesť overlay úplne inam, než kde
+/// hráč pracuje. Čistá rozhodovacia logika bez priameho volania Windows API
+/// (ktoré zisťujú `okno_hry`/`primarny_monitor` v `main.rs`) — vďaka tomu sa
+/// dá otestovať aj na Linuxe/v CI, na rozdiel od zvyšku tohto súboru
+/// (vysvetlenie prečo v hlavičke súboru vyššie).
+pub fn okno_pre_rezim_upravy(okno_hry: Option<OknoFyz>, primarny_monitor: Option<OknoFyz>) -> Option<OknoFyz> {
+    okno_hry.or(primarny_monitor)
+}
+
 #[cfg(test)]
 mod testy {
     use super::bod_v_obdlzniku;
+    use super::okno_pre_rezim_upravy;
+    use tli_overlay_core::suradnice::OknoFyz;
+
+    fn okno(x: i32, y: i32, sirka: u32, vyska: u32) -> OknoFyz {
+        OknoFyz { x, y, sirka, vyska }
+    }
+
+    /// TLI 26, bod 2: keď sa hra nájde, použije sa ONA — primárny monitor sa
+    /// vôbec nepýta (test to overí hodnotou, ktorá by sa inak omylom dala
+    /// zameniť za predvolený monitor).
+    #[test]
+    fn pouzije_okno_hry_ked_sa_najde() {
+        let hra = okno(100, 50, 1920, 1080);
+        let primarny = okno(0, 0, 2560, 1440);
+        assert_eq!(okno_pre_rezim_upravy(Some(hra), Some(primarny)), Some(hra));
+    }
+
+    /// Hlavný prípad z nahláseného bugu (`2026-10-17-2231-mcp.md`): hra
+    /// nebeží → appka musí padnúť na PRIMÁRNY monitor, nie ostať bez
+    /// výsledku (čo by sa v 0.18.2 prejavilo ako chyba „Upraviť rozloženie
+    /// sa dá len s bežiacou hrou", hoci primárny monitor by na to pokojne
+    /// stačil) a nie na naposledy aktívne okno (to už appka v tomto bode
+    /// vôbec nedostane — `main.rs` tam posiela `None`).
+    #[test]
+    fn hra_nebezi_padne_na_primarny_monitor() {
+        let primarny = okno(0, 0, 2560, 1440);
+        assert_eq!(okno_pre_rezim_upravy(None, Some(primarny)), Some(primarny));
+    }
+
+    /// Keď appka nenájde ani hru, ani primárny monitor (teoreticky možné len
+    /// v CI bez jedinej obrazovky), poctivo vráti `None` namiesto toho, aby
+    /// si niečo vymyslela.
+    #[test]
+    fn ani_hra_ani_primarny_monitor_vrati_none() {
+        assert_eq!(okno_pre_rezim_upravy(None, None), None);
+    }
 
     #[test]
     fn stred_vo_vnutri_monitora() {

@@ -93,8 +93,18 @@ fn kluc(panel: &str, monitor_sig: &str) -> String {
 }
 
 impl Rozlozenie {
+    /// TLI 26, bod 2: `monitor_sig` odteraz obsahuje aj meno monitora od OS.
+    /// Keď appka pod NOVÝM kľúčom nič nenájde, skúsi STARÝ tvar (čisté
+    /// `rozlíšenie@mierka`, bez mena) — presne to, pod čím appka ukladala
+    /// pozície pred touto zmenou. Vďaka tomu hráč, ktorý si panel posunul už
+    /// pred 0.18.3, po aktualizácii nenájde predvolenú polohu namiesto svojej
+    /// vlastnej. Prvý ďalší posun v edit móde sa uloží už pod nový kľúč.
     pub fn poloha(&self, panel: &str, monitor_sig: &str) -> Option<Obdlznik01> {
-        self.polohy.get(&kluc(panel, monitor_sig)).copied()
+        if let Some(v) = self.polohy.get(&kluc(panel, monitor_sig)) {
+            return Some(*v);
+        }
+        let stary_sig = crate::suradnice::monitor_signatura_bez_mena(monitor_sig)?;
+        self.polohy.get(&kluc(panel, &stary_sig)).copied()
     }
 
     /// Poloha panela modulu s pádom na spoločný `panel` (TLI 25). Používa sa
@@ -139,10 +149,10 @@ mod testy {
     use crate::suradnice::{monitor_signatura, Monitor};
 
     fn monitor_1080() -> Monitor {
-        Monitor { x: 0, y: 0, sirka: 1920, vyska: 1080, mierka: 1.0 }
+        Monitor { x: 0, y: 0, sirka: 1920, vyska: 1080, mierka: 1.0, nazov: None }
     }
     fn monitor_1440_125() -> Monitor {
-        Monitor { x: 1920, y: 0, sirka: 2560, vyska: 1440, mierka: 1.25 }
+        Monitor { x: 1920, y: 0, sirka: 2560, vyska: 1440, mierka: 1.25, nazov: None }
     }
 
     #[test]
@@ -272,6 +282,44 @@ mod testy {
         assert_eq!(r, Rozlozenie::default());
     }
 
+    /// TLI 26, bod 2 — migrácia: hráč si posunul panel PRED touto zmenou,
+    /// keď kľúč monitora ešte neobsahoval meno od OS. Appka musí jeho starú
+    /// pozíciu nájsť aj po aktualizácii na nový (s menom) kľúč, nie mu ukázať
+    /// predvolenú polohu, akoby nič neuložil — „nič nemaž, starý formát
+    /// zmigruj" zo zadania.
+    #[test]
+    fn stara_poloha_bez_mena_monitora_sa_najde_aj_pod_novym_klucom() {
+        let mut r = Rozlozenie::default();
+        let stary_sig = "2560x1440@100"; // presne to, čo appka ukladala do 0.18.2
+        let obd = Obdlznik01 { x: 0.6, y: 0.05, w: 0.15, h: 0.1 };
+        r.uloz_polohu(PANEL_MINI, stary_sig, obd);
+
+        let novy_sig = format!(r"\\.\DISPLAY2#{stary_sig}");
+        assert_eq!(r.poloha(PANEL_MINI, &novy_sig), Some(obd));
+    }
+
+    /// Len čo appka pod NOVÝM kľúčom niečo skutočne uloží, ten má prednosť
+    /// pred starým — inak by sa DISPLAY1 a DISPLAY2 aj po migrácii stále
+    /// delili o jednu (starú) hodnotu.
+    #[test]
+    fn nova_poloha_pod_menom_monitora_prebije_stary_zdieliany_zaznam() {
+        let mut r = Rozlozenie::default();
+        let stary_sig = "2560x1440@100";
+        r.uloz_polohu(PANEL_MINI, stary_sig, Obdlznik01 { x: 0.6, y: 0.05, w: 0.15, h: 0.1 });
+
+        let sig_display2 = format!(r"\\.\DISPLAY2#{stary_sig}");
+        let vlastna = Obdlznik01 { x: 0.1, y: 0.1, w: 0.2, h: 0.1 };
+        r.uloz_polohu(PANEL_MINI, &sig_display2, vlastna);
+
+        let sig_display1 = format!(r"\\.\DISPLAY1#{stary_sig}");
+        assert_eq!(r.poloha(PANEL_MINI, &sig_display2), Some(vlastna));
+        // DISPLAY1 nikdy neuložil vlastnú — stále dostane starú zdieľanú.
+        assert_eq!(
+            r.poloha(PANEL_MINI, &sig_display1),
+            Some(Obdlznik01 { x: 0.6, y: 0.05, w: 0.15, h: 0.1 })
+        );
+    }
+
     #[test]
     fn prepocet_na_fyzicke_pixely_cez_box01_na_css_sedi_pre_dpi_100_125_150() {
         // Toto je presne matematika, ktorú TLI 21 používa na umiestnenie
@@ -303,8 +351,8 @@ mod testy {
         // prepočíta inak než na monitore so 100 % — presne preto sa ukladá
         // kľúčom (panel, monitor), nie globálne.
         let monitory = vec![
-            Monitor { x: 0, y: 0, sirka: 1920, vyska: 1080, mierka: 1.0 },
-            Monitor { x: 1920, y: 0, sirka: 2560, vyska: 1440, mierka: 1.5 },
+            Monitor { x: 0, y: 0, sirka: 1920, vyska: 1080, mierka: 1.0, nazov: None },
+            Monitor { x: 1920, y: 0, sirka: 2560, vyska: 1440, mierka: 1.5, nazov: None },
         ];
         let m_a = monitor_okna(&OknoFyz { x: 0, y: 0, sirka: 1920, vyska: 1080 }, &monitory).unwrap();
         let m_b = monitor_okna(&OknoFyz { x: 2000, y: 0, sirka: 1920, vyska: 1080 }, &monitory).unwrap();
@@ -321,7 +369,7 @@ mod testy_moduly {
     use crate::suradnice::{monitor_signatura, Monitor};
 
     fn sig() -> String {
-        monitor_signatura(&Monitor { x: 0, y: 0, sirka: 1920, vyska: 1080, mierka: 1.0 })
+        monitor_signatura(&Monitor { x: 0, y: 0, sirka: 1920, vyska: 1080, mierka: 1.0, nazov: None })
     }
 
     /// Kto si rozloženie uložil pred TLI 25 (kľúč `panel`), musí ho po

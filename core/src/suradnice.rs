@@ -8,13 +8,20 @@ pub struct OknoFyz {
     pub vyska: u32,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Monitor {
     pub x: i32,
     pub y: i32,
     pub sirka: u32,
     pub vyska: u32,
     pub mierka: f64,
+    /// Meno monitora od OS (na Windowse napr. `\\.\DISPLAY1`), `None` keď ho
+    /// Tauri/OS nevie zistiť (napr. v CI bez skutočnej obrazovky). TLI 26,
+    /// bod 2: dva fyzické monitory s ROVNAKÝM rozlíšením a mierkou (Richardov
+    /// prípad — dva 2560×1440 monitory) musia dostať RÔZNY kľúč uloženého
+    /// rozloženia, inak si navzájom prepisujú polohu panelov — pozri
+    /// `monitor_signatura`.
+    pub nazov: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -127,14 +134,38 @@ pub fn css_na_box01(css: &ObdlznikCss, okno: &OknoFyz, mierka: f64) -> Pole {
     }
 }
 
-/// Stabilný textový kľúč monitora (rozlíšenie + mierka) — TLI 21 (posúvanie
-/// overlay okien) ním rozlišuje uložené rozloženia medzi monitormi. Fyzické
-/// rozmery (nie logické) sú súčasťou kľúča zámerne: dva monitory s rovnakým
-/// rozlíšením, ale rôznou mierkou (zriedkavé, ale možné pri ručnom nastavení
-/// Windows), by inak zdieľali jedno uložené rozloženie, hoci CSS pixely na
-/// nich vychádzajú inak.
+/// Oddeľovač medzi menom monitora a zvyškom kľúča (rozlíšenie@mierka). Nesmie
+/// sa objaviť v Windows názve zariadenia (`\\.\DISPLAY1`), tie '#' nepoužívajú.
+const ZNACKA_MENA: char = '#';
+
+/// Stabilný textový kľúč monitora (meno + rozlíšenie + mierka) — TLI 21/26
+/// (posúvanie overlay okien) ním rozlišuje uložené rozloženia medzi monitormi.
+///
+/// **TLI 26, bod 2:** do 0.18.2 kľúč obsahoval LEN rozlíšenie a mierku — dva
+/// FYZICKY rôzne monitory s rovnakým rozlíšením (Richardove dva 2560×1440)
+/// preto zdieľali jedno uložené rozloženie a prepisovali si navzájom polohu
+/// panelov. Meno monitora od OS (`m.nazov`) je teraz súčasťou kľúča, keď ho
+/// appka pozná — dve fyzicky odlišné obrazovky tak dostanú odlišný kľúč aj
+/// pri identickom rozlíšení/mierke. Keď meno nepozná (CI, testy), kľúč je
+/// rovnaký ako predtým (len rozlíšenie@mierka) — `poloha()` v `rozlozenie.rs`
+/// vie takýto "starý formát" kľúča nájsť aj spätne cez
+/// `monitor_signatura_bez_mena`, nech sa staré uložené pozície hráčov pri
+/// aktualizácii nestratia.
 pub fn monitor_signatura(m: &Monitor) -> String {
-    format!("{}x{}@{}", m.sirka, m.vyska, (m.mierka * 100.0).round() as i64)
+    let rozlisenie = format!("{}x{}@{}", m.sirka, m.vyska, (m.mierka * 100.0).round() as i64);
+    match m.nazov.as_deref().filter(|n| !n.is_empty()) {
+        Some(nazov) => format!("{nazov}{ZNACKA_MENA}{rozlisenie}"),
+        None => rozlisenie,
+    }
+}
+
+/// Inverzná pomôcka k `monitor_signatura` pre MIGRÁCIU starých uložených
+/// polôh (TLI 26): z kľúča s menom monitora vytiahne "starý" tvar bez mena
+/// (čistý `rozlíšenie@mierka`), pod akým appka ukladala polohy pred touto
+/// zmenou. Keď `sig` meno vôbec neobsahuje, vráti `None` — niet z čoho
+/// odvodiť iný (starší) kľúč, lebo oba tvary sú už zhodné.
+pub fn monitor_signatura_bez_mena(sig: &str) -> Option<String> {
+    sig.rsplit_once(ZNACKA_MENA).map(|(_, rozlisenie)| rozlisenie.to_string())
 }
 
 /// Nájdenie stredu potrebujeme pre presné smerovanie navigačných vizualizácií (šípky),
@@ -204,9 +235,9 @@ mod testy {
 
     #[test]
     fn monitor_sa_vyberie_podla_vacsieho_prekryvu() {
-        let m_a = Monitor { x: 0, y: 0, sirka: 1920, vyska: 1080, mierka: 1.0 };
-        let m_b = Monitor { x: -2560, y: 0, sirka: 2560, vyska: 1440, mierka: 1.25 };
-        let m_c = Monitor { x: 1920, y: 0, sirka: 3840, vyska: 2160, mierka: 1.5 };
+        let m_a = Monitor { x: 0, y: 0, sirka: 1920, vyska: 1080, mierka: 1.0, nazov: None };
+        let m_b = Monitor { x: -2560, y: 0, sirka: 2560, vyska: 1440, mierka: 1.25, nazov: None };
+        let m_c = Monitor { x: 1920, y: 0, sirka: 3840, vyska: 2160, mierka: 1.5, nazov: None };
         let monitory = vec![m_a, m_b, m_c];
 
         // Väčšina okna (1200 z 1600 px) leží na B, hoci jeho pravý okraj zasahuje na A.
@@ -226,8 +257,8 @@ mod testy {
 
     #[test]
     fn okno_na_hranici_dvoch_monitorov() {
-        let m_a = Monitor { x: 0, y: 0, sirka: 1920, vyska: 1080, mierka: 1.0 };
-        let m_b = Monitor { x: -2560, y: 0, sirka: 2560, vyska: 1440, mierka: 1.25 };
+        let m_a = Monitor { x: 0, y: 0, sirka: 1920, vyska: 1080, mierka: 1.0, nazov: None };
+        let m_b = Monitor { x: -2560, y: 0, sirka: 2560, vyska: 1440, mierka: 1.25, nazov: None };
         let monitory = vec![m_a, m_b];
 
         let o = OknoFyz { x: -200, y: 0, sirka: 800, vyska: 600 };
@@ -262,14 +293,103 @@ mod testy {
 
     #[test]
     fn monitor_signatura_rozlisuje_rozlisenie_aj_mierku() {
-        let a = Monitor { x: 0, y: 0, sirka: 1920, vyska: 1080, mierka: 1.0 };
-        let b = Monitor { x: 0, y: 0, sirka: 1920, vyska: 1080, mierka: 1.25 };
-        let c = Monitor { x: 0, y: 0, sirka: 2560, vyska: 1440, mierka: 1.0 };
+        let a = Monitor { x: 0, y: 0, sirka: 1920, vyska: 1080, mierka: 1.0, nazov: None };
+        let b = Monitor { x: 0, y: 0, sirka: 1920, vyska: 1080, mierka: 1.25, nazov: None };
+        let c = Monitor { x: 0, y: 0, sirka: 2560, vyska: 1440, mierka: 1.0, nazov: None };
         assert_eq!(monitor_signatura(&a), "1920x1080@100");
         assert_eq!(monitor_signatura(&b), "1920x1080@125");
         assert_eq!(monitor_signatura(&c), "2560x1440@100");
         assert_ne!(monitor_signatura(&a), monitor_signatura(&b));
         assert_ne!(monitor_signatura(&a), monitor_signatura(&c));
+    }
+
+    /// TLI 26, bod 2 — regresia na 0.18.2: dva FYZICKY odlišné monitory s
+    /// rovnakým rozlíšením a mierkou (Richardove dva 2560×1440) dostali do
+    /// 0.18.2 TOTOŽNÝ kľúč, takže si prepisovali uloženú polohu panelov.
+    /// Padá na 0.18.2 (kde `Monitor` meno vôbec nemá), prechádza po oprave.
+    #[test]
+    fn monitor_signatura_rozlisuje_fyzicky_rovnake_monitory_podla_mena() {
+        let display1 = Monitor {
+            x: 0, y: 0, sirka: 2560, vyska: 1440, mierka: 1.0,
+            nazov: Some(r"\\.\DISPLAY1".to_string()),
+        };
+        let display2 = Monitor {
+            x: 2560, y: 0, sirka: 2560, vyska: 1440, mierka: 1.0,
+            nazov: Some(r"\\.\DISPLAY2".to_string()),
+        };
+        assert_ne!(monitor_signatura(&display1), monitor_signatura(&display2));
+    }
+
+    /// Keď appka meno nepozná (CI, testy, staršie appky bez tejto zmeny),
+    /// kľúč ostáva presne v starom tvare — `poloha()` v `rozlozenie.rs` sa
+    /// naň spolieha pri migrácii starých uložených polôh.
+    #[test]
+    fn monitor_signatura_bez_mena_je_zhodna_so_starym_tvarom() {
+        let m = Monitor { x: 0, y: 0, sirka: 1920, vyska: 1080, mierka: 1.0, nazov: None };
+        assert_eq!(monitor_signatura(&m), "1920x1080@100");
+    }
+
+    /// Prázdny reťazec mena (niektoré ovládače ho vracajú namiesto `None`) sa
+    /// správa rovnako ako `None` — inak by appka ukladala kľúče s otravným
+    /// osamoteným oddeľovačom "#1920x1080@100".
+    #[test]
+    fn monitor_signatura_prazdne_meno_sa_berie_ako_ziadne() {
+        let m = Monitor {
+            x: 0, y: 0, sirka: 1920, vyska: 1080, mierka: 1.0,
+            nazov: Some(String::new()),
+        };
+        assert_eq!(monitor_signatura(&m), "1920x1080@100");
+    }
+
+    #[test]
+    fn monitor_signatura_bez_mena_vytiahne_rozlisenie_zo_zlozeneho_kluca() {
+        assert_eq!(
+            monitor_signatura_bez_mena(r"\\.\DISPLAY1#2560x1440@100"),
+            Some("2560x1440@100".to_string())
+        );
+        // Bez mena v kľúči niet čo odvodiť — je to už ten istý (starý) tvar.
+        assert_eq!(monitor_signatura_bez_mena("1920x1080@100"), None);
+    }
+
+    /// Presne Richardovo nahlásené usporiadanie troch monitorov
+    /// (`2026-10-17-2231-mcp.md`): dva rovnaké 2560×1440 vedľa seba a tretí
+    /// 1200×1920 NA VÝŠKU posunutý do záporných súradníc (portrait monitor
+    /// umiestnený vľavo hore od "0,0"). Overuje, že `monitor_okna` správne
+    /// vyberie monitor aj v tomto rozložení a že DISPLAY1/DISPLAY2 dostanú
+    /// pri rovnakom rozlíšení rôzny kľúč.
+    #[test]
+    fn tri_monitory_richardovo_usporiadanie_zaporna_x_a_vyska() {
+        let display1 = Monitor {
+            x: 0, y: 0, sirka: 2560, vyska: 1440, mierka: 1.0,
+            nazov: Some(r"\\.\DISPLAY1".to_string()),
+        };
+        let display2 = Monitor {
+            x: 2560, y: 0, sirka: 2560, vyska: 1440, mierka: 1.0,
+            nazov: Some(r"\\.\DISPLAY2".to_string()),
+        };
+        // Portrétový monitor: šírka a výška fyzicky preHODENÉ oproti bežnému
+        // landscape, posunutý do záporných súradníc oboch osí.
+        let display3 = Monitor {
+            x: -1200, y: -237, sirka: 1200, vyska: 1920, mierka: 1.0,
+            nazov: Some(r"\\.\DISPLAY3".to_string()),
+        };
+        let monitory = vec![display1.clone(), display2.clone(), display3.clone()];
+
+        let hra_na_jednotke = OknoFyz { x: 100, y: 100, sirka: 1920, vyska: 1080 };
+        assert_eq!(monitor_okna(&hra_na_jednotke, &monitory).unwrap().nazov, display1.nazov);
+
+        let hra_na_dvojke = OknoFyz { x: 2660, y: 100, sirka: 1920, vyska: 1080 };
+        assert_eq!(monitor_okna(&hra_na_dvojke, &monitory).unwrap().nazov, display2.nazov);
+
+        // Okno v hornej časti portrétového monitora — čiastočne v zápornom y.
+        let hra_na_trojke = OknoFyz { x: -1100, y: -200, sirka: 1000, vyska: 800 };
+        assert_eq!(monitor_okna(&hra_na_trojke, &monitory).unwrap().nazov, display3.nazov);
+
+        // Kľúč pre rovnaké okno na DISPLAY1 vs. DISPLAY2 sa MUSÍ líšiť, hoci
+        // obe majú identické rozlíšenie aj mierku — to je presne TLI 26 bod 2.
+        let sig1 = monitor_signatura(monitor_okna(&hra_na_jednotke, &monitory).unwrap());
+        let sig2 = monitor_signatura(monitor_okna(&hra_na_dvojke, &monitory).unwrap());
+        assert_ne!(sig1, sig2);
     }
 
     #[test]
@@ -311,8 +431,8 @@ mod testy {
         // Pozícia monitora (x/y) nie je súčasťou kľúča zámerne — rovnaký fyzický
         // monitor môže mať iné súradnice po prepnutí primárneho displeja vo
         // Windows, no rozloženie panelov na ňom má zostať to isté.
-        let a = Monitor { x: 0, y: 0, sirka: 1920, vyska: 1080, mierka: 1.5 };
-        let b = Monitor { x: -1920, y: 200, sirka: 1920, vyska: 1080, mierka: 1.5 };
+        let a = Monitor { x: 0, y: 0, sirka: 1920, vyska: 1080, mierka: 1.5, nazov: None };
+        let b = Monitor { x: -1920, y: 200, sirka: 1920, vyska: 1080, mierka: 1.5, nazov: None };
         assert_eq!(monitor_signatura(&a), monitor_signatura(&b));
     }
 }

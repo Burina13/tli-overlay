@@ -2,6 +2,38 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.18.3 — 17.10.2026 (TLI 26 — hotfix: edit mód nad VŠETKÝMI panelmi, viac monitorov, log)
+
+Úloha `2026-10-17-2231-mcp.md`, nahlásené Richardom naživo z PC: v režime
+„Upraviť rozloženie" (Ctrl+F8) sa dal ťahať len ľavý panel, mini-panel (zisk/čo
+padlo) a pripomienka „Enable Log" sa nehýbali; overlay sa pri vypnutej hre
+postavil na nesprávny monitor a nedal sa presunúť na primárny; priečinok
+`logs` neexistoval, hoci 0.17.2 ho malo pridať.
+
+- **Prečo sa mini-panel a pripomienka nedali ťahať:** nebola to chyba v ich
+  JS (úchyty aj natívne `startDragging()`/`startResizeDragging()` tam boli
+  už od 0.18.2) — `.show()` v tao/Windows z princípu NEMENÍ poradie okien
+  (`SetWindowPos` sa volá s `SWP_NOZORDER`), takže keď mal hráč mini-panel
+  zapnutý natrvalo (bol teda viditeľný UŽ PRED vstupom do edit módu), čerstvo
+  zobrazený priehľadný `overlay` nad ním ostal navrchu a prekryl mu klik.
+  Appka teraz po zobrazení mini-panela a pripomienky v edit móde explicitne
+  zavolá `.set_focus()`, nech sú vždy nad `overlay`.
+- **Overlay na nesprávnom monitore, keď hra nebeží:** appka padala na
+  `okno::popredie()` (naposledy aktívne okno) — čokoľvek malo focus
+  (prehliadač, editor), tam sa postavil aj edit mód, pokojne na úplne inom
+  monitore. Teraz padá na **primárny monitor** — rovnaký zdroj pravdy, aký už
+  appka používala pri chybovej hláške a pri toaste „Enable Log".
+- **Dva monitory s rovnakým rozlíšením si prepisovali polohu panelov** —
+  kľúč uloženého rozloženia bol len `rozlíšenie@mierka`, bez identity
+  monitora. Pridané meno monitora od OS (`\\.\DISPLAY1` a podobne) do kľúča;
+  staré uložené polohy sa nestrácajú — appka ich pri hľadaní pod novým kľúčom
+  skúsi nájsť aj pod starým (čistým) tvarom.
+- **Log appky (`%APPDATA%\sk.tvojtatko.tli-overlay\logs`) sa nezapisoval**,
+  kým hráč nestlačil F8/F9 — pri appke bežiacej bez tých kláves (hra
+  nespustená) tak priečinok vôbec nevznikol. Appka teraz zapíše prvý riadok
+  (`"start"`) hneď pri spustení, nezávisle od toho, čo hráč stlačí; pribudol
+  aj kontext `"monitor"` (hra nájdená / primárny monitor / nič).
+
 ## 0.18.2 — 17.10.2026 (TLI 25, mini-panel po druhý raz)
 
 Po 0.18.1 vyzeral mini-panel na snímke z CI tak, že v ňom chýba hodnota **FE/h**

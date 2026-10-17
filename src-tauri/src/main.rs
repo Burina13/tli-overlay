@@ -160,9 +160,14 @@ fn monitor_okna_app(app: &AppHandle, obd: &OknoFyz) -> Option<suradnice::Monitor
             sirka: m.size().width,
             vyska: m.size().height,
             mierka: m.scale_factor(),
+            // TLI 26, bod 2: meno monitora od OS (na Windowse `\\.\DISPLAY1`
+            // a podobne) je súčasťou kľúča uloženej polohy — bez neho dva
+            // fyzicky odlišné monitory s rovnakým rozlíšením (Richardove dva
+            // 2560×1440) zdieľali jedno uložené rozloženie.
+            nazov: m.name().cloned(),
         })
         .collect();
-    suradnice::monitor_okna(obd, &monitory).copied()
+    suradnice::monitor_okna(obd, &monitory).cloned()
 }
 
 /// Mierka monitora, na ktorom leží okno hry — tenký obal nad `monitor_okna_app`
@@ -1226,20 +1231,43 @@ fn ukaz_pripomienku_toast(app: &AppHandle, text: &str, trieda: &str, sekund: u64
 }
 
 /// Okno hry pre umiestnenie panelov nad ňou (TLI 21: mini-panel, toast,
-/// a „seed" pri vstupe do režimu úpravy) — nájde ho podľa nastaveného názvu
-/// procesu, a keď to zlyhá, padá na aktuálne aktívne okno (rovnaký vzor ako
-/// `spusti_analyzu`).
+/// a „seed" pri vstupe do režimu úpravy) — nájde ho PODĽA NASTAVENÉHO NÁZVU
+/// PROCESU, nič iné.
+///
+/// **TLI 26, bod 2 — zmena oproti 0.18.2:** do tejto verzie mal pád aj na
+/// `okno::popredie()` (aktuálne aktívne okno) — v praxi to znamenalo, že keď
+/// hra nebežala, overlay/mini/pripomienka sa postavili nad ČOKOĽVEK, čo malo
+/// focus (prehliadač, editor), teda pokojne na úplne inom monitore, než kde
+/// hráč čaká. `None` tu teraz úprimne znamená „hra sa nenašla" a volajúci
+/// (`zapni_rezim_upravy`) si poradí PRIMÁRNYM monitorom — nie náhodným oknom.
+/// `nastav_mini`/`ukaz_pripomienku_toast` na `None` reagujú rovnako rozumne
+/// už dnes (nechajú polohu tak / padnú na primárny monitor), len doteraz bol
+/// ten kód prakticky nedosiahnuteľný, lebo `okno::popredie()` skoro vždy
+/// niečo vrátil.
 #[cfg(windows)]
 fn okno_hry_pre_rozlozenie(app: &AppHandle) -> Option<OknoFyz> {
     let proces_hry = app.state::<Stav>().nastavenia.lock().unwrap().proces_hry.clone();
-    okno::najdi_hru(&proces_hry)
-        .or_else(okno::popredie)
-        .map(|o| o.obdlznik)
+    okno::najdi_hru(&proces_hry).map(|o| o.obdlznik)
 }
 
 #[cfg(not(windows))]
 fn okno_hry_pre_rozlozenie(_app: &AppHandle) -> Option<OknoFyz> {
     None
+}
+
+/// Celý primárny monitor vyjadrený ako `OknoFyz` — fallback pre „Upraviť
+/// rozloženie" (TLI 26, bod 2), keď sa okno hry nenašlo. Rovnaký zdroj
+/// pravdy („primárny monitor od OS"), aký appka už používa v `ukaz_chybu`
+/// a `ukaz_pripomienku_toast`, len vrátený ako obdĺžnik namiesto súradníc
+/// jedného rohu.
+fn primarny_monitor_ako_okno(app: &AppHandle) -> Option<OknoFyz> {
+    let m = app.get_webview_window(OVERLAY)?.primary_monitor().ok().flatten()?;
+    Some(OknoFyz {
+        x: m.position().x,
+        y: m.position().y,
+        sirka: m.size().width,
+        vyska: m.size().height,
+    })
 }
 
 /// Umiestni natívne okno (mini/pripomienka) nad okno hry podľa uloženého
@@ -1344,6 +1372,16 @@ fn posli_seed_rozlozenia(app: &AppHandle, okno_hry: &OknoFyz, mierka: f64, sig: 
         if let Some(okno) = app.get_webview_window(label) {
             let _ = okno.set_ignore_cursor_events(false);
             let _ = okno.show();
+            // TLI 26, bod 1: `.show()` NEMENÍ z-poradie (tao na Windowse
+            // volá `SetWindowPos` s `SWP_NOZORDER` naschvál, aby sa pri
+            // bežnom pohybe okna nič neprestavovalo) — keď bolo toto okno
+            // (typicky mini-panel, keď ho má hráč zapnutý natrvalo) viditeľné
+            // UŽ PRED vstupom do režimu úpravy, zostalo by pod čerstvo
+            // zobrazeným `overlay`, ktorý práve dostal `ignore_cursor_events
+            // (false)` a prekryl by ho na klik. `.set_focus()` ho explicitne
+            // vynesie navrch — presne preto sa v 0.18.2 dal ťahať len ľavý
+            // panel (vnútri `overlay`), nie mini-panel ani pripomienka.
+            let _ = okno.set_focus();
             let _ = app.emit_to(label, "rezim-upravy", json!({"zapnute": true, "priehladnost": priehladnost}));
         }
     }
@@ -1354,17 +1392,31 @@ fn posli_seed_rozlozenia(app: &AppHandle, okno_hry: &OknoFyz, mierka: f64, sig: 
 /// ktorému sa polohy ukladajú — appka to poctivo povie namiesto tichého
 /// zlyhania.
 fn zapni_rezim_upravy(app: &AppHandle) {
-    let Some(okno_hry) = okno_hry_pre_rozlozenie(app) else {
+    // TLI 26, bod 2: hra nebeží → primárny monitor, NIE naposledy aktívne
+    // okno. Rozhodovanie je v čistej funkcii `okna::okno_pre_rezim_upravy`
+    // (testovateľná bez Windows), tu sa len zoženú jej dva vstupy.
+    let okno_hry_najdena = okno_hry_pre_rozlozenie(app);
+    denik::zapis(
+        "monitor",
+        if okno_hry_najdena.is_some() {
+            "Upraviť rozloženie: okno hry nájdené"
+        } else {
+            "Upraviť rozloženie: okno hry sa nenašlo, skúšam primárny monitor"
+        },
+    );
+    let Some(okno_hry) = okna::okno_pre_rezim_upravy(okno_hry_najdena, primarny_monitor_ako_okno(app))
+    else {
+        denik::zapis("monitor", "Upraviť rozloženie: ani primárny monitor sa nenašiel");
         ukaz_chybu(
             app,
             None,
-            "Upraviť rozloženie sa dá len s bežiacou hrou — spusti Torchlight: Infinite \
-a nechaj ho otvorené.",
+            "Upraviť rozloženie sa nedá zobraziť — appka nenašla ani okno hry, ani primárny monitor.",
         );
         return;
     };
     let mierka = mierka_okna(app, &okno_hry);
     let sig = monitor_signatura_app(app, &okno_hry);
+    denik::zapis("monitor", &format!("Upraviť rozloženie beží na monitore „{sig}“"));
 
     {
         let stav = app.state::<Stav>();
@@ -1748,6 +1800,14 @@ fn skontroluj_aktualizaciu() -> Result<Option<String>, String> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 fn main() {
+    // TLI 26, bod 3: do tejto verzie `denik::zapis` volal VÝHRADNE
+    // `spusti_analyzu` (teda až po prvom stlačení F8/F9) — kým appka bežala
+    // a hráč ju nestihol/nemusel použiť, priečinok `logs` sa vôbec
+    // nevytvoril, hoci appka bola spustená celé hodiny. Tento riadok ide
+    // úplne PRVÝ, pred čítaním nastavení aj pred Tauri builderom, nech log
+    // existuje od prvej milisekundy behu appky.
+    denik::zapis("start", &format!("tli-overlay {} spustené", env!("CARGO_PKG_VERSION")));
+
     let nacitane = stav::nacitaj();
     let hotkey_pri_starte = nacitane.hotkey.clone();
     let hotkey_canvas_pri_starte = nacitane.hotkey_canvas.clone();
