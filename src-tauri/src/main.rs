@@ -193,7 +193,10 @@ fn monitor_signatura_app(app: &AppHandle, obd: &OknoFyz) -> String {
 /// — slúži len ako štartovací obdĺžnik pri prvom vstupe do režimu úpravy.
 fn predvolena_poloha(panel: &str) -> Obdlznik01 {
     match panel {
-        PANEL_MINI => Obdlznik01 { x: 1640.0 / 1920.0, y: 20.0 / 1080.0, w: 260.0 / 1920.0, h: 92.0 / 1080.0 },
+        // TLI 25: vyššie než pôvodných 92 px — pribudol zoznam „čo padlo".
+        // Kto si mini-panel posunul ešte pred 0.18.0, má uloženú vlastnú
+        // (nižšiu) veľkosť a zoznam sa mu oreže; zväčší si ho Ctrl+F8.
+        PANEL_MINI => Obdlznik01 { x: 1620.0 / 1920.0, y: 20.0 / 1080.0, w: 280.0 / 1920.0, h: 196.0 / 1080.0 },
         PANEL_PRIPOMIENKA => {
             Obdlznik01 { x: 720.0 / 1920.0, y: 40.0 / 1080.0, w: 480.0 / 1920.0, h: 110.0 / 1080.0 }
         }

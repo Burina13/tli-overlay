@@ -92,6 +92,10 @@ body.rezim-upravy .mini {
     /* Bez medzery a bez `min-width: 0` sa tri hodnoty v 260 px zlejú do seba
        (prvý náhľad: „118 FE1 m 36 s4440"). */
     gap: 10px;
+    /* TLI 25: `flex-shrink: 0` je nutné — odkedy pod riadkom pribudol zoznam
+       „čo padlo", flexbox ho inak stláčal a tretia hodnota (FE/h) z panela
+       vypadla (vidno na prvom náhľade z CI). */
+    flex: 0 0 auto;
 }
 
 .blok-hodnoty {
@@ -134,6 +138,9 @@ body.rezim-upravy .mini {
 /* ── „Čo padlo" (TLI 25) ───────────────────────────────────────────────── */
 .skryte { display: none !important; }
 .dropy {
+    /* Zoznam je jediná časť, ktorá sa smie zmenšovať — keď si hráč panel
+       zmenší, oreže sa tento, nie čísla nad ním. */
+    flex: 1 1 auto;
     margin-top: 8px;
     padding-top: 6px;
     border-top: 1px solid rgba(255, 255, 255, .12);

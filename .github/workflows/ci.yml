@@ -232,7 +232,9 @@ jobs:
           $cesta = (Resolve-Path "ui/nahlad-mini.html").Path
           $p = Start-Process -FilePath $edge -ArgumentList @(
             "--headless", "--disable-gpu", "--screenshot=$PWD\mini-nahlad.png",
-            "--window-size=300,120", "--virtual-time-budget=4000",
+            # TLI 25: okno mini-panela je 280×196 (pribudol zoznam „čo padlo"),
+            # predtým 260×92 — v starom 300×120 sa zoznam na snímke orezal.
+            "--window-size=320,230", "--virtual-time-budget=4000",
             "file:///$($cesta -replace '\\','/')"
           ) -NoNewWindow -Wait -PassThru
           Write-Host "Edge exit code: $($p.ExitCode)"
