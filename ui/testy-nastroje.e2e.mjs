@@ -167,7 +167,13 @@ test("režim úpravy ponúka prepínač modulov a prepnutie nahlási Rustu", () 
             aktivny_modul: "panel:tartarus",
         });
 
-        const tlacidla = [...document.querySelectorAll(".prepinac-tlacidlo")];
+        // Lišta je VON z panela (TLI 25) — keby sa vrátila dovnútra, zmenšenie
+        // panela by ju orezalo a tento test by to zachytil.
+        const lista = document.getElementById("rezim-lista");
+        assert.ok(lista && !lista.classList.contains("skryte"));
+        assert.ok(!document.getElementById("panel").contains(lista));
+
+        const tlacidla = [...document.querySelectorAll("#rezim-lista .prepinac-tlacidlo")];
         assert.equal(tlacidla.length, 4);
         assert.ok(tlacidla[0].classList.contains("aktivny"));
         assert.equal(tlacidla[2].textContent, "F9 — Frozen Canvas");
@@ -180,6 +186,11 @@ test("režim úpravy ponúka prepínač modulov a prepnutie nahlási Rustu", () 
         // kde ho hráč práve nechal.
         assert.equal(volanie.argy.x, 24);
         assert.equal(volanie.argy.w, 460);
+
+        // Ukončenie režimu lištu upratá — nesmie ostať visieť nad hrou.
+        posliUdalost(window, "rezim-upravy", { zapnute: false });
+        assert.ok(lista.classList.contains("skryte"));
+        assert.equal(lista.innerHTML, "");
     } finally {
         window.close();
     }

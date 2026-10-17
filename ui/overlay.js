@@ -12,6 +12,7 @@ const elSipka = document.getElementById("sipka");
 const elSipkaCiara = document.getElementById("sipka-ciara");
 const elUchytPresun = document.getElementById("panel-uchyt-presun");
 const elUchytVelkost = document.getElementById("panel-uchyt-velkost");
+const elRezimLista = document.getElementById("rezim-lista");
 
 const pNadpis = document.getElementById("panel-nadpis");
 const pIstota = document.getElementById("panel-istota");
@@ -122,6 +123,10 @@ listen("rezim-upravy", (event) => {
     document.body.classList.toggle("rezim-upravy", rezimUpravy);
 
     if (!rezimUpravy) {
+        if (elRezimLista) {
+            elRezimLista.innerHTML = "";
+            elRezimLista.classList.add("skryte");
+        }
         return;
     }
 
@@ -148,15 +153,17 @@ listen("rezim-upravy", (event) => {
 });
 
 function vykresliPrepinacModulov(moduly, aktivny) {
-    pAlternativy.innerHTML = "";
+    pAlternativy.classList.add("skryte");
+    if (!elRezimLista) return;
+    elRezimLista.innerHTML = "";
     if (moduly.length === 0) {
-        pAlternativy.classList.add("skryte");
+        elRezimLista.classList.add("skryte");
         return;
     }
-    const popis = document.createElement("div");
+    const popis = document.createElement("span");
     popis.className = "prepinac-popis";
     popis.textContent = "Nastavuješ polohu pre:";
-    pAlternativy.appendChild(popis);
+    elRezimLista.appendChild(popis);
 
     const riadok = document.createElement("div");
     riadok.className = "prepinac";
@@ -180,8 +187,8 @@ function vykresliPrepinacModulov(moduly, aktivny) {
         });
         riadok.appendChild(tlacidlo);
     });
-    pAlternativy.appendChild(riadok);
-    pAlternativy.classList.remove("skryte");
+    elRezimLista.appendChild(riadok);
+    elRezimLista.classList.remove("skryte");
 }
 
 // Rust požiada o nahlásenie živej polohy tesne pred uložením (Esc/Enter alebo

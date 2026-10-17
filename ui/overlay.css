@@ -369,8 +369,26 @@ body.rezim-upravy #panel-uchyt-velkost {
 .alt-pozn { opacity: .7; }
 
 /* ── Prepínač modulov v režime úpravy rozloženia (TLI 25) ──────────────── */
-.prepinac-popis { margin-top: 6px; font-size: 12px; opacity: .75; }
-.prepinac { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 4px; }
+/* Lišta je VON z panela: vnútri by ju orezalo zmenšenie panela, čo je presne
+   to, čo hráč v tomto režime robí (vidno na prvom náhľade z CI). */
+#rezim-lista {
+    position: fixed;
+    top: 14px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 14px;
+    border: 1px solid rgba(255, 150, 44, .45);
+    border-radius: 9px;
+    background: rgba(18, 16, 24, .92);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, .55);
+    pointer-events: auto;
+    z-index: 30;
+}
+.prepinac-popis { font-size: 12px; opacity: .75; white-space: nowrap; }
+.prepinac { display: flex; flex-wrap: wrap; gap: 5px; }
 .prepinac-tlacidlo {
     padding: 4px 9px;
     border: 1px solid rgba(255, 255, 255, .22);

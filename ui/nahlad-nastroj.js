@@ -55,3 +55,9 @@ const posli = () => {
 };
 if (document.readyState === "complete") posli();
 else window.addEventListener("load", posli);
+// Poistka pre snímku z CI: náhľady, ktoré kreslia cez udalosť "stav", vyšli
+// z Edge headless prázdne (overené 17.10.2026 na `overlay-nahlad-canvas.png`
+// aj na novom `overlay-nahlad-nastroj.png`), hoci tie isté dáta v jsdom
+// testoch panel vykreslia. Druhé poslanie po 300 ms nič nepokazí —
+// `skryVsetko()` na začiatku poslucháča zmaže predošlé vykreslenie.
+setTimeout(posli, 300);
