@@ -2,6 +2,19 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.18.1 — 17.10.2026 (TLI 25, oprava mini-panela)
+
+Náhľad z CI ukázal, čo testy ukázať nevedeli: mini-panel má vo verzii 0.18.0
+okno z čias, keď v ňom boli len tri čísla (260×92 px), takže nový zoznam
+„čo padlo" ho pretiekol a **vytlačil z neho hodnotu FE/h**.
+
+- Predvolené okno mini-panela je **280×196 px** a zoznam dropov je jediná časť,
+  ktorá sa pri zmenšení panela oreže — čísla nad ním ostanú.
+- Kto si mini-panel posunul alebo zmenšil ešte pred 0.18.0, má uloženú vlastnú
+  veľkosť a tá sa mu **nepremaže**; zväčší si ho Ctrl+F8.
+- Náhľad výberu nástroja a prepínača modulov pribudol medzi snímky z CI —
+  obe nové obrazovky sa tak kontrolujú okom, nie len testami.
+
 ## 0.18.0 — 17.10.2026 (TLI 25 — výber „Torture Instrument" na F8)
 
 Úloha `2026-10-17-1242-mcp.md`. Sezóna SS14 začína obrazovkou **Select a Torture

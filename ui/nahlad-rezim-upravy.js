@@ -7,9 +7,20 @@
 // testami.
 const UKAZKA_REZIM_UPRAVY = {
   zapnute: true,
-  panel: { x: 60, y: 48, w: 420, h: 220 },
+  panel: { x: 60, y: 48, w: 420, h: 250 },
   priehladnost: 0.85,
   okno: { sirka: 1600, vyska: 900 },
+  // TLI 25 — prepínač, ktorému modulu sa poloha práve nastavuje. Bez týchto
+  // dvoch polí by bol na snímke z CI panel presne ako pred TLI 25 a nikto by
+  // nevidel, či sa prepínač vôbec kreslí. Zoznam musí sedieť s
+  // `rozlozenie::MODULOVE_PANELY` v jadre.
+  moduly: [
+    { kluc: "panel:tartarus", popis: "F8 — doska" },
+    { kluc: "panel:nastroj", popis: "F8 — výber nástroja" },
+    { kluc: "panel:canvas", popis: "F9 — Frozen Canvas" },
+    { kluc: "panel:artistry", popis: "Artistry" },
+  ],
+  aktivny_modul: "panel:tartarus",
 };
 
 document.body.classList.add("nahlad");
