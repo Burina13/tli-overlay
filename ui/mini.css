@@ -23,7 +23,9 @@ body {
     border: 1px solid rgba(255, 150, 44, 0.45);
     border-radius: 8px;
     box-sizing: border-box;
-    padding: 10px 14px;
+    /* TLI 25: užšie okraje — v paneli je odteraz aj zoznam dropov a každý
+       pixel šírky rozhoduje o tom, či sa k menu položky zmestí počet a cena. */
+    padding: 8px 10px;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
@@ -91,15 +93,19 @@ body.rezim-upravy .mini {
     align-items: flex-end;
     /* Bez medzery a bez `min-width: 0` sa tri hodnoty v 260 px zlejú do seba
        (prvý náhľad: „118 FE1 m 36 s4440"). */
-    gap: 10px;
     /* TLI 25: `flex-shrink: 0` je nutné — odkedy pod riadkom pribudol zoznam
-       „čo padlo", flexbox ho inak stláčal a tretia hodnota (FE/h) z panela
-       vypadla (vidno na prvom náhľade z CI). */
+       „čo padlo", flexbox ho inak stláčal a riadok sa zvisle zmenšoval.
+       `flex-wrap` je tu z druhého dôvodu: keď sa tri hodnoty do šírky panela
+       nezmestia, tretia (FE/h) sa má zalomiť na ďalší riadok, nie potichu
+       vypadnúť za okraj (presne to bolo vidieť na náhľade z CI pri 0.18.1). */
     flex: 0 0 auto;
+    flex-wrap: wrap;
+    gap: 2px 10px;
 }
 
 .blok-hodnoty {
     min-width: 0;
+    flex: 0 1 auto;
 }
 
 /* Obal pre jednotlivu dvojicu popisok+cislo */
@@ -173,9 +179,18 @@ body.rezim-upravy .mini {
 }
 .dropy .meno {
     flex: 1 1 auto;
+    /* `min-width: 0` je tu NUTNÉ: bez neho sa flex položka nezmenší pod šírku
+       svojho obsahu, meno položky vytlačí počet a cenu za okraj a `overflow:
+       hidden` ich odreže. Presne to bolo vidieť na náhľade z CI pri 0.18.1 —
+       mená dropov tam boli, počty a ceny nie. */
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
 }
-.dropy .pocet { opacity: .75; }
-.dropy .hodnota { color: #8fe3a1; font-variant-numeric: tabular-nums; }
+.dropy .pocet { flex: 0 0 auto; opacity: .75; }
+.dropy .hodnota {
+    flex: 0 0 auto;
+    color: #8fe3a1;
+    font-variant-numeric: tabular-nums;
+}
 .dropy .hodnota.bez-ceny { color: #b0b4bd; font-style: italic; }

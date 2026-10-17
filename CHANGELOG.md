@@ -2,6 +2,17 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.18.2 — 17.10.2026 (TLI 25, mini-panel po druhý raz)
+
+Náhľad z CI po 0.18.1 ukázal ďalšie dve veci, ktoré testy nevedia zachytiť,
+lebo sú čisto o šírke v pixeloch:
+
+- **Pri dropoch chýbal počet a cena** — zostalo len meno položky. Flex položka
+  sa bez `min-width: 0` nezmenší pod šírku svojho obsahu, takže dlhé meno
+  vytlačilo zvyšok riadku za okraj a `overflow: hidden` ho odrezal.
+- **Z horného riadku vypadla hodnota FE/h.** Teraz sa pri nedostatku šírky
+  zalomí na ďalší riadok namiesto toho, aby potichu zmizla za okrajom.
+
 ## 0.18.1 — 17.10.2026 (TLI 25, oprava mini-panela)
 
 Náhľad z CI ukázal, čo testy ukázať nevedeli: mini-panel má vo verzii 0.18.0
