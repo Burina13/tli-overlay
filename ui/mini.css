@@ -88,8 +88,14 @@ body.rezim-upravy .mini {
 
 /* Spodna cast - rozlozenie troch cisel vedla seba */
 .spodny-riadok {
-    display: flex;
-    justify-content: space-between;
+    /* TLI 25: GRID, nie flex. Tri hodnoty vo flexe so `space-between` sa pri
+       úzkom paneli správali nepredvídateľne — na náhľade z CI z panela
+       vypadla tretia (FE/h), hoci v DOM bola a mala text. Grid s troma
+       rovnakými stĺpcami `minmax(0, 1fr)` dá každej hodnote presne tretinu
+       šírky a dlhšia sa oreže vo svojom stĺpci namiesto toho, aby vytlačila
+       susedov. */
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     align-items: flex-end;
     /* Bez medzery a bez `min-width: 0` sa tri hodnoty v 260 px zlejú do seba
        (prvý náhľad: „118 FE1 m 36 s4440"). */
@@ -105,7 +111,7 @@ body.rezim-upravy .mini {
 
 .blok-hodnoty {
     min-width: 0;
-    flex: 0 1 auto;
+    overflow: hidden;
 }
 
 /* Obal pre jednotlivu dvojicu popisok+cislo */
@@ -162,7 +168,11 @@ body.rezim-upravy .mini {
 }
 .dropy ul { list-style: none; margin: 0; padding: 0; }
 .dropy li {
-    display: flex;
+    /* Tiež grid, a z toho istého dôvodu ako `.spodny-riadok`: stĺpce sú
+       ikona (0 px, keď ikona nie je) — meno (zvyšok, oreže sa) — počet —
+       cena. Vo flexe počet a cena z riadku vypadli. */
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
     align-items: center;
     gap: 6px;
     font-size: 12px;
@@ -172,13 +182,11 @@ body.rezim-upravy .mini {
 .dropy .ikona {
     width: 18px;
     height: 18px;
-    flex: 0 0 18px;
     border-radius: 3px;
     background: rgba(255, 255, 255, .07);
     object-fit: contain;
 }
 .dropy .meno {
-    flex: 1 1 auto;
     /* `min-width: 0` je tu NUTNÉ: bez neho sa flex položka nezmenší pod šírku
        svojho obsahu, meno položky vytlačí počet a cenu za okraj a `overflow:
        hidden` ich odreže. Presne to bolo vidieť na náhľade z CI pri 0.18.1 —
@@ -187,9 +195,8 @@ body.rezim-upravy .mini {
     overflow: hidden;
     text-overflow: ellipsis;
 }
-.dropy .pocet { flex: 0 0 auto; opacity: .75; }
+.dropy .pocet { opacity: .75; }
 .dropy .hodnota {
-    flex: 0 0 auto;
     color: #8fe3a1;
     font-variant-numeric: tabular-nums;
 }
