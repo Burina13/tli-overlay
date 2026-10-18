@@ -42,7 +42,10 @@
                     <button type="button" id="btn-nahraj-hotkey" class="btn-maly">Nahrať…</button>
                 </div>
                 <small>Napríklad: <code>F8</code> alebo <code>CommandOrControl+Shift+T</code> —
-                    alebo klikni „Nahrať…" a rovno stlač klávesu/kombináciu.</small>
+                    alebo klikni „Nahrať…" a rovno stlač klávesu/kombináciu. Platí len
+                    <code>F1</code>–<code>F12</code> samostatne, alebo klávesa spolu
+                    s Ctrl/Alt/Shift/Cmd — holá klávesa (napr. samotné <code>3</code>) by appka
+                    hre ukradla.</small>
                 <small id="stav-hotkey" class="stav-skratky"></small>
             </div>
 
@@ -57,14 +60,14 @@
             </div>
 
             <div class="skupina">
-                <label for="inp-hotkey-trh">Klávesová skratka — ceny z trhu (nepovinné)</label>
+                <label for="inp-hotkey-trh">Klávesová skratka — ceny z trhu</label>
                 <div class="heslo-obal">
-                    <input type="text" id="inp-hotkey-trh" value="">
+                    <input type="text" id="inp-hotkey-trh" value="F10">
                     <button type="button" id="btn-nahraj-hotkey-trh" class="btn-maly">Nahrať…</button>
                 </div>
                 <small>Appka ceny z trhu fotí SAMA, len čo v hre otvoríš detail ponuky — tento
                     hotkey je len ručná záloha pre prípad, že by to automatika nezachytila.
-                    Nechaj prázdne, ak ho nepotrebuješ.</small>
+                    Predvolená je <code>F10</code>; necháš-prázdne pole, appka sa k nej sama vráti.</small>
                 <small id="stav-hotkey-trh" class="stav-skratky"></small>
             </div>
 

@@ -90,10 +90,22 @@ pub struct Nastavenia {
     /// nepovinný ručný fallback) — zámerne, rovnaká filozofia ako
     /// `zber_dat_zapnute` vyššie.
     pub ceny_obrazovka_zapnute: bool,
-    /// Nepovinná skratka pre RUČNÉ vyvolanie analýzy trhu (zadanie bod 2,
-    /// „alebo na hotkey") — napr. keď automatická detekcia z logu zlyhá
-    /// (iný jazyk klienta hry, zmena textu stránky). Prázdny reťazec =
-    /// nezaregistrovaná, nič sa nemení oproti appke bez tejto funkcie.
+    /// Skratka pre RUČNÉ vyvolanie analýzy trhu (zadanie bod 2, „alebo na
+    /// hotkey") — napr. keď automatická detekcia z logu zlyhá (iný jazyk
+    /// klienta hry, zmena textu stránky).
+    ///
+    /// **Predvolená hodnota je od TLI 39 (`2026-10-18-1613-mcp.md`) „F10",
+    /// NIE prázdny reťazec.** Pôvodne prázdna predvoľala appku do stavu, kde
+    /// hráč nevidel ŽIADNU klávesu pre tento modul nikde (ani v Nastaveniach,
+    /// ani v toaste pri štarte) — presne to sa 18.10.2026 podpísalo pod
+    /// nejasný incident „F8 nefunguje": Tartarus hotkey bol omylom prepísaný
+    /// na holú klávesu a hráč nemal sa o čom uistiť. `normalizuj()` preto
+    /// prázdny reťazec vždy premení na „F10" — pole teda už nikdy neostane
+    /// bez vlastnej hodnoty, aj keď appka dostane starý súbor nastavení alebo
+    /// hráč pole v UI vyprázdni. Konflikt s `hotkey`/`hotkey_canvas` (rovnaká
+    /// klávesa pre dva moduly) rieši appka osobitne pri registrácii
+    /// (`src-tauri/src/main.rs::konfliktne_moduly`), nie tu — táto štruktúra
+    /// o ostatných dvoch poliach nič nevie.
     pub hotkey_trh: String,
 }
 
@@ -120,7 +132,7 @@ impl Default for Nastavenia {
             rozlozenie: Rozlozenie::default(),
             okno_hlavne: None,
             ceny_obrazovka_zapnute: true,
-            hotkey_trh: String::new(),
+            hotkey_trh: "F10".to_string(),
         }
     }
 }
@@ -140,6 +152,12 @@ impl Nastavenia {
         self.hotkey = self.hotkey.to_uppercase();
         self.hotkey_canvas = self.hotkey_canvas.to_uppercase();
         self.hotkey_trh = self.hotkey_trh.trim().to_uppercase();
+        // TLI 39, bod 2: prázdny hotkey_trh nesmie appku nechať bez vlastnej
+        // klávesy pre tento modul — padá sa na predvolenú „F10", nie na
+        // tichú nezaregistrovanú hodnotu (pozri komentár pri poli vyššie).
+        if self.hotkey_trh.is_empty() {
+            self.hotkey_trh = "F10".to_string();
+        }
 
         if self.autoskrytie_s > 600 {
             self.autoskrytie_s = 600;
@@ -378,29 +396,46 @@ mod testy {
     }
 
     #[test]
-    fn ceny_obrazovka_je_predvolene_zapnuta_a_hotkey_trh_prazdny() {
+    fn ceny_obrazovka_je_predvolene_zapnuta_a_hotkey_trh_je_f10() {
         // TLI 22: verejná cena na trhu, rovnaký dôvod ako ceny_sync — zapnuté
-        // predvolene. Žiadny nový povinný hotkey.
+        // predvolene. TLI 39: hotkey_trh má odteraz vlastnú predvolenú
+        // hodnotu (predtým prázdny reťazec — pozri `hotkey_trh_prazdny_sa_normalizuje_na_f10`).
         let n = Nastavenia::default();
         assert!(n.ceny_obrazovka_zapnute);
-        assert_eq!(n.hotkey_trh, "");
+        assert_eq!(n.hotkey_trh, "F10");
         assert_eq!(n.adresa_analyza_ceny(), "https://tli.tvojtatko.sk/api/analyza?modul=ceny");
     }
 
     #[test]
     fn stare_nastavenia_bez_ceny_obrazovka_sa_nacitaju_so_zapnutym_predvolenim() {
         // appka pred TLI 22 toto pole nemá vôbec — `#[serde(default)]` nesmie
-        // pri jej načítaní zlyhať a predvolené má byť ZAPNUTÉ.
+        // pri jej načítaní zlyhať a predvolené má byť ZAPNUTÉ, hotkey_trh
+        // sa doplní na predvolenú „F10" (TLI 39).
         let n = Nastavenia::z_jsonu(r#"{"kluc":"abc","hotkey":"F8"}"#);
         assert!(n.ceny_obrazovka_zapnute);
-        assert_eq!(n.hotkey_trh, "");
+        assert_eq!(n.hotkey_trh, "F10");
     }
 
     #[test]
     fn hotkey_trh_sa_normalizuje_velkymi_pismenami_ked_je_nastaveny() {
-        let mut n = Nastavenia { hotkey_trh: " f10 ".to_string(), ..Default::default() };
+        let mut n = Nastavenia { hotkey_trh: " f11 ".to_string(), ..Default::default() };
+        n.normalizuj();
+        assert_eq!(n.hotkey_trh, "F11");
+    }
+
+    /// TLI 39, bod 2 (`2026-10-18-1613-mcp.md`): pôvodne prázdny hotkey_trh
+    /// nechával appku bez vlastnej klávesy pre tento modul — teraz sa vždy
+    /// doplní na predvolenú „F10", či už pole v súbore chýba úplne, alebo je
+    /// explicitne uložené ako prázdny reťazec (napr. hráč ho v Nastaveniach
+    /// vymaže a uloží).
+    #[test]
+    fn hotkey_trh_prazdny_sa_normalizuje_na_f10() {
+        let mut n = Nastavenia { hotkey_trh: "   ".to_string(), ..Default::default() };
         n.normalizuj();
         assert_eq!(n.hotkey_trh, "F10");
+
+        let n2 = Nastavenia::z_jsonu(r#"{"kluc":"abc","hotkey_trh":""}"#);
+        assert_eq!(n2.hotkey_trh, "F10");
     }
 
     #[test]

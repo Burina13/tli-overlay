@@ -128,7 +128,7 @@ const CESTA_LOGU_UKAZKA =
 
 const ODPOVEDE = {
   verzia: "0.15.0",
-  nacitaj_nastavenia: { hotkey: "F8", hotkey_canvas: "F9", hotkey_trh: "", tema: "svetla",
+  nacitaj_nastavenia: { hotkey: "F8", hotkey_canvas: "F9", hotkey_trh: "F10", tema: "svetla",
                         mini_overlay: true, tracker_sync: false,
                         ceny_sync: true, upload_logov: true, ceny_obrazovka_zapnute: true,
                         cesta_logu: CESTA_LOGU_UKAZKA },

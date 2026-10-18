@@ -2,6 +2,42 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.18.13 — 18.10.2026 (TLI 39 — skutočná príčina „F8 nefunguje", klávesové skratky)
+
+Úloha `2026-10-18-1613-mcp.md`. Skutočná príčina incidentu z 18.10. popoludní:
+Tartarus skratka bola v nastaveniach omylom prepísaná na holé „DIGIT3" (cez
+„Nahrať…" v Nastaveniach, bez modifikátora), čím appka F8 prestala počúvať a
+navyše hre ukradla klávesu „3". Súbežne bežiaca automatická detekcia cien
+z trhu zalogovala „Ceny stlačené" v tom istom čase, čo pôsobilo, akoby F8
+spúšťalo nesprávny modul — v skutočnosti sú to dve nezávislé veci.
+
+**Klávesová skratka už neprijme holú klávesu bez modifikátora** — platné sú
+len F1–F12 samostatne alebo ľubovoľná klávesa držaná spolu s Ctrl/Alt/Shift/
+Super. Platí pri nahrávaní stlačením aj pri priamom prepísaní poľa (validácia
+pri uložení formulára). Nahrávanie stlačením navyše vyžaduje výslovné
+potvrdenie pred zápisom — jedno fatfingernutie klávesy appku už neprekonfiguruje.
+
+**`hotkey_trh` (ceny z trhu) má odteraz vlastnú predvolenú hodnotu „F10"**
+namiesto prázdneho reťazca — appka ju nikdy nenechá bez vlastnej klávesy.
+Pridaná kontrola konfliktov MEDZI VLASTNÝMI tromi skratkami appky (Tartarus/
+Frozen Canvas/ceny z trhu): keď sú dve nastavené na rovnakú klávesu, appka tú
+nižšie prioritnú vôbec nezaregistruje a ukáže presné červené hlásenie, ktorý
+modul s ktorým koliduje.
+
+**Toast pri štarte appky a nová položka „Klávesy: …" v tray menu** ukazujú
+zoznam aktívne zaregistrovaných skratiek (Tartarus/Frozen Canvas/ceny z trhu/
+Upraviť rozloženie) — presne to, čo pri incidente chýbalo: appka sa so žiadnou
+chybou nehlásila (DIGIT3 sa zaregistrovať podarilo), len to nebola klávesa,
+ktorú hráč čakal pod F8.
+
+Testy: `core` 24 testov v `nastavenia.rs` (+3), `src-tauri` nový
+`#[cfg(test)] mod testy` s 10 testami na `konfliktne_moduly`/
+`text_prehladu_klaves` (overené mimo Tauri, `rustc --test` nad extrahovanou
+kópiou funkcií — plný `cargo test` v `src-tauri` sa na tomto hostiteľovi
+nerobí, len `cargo check --tests`, pozri `project-tli-overlay-release-flow`),
+`ui/testy-nastavenia-hotkeys.e2e.mjs` nový (8 testov nad skutočným
+`nastavenia.html`/`nastavenia.js` v jsdom).
+
 ## 0.18.12 — 18.10.2026 (TLI 37 — Objective: cieľ behu riadi stratégiu)
 
 Úloha `2026-10-18-1324-mcp.md`. Richard: na začiatku každého behu Tartarusu je

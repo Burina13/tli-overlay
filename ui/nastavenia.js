@@ -90,7 +90,8 @@ inpPriehladnost.addEventListener("input", async () => {
     }
 });
 
-// --- Nahratie klávesovej skratky priamo stlačením (TLI 28, bod 2b) ---
+// --- Nahratie klávesovej skratky priamo stlačením (TLI 28, bod 2b; TLI 39,
+// bod 1 pridáva validáciu proti holej klávese hry a potvrdenie) ---
 // Hráč doteraz musel poznať presný textový formát (`CommandOrControl+Shift+T`)
 // — teraz stačí kliknúť na „Nahrať…“ a stlačiť kombináciu. `event.code` sa
 // posiela appke takmer bez úprav: Rust (`global-hotkey`) parsuje presne tie
@@ -101,8 +102,38 @@ const KODY_SAMOTNYCH_MODIFIKATOROV = [
     "AltLeft", "AltRight", "MetaLeft", "MetaRight",
 ];
 
+// TLI 39, bod 1 (`2026-10-18-1613-mcp.md`): 18.10.2026 sa Tartarus skratka
+// omylom zapísala ako holé „DIGIT3" (bez modifikátora) — appka to zoberie aj
+// naďalej (appka s hocijakým reťazcom pôjde do Rustu, ktorý má vlastnú
+// validáciu formátu), ale appka ju odteraz sama neponúkne ako platnú voľbu:
+// holá klávesa bez modifikátora v hre niečo znamená (tu konkrétne číslo „3"
+// v akčnej lište) a appka by jej stlačenie hre ukradla. Povolené sú F1–F12
+// samostatne (tie hra nepoužíva) alebo ĽUBOVOĽNÁ klávesa držaná spolu
+// aspoň s jedným modifikátorom (Ctrl/Alt/Shift/Super).
+const F_KLAVESA = /^F([1-9]|1[0-2])$/;
+
+function jePlatnaSkratka(text) {
+    const t = (text || "").trim().toUpperCase();
+    if (!t) return false;
+    const casti = t.split("+").map((c) => c.trim()).filter(Boolean);
+    if (casti.length === 0) return false;
+    const hlavna = casti[casti.length - 1];
+    const maModifikator = casti.length > 1;
+    return maModifikator || F_KLAVESA.test(hlavna);
+}
+
+// Prepojenie poľa na jeho vlastný riadok so stavom — chybu z VALIDÁCIE počas
+// nahrávania treba ukázať v TOM ISTOM mieste, kam appka píše stav z backendu
+// (`aktualizujStavHotkeys`), inak by hráč pozeral na dve rôzne miesta.
+function elementStavuPre(input) {
+    if (input === inpHotkeyCanvas) return elStavHotkeyCanvas;
+    if (input === inpHotkeyTrh) return elStavHotkeyTrh;
+    return elStavHotkey;
+}
+
 function nahrajSkratku(input, button) {
     const povodnyText = button.textContent;
+    const elStav = elementStavuPre(input);
     button.textContent = "Stlač klávesu…";
     button.disabled = true;
 
@@ -123,7 +154,24 @@ function nahrajSkratku(input, button) {
         if (udalost.shiftKey) casti.push("SHIFT");
         if (udalost.metaKey) casti.push("SUPER");
         casti.push(udalost.code);
-        input.value = casti.join("+");
+        const navrh = casti.join("+");
+
+        if (!jePlatnaSkratka(navrh)) {
+            elStav.textContent =
+                "Táto klávesa by appke zobrala klávesu, ktorú používa hra — použi F1–F12, " +
+                "alebo ju drž spolu s Ctrl, Alt alebo Shift. Skús inú kombináciu (Escape zruší).";
+            elStav.classList.add("chyba");
+            return; // appka ostáva v režime nahrávania, nič sa nezapísalo
+        }
+
+        // TLI 39, bod 1: „zachytávanie… s potvrdením" — jedno stlačenie je
+        // príliš ľahké fatfingerovať (presne to sa stalo 18.10.2026), preto
+        // appka pred zápisom vždy vyžiada výslovné potvrdenie.
+        if (!window.confirm(`Nastaviť klávesovú skratku na „${navrh}"?`)) {
+            return; // zrušené, appka ostáva v režime nahrávania
+        }
+
+        input.value = navrh;
         koniec();
     };
     const koniec = () => {
@@ -170,7 +218,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         inpKluc.value = nastavenia.kluc || "";
         inpHotkey.value = nastavenia.hotkey || "F8";
         inpHotkeyCanvas.value = nastavenia.hotkey_canvas || "F9";
-        inpHotkeyTrh.value = nastavenia.hotkey_trh || "";
+        inpHotkeyTrh.value = nastavenia.hotkey_trh || "F10";
         inpProces.value = nastavenia.proces_hry || "";
         inpAutoskrytie.value = nastavenia.autoskrytie_s || 0;
         inpZvuk.checked = !!nastavenia.zvuk;
@@ -222,6 +270,27 @@ formular.addEventListener("submit", async (e) => {
         return;
     }
 
+    // TLI 39, bod 1: rovnaká validácia ako pri nahrávaní stlačením — toto tu
+    // chytí aj priame PREPÍSANIE poľa (pole nie je `readonly`, appka vie
+    // nahrať aj pokročilý formát ako `CommandOrControl+Shift+T` písaním),
+    // nielen zachytávanie stlačením. hotkey_trh môže ostať prázdny (appka ho
+    // pri uložení doplní na predvolenú „F10"), hotkey a hotkey_canvas nie.
+    const novyHotkey = inpHotkey.value.trim();
+    const novyHotkeyCanvas = inpHotkeyCanvas.value.trim();
+    const novyHotkeyTrh = inpHotkeyTrh.value.trim();
+    const CHYBA_SKRATKY =
+        "môže kolidovať s hrou — použi F1–F12, alebo klávesu drž spolu s Ctrl, Alt alebo Shift.";
+    for (const [popis, hodnota] of [["Tartarus", novyHotkey], ["Frozen Canvas", novyHotkeyCanvas]]) {
+        if (!jePlatnaSkratka(hodnota)) {
+            zobrazSpravu(elVysledokUlozenia, `Klávesová skratka pre ${popis} („${hodnota}") ${CHYBA_SKRATKY}`, false);
+            return;
+        }
+    }
+    if (novyHotkeyTrh && !jePlatnaSkratka(novyHotkeyTrh)) {
+        zobrazSpravu(elVysledokUlozenia, `Klávesová skratka pre ceny z trhu („${novyHotkeyTrh}") ${CHYBA_SKRATKY}`, false);
+        return;
+    }
+
     // Vychádza z POSLEDNÝCH načítaných nastavení (`nacitaneNastavenia`), nie z
     // prázdneho objektu — inak by uloženie tohto formulára potichu vrátilo na
     // predvolené všetko, čo tento formulár nezobrazuje (pozri komentár vyššie
@@ -230,9 +299,9 @@ formular.addEventListener("submit", async (e) => {
         ...nacitaneNastavenia,
         url_servera: url,
         kluc: kluc,
-        hotkey: inpHotkey.value.trim(),
-        hotkey_canvas: inpHotkeyCanvas.value.trim(),
-        hotkey_trh: inpHotkeyTrh.value.trim(),
+        hotkey: novyHotkey,
+        hotkey_canvas: novyHotkeyCanvas,
+        hotkey_trh: novyHotkeyTrh,
         proces_hry: inpProces.value.trim(),
         autoskrytie_s: parseInt(inpAutoskrytie.value, 10) || 0,
         zvuk: inpZvuk.checked,

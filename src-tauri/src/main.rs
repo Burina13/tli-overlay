@@ -152,12 +152,16 @@ s hlavnou skratkou. Vraciam sa k F9."
     Ok(())
 }
 
-/// Tretia skratka — ceny z obrazovky trhu (TLI 22), NEPOVINNÁ. Na rozdiel od
-/// `prehlas_hotkey`/`prehlas_hotkey_canvas` nemá predvolenú hodnotu: hlavný
+/// Tretia skratka — ceny z obrazovky trhu (TLI 22). Na rozdiel od
+/// `prehlas_hotkey`/`prehlas_hotkey_canvas` je to RUČNÝ fallback — hlavný
 /// spôsob spustenia je automatická detekcia z logu (`tracker.rs`,
-/// `odober_trh_otvoreny`), tento hotkey je len ručný fallback zo zadania
-/// („alebo na hotkey"). Prázdny reťazec = nezaregistrovaná, appke sa nič
-/// nemení. Volá sa vždy AŽ PO `prehlas_hotkey` (ten `unregister_all()`-uje).
+/// `odober_trh_otvoreny`), tento hotkey len zodpovedá zneniu zadania
+/// („alebo na hotkey"). Od TLI 39 (`2026-10-18-1613-mcp.md`, bod 2) má
+/// `Nastavenia::hotkey_trh` vlastnú predvolenú hodnotu „F10" a
+/// `normalizuj()` prázdny reťazec na ňu vždy premení — guard na `is_empty()`
+/// tu ostáva len ako obrana pri priamom volaní bez prechodu cez
+/// `normalizuj()` (napr. budúci test), nie ako bežná prevádzková cesta.
+/// Volá sa vždy AŽ PO `prehlas_hotkey` (ten `unregister_all()`-uje).
 pub fn prehlas_hotkey_trh(app: &AppHandle, novy: &str) -> Result<(), String> {
     let novy = novy.trim();
     if novy.is_empty() {
@@ -170,6 +174,82 @@ s inou skratkou. Automatická detekcia z logu funguje ďalej bez nej."
         ));
     }
     Ok(())
+}
+
+/// Nájde konflikt MEDZI VLASTNÝMI tromi skratkami appky — teda dve polia
+/// nastavené na ROVNAKÚ klávesu (TLI 39, bod 2, `2026-10-18-1613-mcp.md`).
+/// Toto je iný prípad než to, čo rieši `zaregistruj_a_zaloguj`/`obsadena`:
+/// ten rozpozná až odmietnutie od Windows (cudzí program ALEBO aj toto), ale
+/// nevie pomenovať KTORÉ dva moduly appky si prekážajú a hlási to ako
+/// „OBSADENÁ iným programom", aj keď ide o appku samu. Táto funkcia je čisto
+/// textové porovnanie bez volania OS, beží PRED akoukoľvek registráciou a
+/// pozná presné mená oboch strán konfliktu.
+///
+/// Priorita je Tartarus > Frozen Canvas > ceny z trhu — v tomto poradí boli
+/// skratky do appky historicky pridané a Tartarus má navyše vlastný fallback
+/// na F8 priamo v `prehlas_hotkey`, takže sa tu nikdy nevynecháva. Vracia
+/// dvojicu (interné meno modulu pre `zaregistruj_vsetky_hotkeys`, hotové
+/// slovenské hlásenie) pre KAŽDÝ nájdený konflikt — prázdny `hotkey_trh`
+/// sa nikdy nepočíta ako konflikt (po `normalizuj()` sa to ani nestane, ale
+/// funkcia nesmie spadnúť, ak ju niekto zavolá priamo na nenormalizovaný vstup).
+fn konfliktne_moduly(hotkey: &str, hotkey_canvas: &str, hotkey_trh: &str) -> Vec<(&'static str, String)> {
+    let mut sprava = Vec::new();
+    if !hotkey_canvas.is_empty() && hotkey_canvas.eq_ignore_ascii_case(hotkey) {
+        sprava.push((
+            "canvas",
+            format!(
+                "Frozen Canvas „{hotkey_canvas}“ koliduje s klávesou pre Tartarus — appka ju \
+teraz nezaregistrovala, zmeň jednu z klávesových skratiek v Nastaveniach (dovtedy funguje \
+tray menu „Odfotiť Canvas teraz“)."
+            ),
+        ));
+    }
+    if !hotkey_trh.is_empty() {
+        if hotkey_trh.eq_ignore_ascii_case(hotkey) {
+            sprava.push((
+                "trh",
+                format!(
+                    "Skratka pre ceny z trhu „{hotkey_trh}“ koliduje s klávesou pre Tartarus — \
+appka ju teraz nezaregistrovala, zmeň jednu z klávesových skratiek v Nastaveniach \
+(automatická detekcia z logu funguje ďalej bez nej)."
+                ),
+            ));
+        } else if hotkey_trh.eq_ignore_ascii_case(hotkey_canvas) {
+            sprava.push((
+                "trh",
+                format!(
+                    "Skratka pre ceny z trhu „{hotkey_trh}“ koliduje s klávesou pre Frozen \
+Canvas — appka ju teraz nezaregistrovala, zmeň jednu z klávesových skratiek v Nastaveniach \
+(automatická detekcia z logu funguje ďalej bez nej)."
+                ),
+            ));
+        }
+    }
+    sprava
+}
+
+/// Text zoznamu AKTÍVNYCH klávesových skratiek (TLI 39, bod 3) — spoločný
+/// zdroj pre toast pri štarte aj pre položku v tray menu, nech oboje vždy
+/// hovoria presne to isté. Modul, ktorý `konfliktne_moduly` vyradila z
+/// registrácie, sa tu neukáže ako jeho (nefunkčná) klávesa, ale ako otvorený
+/// konflikt — zoznam má hovoriť pravdu o tom, čo appka reálne počúva, nie
+/// opisovať surové nastavenia.
+fn text_prehladu_klaves(hotkey: &str, hotkey_canvas: &str, hotkey_trh: &str) -> String {
+    let konflikty = konfliktne_moduly(hotkey, hotkey_canvas, hotkey_trh);
+    let je_v_konflikte = |modul: &str| konflikty.iter().any(|(m, _)| *m == modul);
+    let zobraz = |hodnota: &str, modul: &str| {
+        if je_v_konflikte(modul) {
+            "(konflikt — pozri Nastavenia)".to_string()
+        } else {
+            hodnota.to_string()
+        }
+    };
+    format!(
+        "{} Tartarus, {} Frozen Canvas, {} ceny z trhu, CONTROL+F8 Upraviť rozloženie",
+        hotkey,
+        zobraz(hotkey_canvas, "canvas"),
+        zobraz(hotkey_trh, "trh"),
+    )
 }
 
 /// Spoločné miesto, odkiaľ sa registrujú VŠETKY štyri skratky naraz (Tartarus,
@@ -188,14 +268,36 @@ fn zaregistruj_vsetky_hotkeys(
     hotkey_trh: &str,
     posli_toast: bool,
 ) -> Vec<String> {
-    let chyby: Vec<String> = [
-        prehlas_hotkey(app, hotkey).err(),
-        prehlas_hotkey_canvas(app, hotkey_canvas).err(),
-        prehlas_hotkey_trh(app, hotkey_trh).err(),
-    ]
-    .into_iter()
-    .flatten()
-    .collect();
+    // TLI 39, bod 2: konflikt MEDZI VLASTNÝMI skratkami sa zisťuje PRED
+    // akoukoľvek registráciou — modul, ktorý tu prehrá, sa nižšie vôbec
+    // neregistruje (nie je čo nechať „spadnúť" na inú klávesu, appka si
+    // žiadnu vlastnú náhradu nevymýšľa, nech hráč jasne vidí, že treba ísť
+    // do Nastavení).
+    let konflikty = konfliktne_moduly(hotkey, hotkey_canvas, hotkey_trh);
+    let preskocit_canvas = konflikty.iter().any(|(m, _)| *m == "canvas");
+    let preskocit_trh = konflikty.iter().any(|(m, _)| *m == "trh");
+
+    let mut chyby: Vec<String> = konflikty.into_iter().map(|(_, sprava)| sprava).collect();
+    chyby.extend(prehlas_hotkey(app, hotkey).err());
+
+    if preskocit_canvas {
+        denik::zapis(
+            "hotkey",
+            &format!("Frozen Canvas „{hotkey_canvas}“ NEZAREGISTROVANÁ — koliduje s inou skratkou appky"),
+        );
+    } else {
+        chyby.extend(prehlas_hotkey_canvas(app, hotkey_canvas).err());
+    }
+
+    if preskocit_trh {
+        denik::zapis(
+            "hotkey",
+            &format!("ceny z trhu „{hotkey_trh}“ NEZAREGISTROVANÁ — koliduje s inou skratkou appky"),
+        );
+    } else {
+        chyby.extend(prehlas_hotkey_trh(app, hotkey_trh).err());
+    }
+
     // Ctrl+F8 (TLI 21) sa registruje cez typovaný `Shortcut`, nie cez reťazec
     // ako predošlé tri — ide o tú istú hodnotu, akú porovnáva handler
     // (`skratka == &ctrl_f8()`), preto sa tu nepoužíva `zaregistruj_a_zaloguj`
@@ -210,10 +312,21 @@ fn zaregistruj_vsetky_hotkeys(
 
     *app.state::<Stav>().hotkey_upozornenia.lock().unwrap() = chyby.clone();
     let _ = app.emit("hotkey-upozornenia", json!({ "chyby": chyby }));
-    if posli_toast && !chyby.is_empty() {
-        let text = chyby.join(" ");
-        posli_toast_hotkey(app, &text);
-        ukaz_pripomienku_toast(app, &text, "upozornenie", PRIPOMIENKA_UPOZORNENIE_S);
+    if posli_toast {
+        // TLI 39, bod 3: prehľad aktívnych kláves ide VŽDY, bez ohľadu na to,
+        // či je niečo v chybe — presne toto bolo 18.10.2026 chýbajúce: appka
+        // bežala s Tartarus na „DIGIT3" a hráč sa to nemal odkiaľ dozvedieť,
+        // lebo žiadna chyba sa nehlásila (klávesa sa zaregistrovala v poriadku,
+        // len to nebola tá, ktorú hráč čakal pod F8).
+        posli_toast_hotkey(
+            app,
+            &format!("Aktívne klávesy — {}", text_prehladu_klaves(hotkey, hotkey_canvas, hotkey_trh)),
+        );
+        if !chyby.is_empty() {
+            let text = chyby.join(" ");
+            posli_toast_hotkey(app, &text);
+            ukaz_pripomienku_toast(app, &text, "upozornenie", PRIPOMIENKA_UPOZORNENIE_S);
+        }
     }
     chyby
 }
@@ -2569,6 +2682,23 @@ fn main() {
                 true,
                 None::<&str>,
             )?;
+            // TLI 39, bod 3 (`2026-10-18-1613-mcp.md`): rovnaký dôvod ako
+            // toast pri štarte — hráč nemá kde inde skontrolovať, ktorá
+            // klávesa patrí ktorému modulu, bez otvárania Nastavení. Položka
+            // je len na čítanie (`false` = disabled), rovnako ako „Verzia".
+            // Ukazuje hodnoty PLATNÉ OD ŠTARTU appky — zmena v Nastaveniach
+            // bez reštartu sa sem nedotiahne (text menu sa po zostavení
+            // nemení), čerstvý stav má vždy samotné Nastavenia.
+            let polozka_klavesy = tauri::menu::MenuItem::with_id(
+                app,
+                "klavesy",
+                format!(
+                    "Klávesy: {}",
+                    text_prehladu_klaves(&hotkey_pri_starte, &hotkey_canvas_pri_starte, &hotkey_trh_pri_starte)
+                ),
+                false,
+                None::<&str>,
+            )?;
             let polozka_verzia = tauri::menu::MenuItem::with_id(
                 app,
                 "verzia",
@@ -2586,6 +2716,7 @@ fn main() {
                     &polozka_odfot_tartarus,
                     &polozka_odfot_canvas,
                     &polozka_test_overlay,
+                    &polozka_klavesy,
                     &polozka_verzia,
                     &polozka_koniec,
                 ],
@@ -2615,4 +2746,91 @@ fn main() {
         })
         .run(tauri::generate_context!())
         .expect("Appka sa nespustila");
+}
+
+#[cfg(test)]
+mod testy {
+    use super::*;
+
+    // ── konfliktne_moduly (TLI 39, bod 2) ──────────────────────────────────
+
+    #[test]
+    fn predvolene_klavesy_su_bez_konfliktu() {
+        assert!(konfliktne_moduly("F8", "F9", "F10").is_empty());
+    }
+
+    #[test]
+    fn canvas_rovnaka_ako_tartarus_je_konflikt_canvas() {
+        let k = konfliktne_moduly("F8", "F8", "F10");
+        assert_eq!(k.len(), 1);
+        assert_eq!(k[0].0, "canvas");
+        assert!(k[0].1.contains("Frozen Canvas"));
+        assert!(k[0].1.contains("Tartarus"));
+    }
+
+    #[test]
+    fn trh_rovnaka_ako_tartarus_je_konflikt_trh() {
+        let k = konfliktne_moduly("F8", "F9", "F8");
+        assert_eq!(k.len(), 1);
+        assert_eq!(k[0].0, "trh");
+        assert!(k[0].1.contains("ceny z trhu"));
+        assert!(k[0].1.contains("Tartarus"));
+    }
+
+    #[test]
+    fn trh_rovnaka_ako_canvas_je_konflikt_trh() {
+        let k = konfliktne_moduly("F8", "F9", "F9");
+        assert_eq!(k.len(), 1);
+        assert_eq!(k[0].0, "trh");
+        assert!(k[0].1.contains("Frozen Canvas"));
+    }
+
+    /// Presne scenár z 18.10.2026 (`2026-10-18-1613-mcp.md`): keby sa niekto
+    /// pokúsil dať Tartarus aj ceny z trhu na tú istú klávesu, appka to musí
+    /// vedieť pomenovať — nie len nechať jednu z nich ticho prepadnúť.
+    #[test]
+    fn konflikt_rozozna_aj_tri_na_rovnakej_klavese() {
+        let k = konfliktne_moduly("DIGIT3", "F9", "DIGIT3");
+        assert_eq!(k.len(), 1);
+        assert_eq!(k[0].0, "trh");
+    }
+
+    #[test]
+    fn konflikt_je_necitlivy_na_velkost_pismen() {
+        let k = konfliktne_moduly("F8", "f8", "F10");
+        assert_eq!(k.len(), 1);
+        assert_eq!(k[0].0, "canvas");
+    }
+
+    #[test]
+    fn prazdny_hotkey_trh_sa_neberie_ako_konflikt() {
+        // Po TLI 39 by `normalizuj()` prázdny hotkey_trh nikdy nepustila sem
+        // (vždy doplní „F10"), ale funkcia nesmie spadnúť ani na priamy,
+        // nenormalizovaný vstup.
+        assert!(konfliktne_moduly("F8", "F9", "").is_empty());
+    }
+
+    #[test]
+    fn tri_rozne_klavesy_su_bez_konfliktu() {
+        assert!(konfliktne_moduly("CONTROL+F7", "F9", "F10").is_empty());
+    }
+
+    // ── text_prehladu_klaves (TLI 39, bod 3) ───────────────────────────────
+
+    #[test]
+    fn text_prehladu_klaves_bez_konfliktu_ukazuje_vsetky_tri() {
+        let t = text_prehladu_klaves("F8", "F9", "F10");
+        assert_eq!(
+            t,
+            "F8 Tartarus, F9 Frozen Canvas, F10 ceny z trhu, CONTROL+F8 Upraviť rozloženie"
+        );
+    }
+
+    #[test]
+    fn text_prehladu_klaves_ukaze_konflikt_namiesto_klavesy() {
+        let t = text_prehladu_klaves("F8", "F8", "F10");
+        assert!(t.contains("F8 Tartarus"));
+        assert!(t.contains("(konflikt"));
+        assert!(!t.contains("F8 Frozen Canvas"));
+    }
 }
