@@ -54,8 +54,9 @@ function analyzujCestuMapy(cesta) {
 
 // ── „Čo padlo" (TLI 25) ───────────────────────────────────────────────────
 // Mená položiek z toho istého balíka, aký používa záložka Tracker
-// (`polozky-seed-en.json`, pôvod v NOTICE.md). Keď sa nenačíta, ukáže sa
-// `#400021` — panel na mene položky nesmie stáť.
+// (`polozky-seed-en.json`, pôvod v NOTICE.md). Panel na mene položky nesmie
+// stáť — keď sa balík nenačíta alebo id v ňom nie je, ukáže sa aspoň
+// „neznáma položka #115".
 let MENA_POLOZIEK = window.__MENA_POLOZIEK__ || {};
 if (typeof fetch === "function") {
     fetch("polozky-seed-en.json")
@@ -64,8 +65,15 @@ if (typeof fetch === "function") {
         .catch(() => {});
 }
 
+// TLI 37 — Richard 18.10.2026: mini-panel ukazoval dropy ako holé `#115`,
+// `#815`, `#3709`, `#3909`. Nebola to chyba načítania balíka: tie id v ňom
+// naozaj NIE SÚ (balík má 1 933 položiek a ani jedno z nich; overené aj proti
+// zoznamom FurTorch a TITrack zo zdieľaného disku — tam tiež nie sú). Kým
+// sa meno nenájde, appka aspoň povie, že ide o neznámu položku, a nenechá
+// hráča hádať, čo znamená `#115`.
 function nazovPolozky(id) {
-    return MENA_POLOZIEK[String(id)] || "#" + id;
+    const meno = MENA_POLOZIEK[String(id)];
+    return meno || `neznáma položka #${id}`;
 }
 
 // Ikony sa ťahajú z NÁŠHO servera (`/ikony/polozka/<id>`), nie priamo z

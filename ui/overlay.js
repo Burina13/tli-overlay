@@ -20,6 +20,7 @@ const pDovod = document.getElementById("panel-dovod");
 const pIkony = document.getElementById("panel-ikony");
 const pSkontroluj = document.getElementById("panel-skontroluj");
 const pAlternativy = document.getElementById("panel-alternativy");
+const pObjective = document.getElementById("panel-objective");
 
 // Resetovanie zobrazenia všetkých okien
 // TLI 36 bod 4 — cieľová latencia je do 8 s, ale pri neznámej obrazovke sa
@@ -43,6 +44,9 @@ function skryVsetko() {
     elChyba.classList.add("skryte");
     elPanel.classList.add("skryte");
     elSipka.classList.add("skryte");
+    if (pObjective) {
+        pObjective.classList.add("skryte");
+    }
     elVrstva.innerHTML = ""; // Vymažeme staré obdĺžniky
 }
 
@@ -110,6 +114,12 @@ listen("stav", (event) => {
         // nástroji a dare: zadanie žiada „rovnaké zobrazenie ako pri známych
         // typoch", nie druhý vzhľad pre neznáme obrazovky.
         vykresliHotovoNastroj(payload);
+    }
+    else if (payload.faza === "hotovo_objective") {
+        // TLI 37 — obrazovka „Objective". Vlastná funkcia (nie
+        // `vykresliHotovoNastroj`), lebo tu sa neporovnávajú kartičky: je to
+        // potvrdenie cieľa a plán, a jediné tlačidlo sa len orámuje.
+        vykresliHotovoObjective(payload);
     }
     else if (payload.faza === "hotovo_poklad") {
         // TLI 35 — rovnaké vykreslenie ako výber nástroja (`vykresliHotovoNastroj`
@@ -397,6 +407,7 @@ function vykresliHotovo(data) {
     
     const istotaPercenta = Math.round((analyza.istota || 0) * 100);
     pIstota.textContent = `Istota ťahu: ${istotaPercenta} %`;
+    vykresliObjectiveRiadok(analyza);
     if (istotaPercenta < 50) {
         pIstota.classList.add("nizka");
     } else {
@@ -626,6 +637,7 @@ function vykresliHotovoNastroj(data) {
         ? `Istota rady: ${analyza.istota_slovom || "nízka"} (${istotaPercenta} %) — poradca, nie presný výpočet`
         : `Istota odporúčania: ${istotaPercenta} %`;
     pIstota.classList.toggle("nizka", istotaPercenta < 50);
+    vykresliObjectiveRiadok(analyza);
 
     pDovod.textContent = najlepsia
         ? ((jePoradca && analyza.odporucanie && analyza.odporucanie.dovod)
@@ -647,6 +659,104 @@ function vykresliHotovoNastroj(data) {
     }
     elPanel.classList.remove("skryte");
     logPanelVykreslene(jePoradca ? "poradca" : (jePoklad ? "poklad" : "nastroj"));
+}
+
+// ── TLI 37 — cieľ (Objective) bežiaceho drilu ───────────────────────────────
+// Riadok v paneli, ktorý je vidieť na KAŽDEJ obrazovke. Progres je ODHAD
+// ZDOLA z F8 snímok dosky (server do hry nevidí) a appka to hovorí nahlas —
+// nepredstiera presné číslo, ktoré nemá odkiaľ mať.
+function vykresliObjectiveRiadok(analyza) {
+    if (!pObjective) {
+        return;   // starší náhľadový HTML bez tohto prvku
+    }
+    const o = (analyza || {}).objective;
+    if (!o || !o.anglicky) {
+        pObjective.classList.add("skryte");
+        pObjective.textContent = "";
+        return;
+    }
+    const nazov = o.nazov || o.anglicky;
+    let text = `🎯 ${nazov}`;
+    if (o.progres_text) {
+        text += ` — ${o.akcia_sk || "cieľ"} ${o.progres_text}`;
+    } else if (o.podmienka) {
+        text += ` — ${o.podmienka}`;
+    }
+    if (o.splneny) {
+        text += " ✓ splnené";
+    } else if (o.progres_presnost === "nemerateľné") {
+        text += " (priebeh neviem merať)";
+    } else if (o.progres_text) {
+        text += " (odhad z tvojich F8 snímok)";
+    }
+    pObjective.textContent = text;
+    pObjective.classList.toggle("splnene", !!o.splneny);
+    pObjective.classList.remove("skryte");
+}
+
+// Obrazovka „Objective" — cieľ behu. Kliknúť sa dá len na Confirm, takže
+// rámik je formalita; hodnota je v tom, že appka cieľ prijala a od tej chvíle
+// podľa neho radí.
+function vykresliHotovoObjective(data) {
+    const karticky = data.karticky || [];
+    const analyza = data.analyza || {};
+    const o = analyza.objective || {};
+
+    karticky.forEach((k) => {
+        const farba = farbaTieru(k.tier, false);
+        const div = document.createElement("div");
+        div.className = "pole karticka" + (k.odporucany ? " karticka-odporucana" : "");
+        div.style.left = k.x + "px";
+        div.style.top = k.y + "px";
+        div.style.width = k.w + "px";
+        div.style.height = k.h + "px";
+        div.style.borderColor = farba;
+        if (k.odporucany) {
+            div.style.boxShadow = `inset 0 0 26px ${farba}55, 0 0 14px ${farba}88`;
+        }
+        const stitok = document.createElement("div");
+        stitok.className = "karticka-stitok";
+        stitok.style.background = farba;
+        const text = document.createElement("span");
+        text.className = "karticka-poradie";
+        text.textContent = k.odporucany ? "klikni sem" : k.nazov;
+        stitok.appendChild(text);
+        div.appendChild(stitok);
+        elVrstva.appendChild(div);
+    });
+
+    pNadpis.textContent = analyza.potvrdenie || "Objective";
+    pIstota.textContent = o.v_katalogu === false
+        ? "Tento cieľ ešte nemám v katalógu — ukladám si ho."
+        : "";
+    pIstota.classList.remove("nizka");
+    vykresliObjectiveRiadok(analyza);
+    pIkony.classList.add("skryte");
+
+    // Plán ide do dôvodu ako súvislý text (2–3 vety), nie ako zoznam
+    // kartičiek — porovnávať tu niet čo.
+    pDovod.textContent = (analyza.plan || []).join(" ");
+    pAlternativy.innerHTML = "";
+    const odmeny = o.odmena_sk && o.odmena_sk.length ? o.odmena_sk : (o.odmena || []);
+    odmeny.forEach((r) => {
+        const div = document.createElement("div");
+        div.className = "alternativa";
+        const nazov = document.createElement("span");
+        nazov.className = "alt-nazov";
+        nazov.textContent = "· " + r;
+        div.appendChild(nazov);
+        pAlternativy.appendChild(div);
+    });
+    pAlternativy.classList.toggle("skryte", odmeny.length === 0);
+
+    if (analyza.skontroluj && analyza.skontroluj.length > 0) {
+        pSkontroluj.textContent = analyza.skontroluj.slice(0, 3).join("; ");
+        pSkontroluj.classList.remove("skryte");
+    } else {
+        pSkontroluj.classList.add("skryte");
+    }
+    elPanel.classList.remove("skryte");
+    logPanelVykreslene("objective");
 }
 
 // Zoznam pod hlavným textom panela — používa sa aj vtedy, keď sa rámiky

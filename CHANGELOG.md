@@ -2,6 +2,40 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.18.12 — 18.10.2026 (TLI 37 — Objective: cieľ behu riadi stratégiu)
+
+Úloha `2026-10-18-1324-mcp.md`. Richard: na začiatku každého behu Tartarusu je
+obrazovka „Objective: <názov>" s podmienkou (napr. *Consume 4 times*) a
+odmenou — a „podľa objective sa má upraviť celá stratégia".
+
+**Nová obrazovka na F8.** Server posiela `obrazovka: "objective"` s poľom
+`objective` (cieľ, podmienka, počet, priebeh), `potvrdenie` („Objective:
+Požretie (Consume) 4× — stratégia upravená") a `plan` (2–3 vety po slovensky).
+Appka ich ukáže vo vlastnej fáze `hotovo_objective` a orámuje tlačidlo
+Confirm. Panel má vlastnú uloženú polohu (`panel:objective`, v prepínači
+režimu úpravy ako „F8 — objective (cieľ behu)").
+
+**Cieľ je odteraz vidieť na KAŽDEJ obrazovke**, nie len na tej, kde sa zadal:
+nový riadok panela ukazuje napr. `🎯 Prežije najsilnejší — Požretie (Consume)
+2/4`. Priebeh je **odhad zdola z tvojich F8 snímok dosky** (appka do hry
+nevidí) a hovorí to nahlas — keď medzi dvoma snímkami preskočíš deň, ten deň
+sa nezapočíta. Cieľ, ktorého priebeh sa zmerať nedá, to napíše namiesto
+vymysleného čísla.
+
+Odporúčania (Consume/Replace/End, Go to Cell, Torture Instrument, Warden's
+Treasure) cieľ zohľadňujú a **povedia to v dôvode** („Berieme Požretie
+(Consume) — chýbajú 2 do objective „Prežije najsilnejší" (2/4)"). Je to
+preferencia, nie príkaz: zjavne horší ťah sa tým dopredu nedostane.
+
+**Dve opravy z tej istej snímky:**
+* Mini-panel (aj záložka Tracker) už neukazuje dropy ako holé `#115` —
+  položka bez známeho mena sa volá „neznáma položka #115". Tie id naozaj nie
+  sú v balíku mien (overené aj proti zoznamom FurTorch a TITrack), takže
+  menný balík to nevyrieši; aspoň sa to dá prečítať.
+* **Prázdny rám pripomienky uprostred hore sa už nekreslí.** Toast bez textu
+  sa nezobrazí vôbec, a keby obsah doletel skôr, než sa okno stihlo prihlásiť
+  na udalosť, okno si ho po načítaní vypýta samo (`posledna_pripomienka`).
+
 ## 0.18.11 — 18.10.2026 (TLI 36 — F8 poradí pri KAŽDOM výbere v Tartaruse)
 
 Úloha `2026-10-18-1323-mcp.md`. Richard: „chcem mačknúť F8 a nech mi vždy

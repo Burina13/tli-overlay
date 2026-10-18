@@ -24,7 +24,7 @@ use tli_overlay_core::nastavenia::Nastavenia;
 use tli_overlay_core::nastavenia::PolohaOkna;
 use tli_overlay_core::rozlozenie::{
     Obdlznik01, MODULOVE_PANELY, PANEL_CANVAS, PANEL_HLAVNY, PANEL_MINI, PANEL_NASTROJ,
-    PANEL_POKLAD, PANEL_PORADCA, PANEL_PRIPOMIENKA, PANEL_TARTARUS,
+    PANEL_OBJECTIVE, PANEL_POKLAD, PANEL_PORADCA, PANEL_PRIPOMIENKA, PANEL_TARTARUS,
 };
 use tli_overlay_core::suradnice::OknoFyz;
 use tli_overlay_core::{api, suradnice, zmensenie};
@@ -785,6 +785,67 @@ V hre prepni Nastavenia → Zobrazenie → Režim okna na „Okno bez okrajov“
                             "stav",
                             json!({
                                 "faza": "hotovo_poklad",
+                                "analyza": v.analyza,
+                                "karticky": karticky,
+                                "mierka": mierka,
+                                "sirka": sirka_log,
+                                "vyska": vyska_log,
+                                "trvanie_ms": v.trvanie_ms,
+                            }),
+                        );
+                    }
+                    // TLI 37: obrazovka „Objective" (cieľ behu) na začiatku drilu.
+                    // Kliknúť sa dá len na Confirm, takže rámik je triviálny —
+                    // cenné je, že si appka cieľ zapamätala a od tej chvíle
+                    // podľa neho radí. Kreslí sa TOU ISTOU cestou ako kartičky
+                    // nástroja/daru/poradcu (`moznosti` + bounding box), len
+                    // s vlastným panelom a vlastnou fázou, aby sa v nej dalo
+                    // ukázať potvrdenie a plán.
+                    Ok(v) if v.analyza.obrazovka == "objective" => {
+                        denik::zapis(
+                            "objective",
+                            &format!(
+                                "cieľ behu: {} ({}), {}",
+                                v.analyza
+                                    .objective
+                                    .as_ref()
+                                    .map(|o| o.anglicky.clone())
+                                    .unwrap_or_else(|| "neprečítaný".to_string()),
+                                v.analyza
+                                    .objective
+                                    .as_ref()
+                                    .map(|o| o.podmienka.clone())
+                                    .unwrap_or_default(),
+                                v.analyza.potvrdenie
+                            ),
+                        );
+                        let karticky: Vec<_> = api::pouzitelne_moznosti(&v.analyza)
+                            .into_iter()
+                            .map(|k| {
+                                let b = k.box_.expect("filtrované pouzitelne_moznosti");
+                                let css = suradnice::box01_na_css(b.x, b.y, b.w, b.h, &obdlznik, mierka);
+                                json!({
+                                    "index": k.index,
+                                    "poradie": k.poradie,
+                                    "nazov": k.nazov.clone(),
+                                    "anglicky": k.anglicky.clone(),
+                                    "tier": k.tier.clone(),
+                                    "dovod": k.dovod.clone(),
+                                    "skore": k.skore,
+                                    "odporucany": k.odporucany,
+                                    "neznamy": k.neznamy,
+                                    "malo_dat": k.malo_dat,
+                                    "sporne": k.sporne,
+                                    "x": css.x, "y": css.y, "w": css.w, "h": css.h,
+                                })
+                            })
+                            .collect();
+                        posli_polohu_panela(&app, &obdlznik, mierka, PANEL_OBJECTIVE);
+                        let (sirka_log, vyska_log) = suradnice::logicka_velkost(&obdlznik, mierka);
+                        let _ = app.emit(
+                            "stav",
+                            json!({
+                                "faza": "hotovo_objective",
                                 "analyza": v.analyza,
                                 "karticky": karticky,
                                 "mierka": mierka,
@@ -1596,6 +1657,16 @@ fn nastav_mini(app: &AppHandle, zapnuty: bool) {
 fn ukaz_pripomienku_toast(app: &AppHandle, text: &str, trieda: &str, sekund: u64) {
     let Some(okno) = app.get_webview_window(PRIPOMIENKA) else { return };
 
+    // TLI 37 — toast bez textu sa nezobrazuje vôbec. Prázdny rám uprostred
+    // hore nehovorí hráčovi nič a vyzerá ako zaseknutá appka (hlásil Richard
+    // 18.10.2026). Okno sa pritom ani nebudí — `show()` nižšie sa nevykoná.
+    if text.trim().is_empty() {
+        denik::zapis("zobraz", "pripomienka bez textu — nezobrazujem");
+        return;
+    }
+
+    *app.state::<Stav>().pripomienka_obsah.lock().unwrap() =
+        Some((text.to_string(), trieda.to_string()));
     let _ = app.emit_to(
         PRIPOMIENKA,
         "pripomienka-obsah",
@@ -1721,6 +1792,19 @@ fn ukaz_pripomienku(app: AppHandle, text: String, trieda: String) -> Result<(), 
     let sekund = if trieda == "ok" { PRIPOMIENKA_OK_S } else { PRIPOMIENKA_UPOZORNENIE_S };
     ukaz_pripomienku_toast(&app, &text, &trieda, sekund);
     Ok(())
+}
+
+/// Posledný obsah toastu pripomienky (TLI 37). Okno si ho vypýta po načítaní,
+/// keby udalosť `pripomienka-obsah` prišla skôr, než sa stihlo prihlásiť —
+/// bez toho by ostal visieť prázdny rám. `None` znamená „nič sa nehlásilo".
+#[tauri::command]
+fn posledna_pripomienka(app: AppHandle) -> Option<serde_json::Value> {
+    app.state::<Stav>()
+        .pripomienka_obsah
+        .lock()
+        .unwrap()
+        .clone()
+        .map(|(text, trieda)| json!({ "text": text, "trieda": trieda }))
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2312,6 +2396,7 @@ fn main() {
             pocitadlo_zber: Mutex::new(0),
             poslane_behy: Mutex::new(std::collections::BTreeSet::new()),
             pripomienka_zobrazena_od: Mutex::new(None),
+            pripomienka_obsah: Mutex::new(None),
             rezim_upravy: Mutex::new(false),
             rezim_upravy_kontext: Mutex::new(None),
             hotkey_upozornenia: Mutex::new(Vec::new()),
@@ -2353,6 +2438,7 @@ fn main() {
             taktika_pomenuj_alebo_zluc,
             tracker_nacitaj_stare_logy,
             ukaz_pripomienku,
+            posledna_pripomienka,
             rezim_upravy_zapni,
             rezim_upravy_hotovo,
             rezim_upravy_prepni_panel,

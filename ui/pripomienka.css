@@ -35,6 +35,25 @@ body {
     opacity: var(--panel-opacity, 1);
 }
 
+/* TLI 37 — Richard 18.10.2026: „uprostred hore visí prázdny rám pripomienky".
+   Stávalo sa to, keď natívne okno už bolo zobrazené, ale text v ňom ešte
+   nebol (udalosť `pripomienka-obsah` dorazila skôr, než sa webview stihlo na
+   ňu prihlásiť). Rám bez textu je vizuálny šum a hráčovi nehovorí nič —
+   preto sa prázdny toast NEKRESLÍ VÔBEC. Trieda sa dáva v `pripomienka.js`,
+   nie tu dohadovaním z obsahu: CSS `:empty` by neplatilo kvôli úchytom
+   režimu úpravy, ktoré sú v DOM-e vždy. */
+.toast.prazdny {
+    background: transparent;
+    border-color: transparent;
+    box-shadow: none;
+}
+body.rezim-upravy .toast.prazdny {
+    /* V režime úpravy musí byť rám vidieť, aj keď v ňom nie je text —
+       hráč ho práve posúva. */
+    background: rgba(18, 16, 24, 0.92);
+    border-color: rgba(255, 150, 44, 0.6);
+}
+
 /* --- TLI 21: úchyty viditeľné len v režime „Upraviť rozloženie" --- */
 .rozlozenie-uchyt {
     display: none;

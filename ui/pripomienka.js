@@ -11,9 +11,14 @@ const { invoke } = window.__TAURI__.core;
 function vykresli(text, trieda) {
     const toast = document.getElementById("toast");
     const textEl = document.getElementById("toast-text");
-    textEl.textContent = text || "";
+    const cisty = (text || "").trim();
+    textEl.textContent = cisty;
     toast.classList.remove("varovanie", "ok");
     toast.classList.add(trieda === "ok" ? "ok" : "varovanie");
+    // TLI 37 — prázdny rám sa nekreslí. Okno môže byť zobrazené skôr, než
+    // doletí text (Rust ho posiela pred `show()`), a rám bez textu vyzerá
+    // ako zaseknutá appka.
+    toast.classList.toggle("prazdny", cisty === "");
 }
 
 function nastavPriehladnost(hodnota) {
@@ -23,8 +28,22 @@ function nastavPriehladnost(hodnota) {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+    // Kým nepríde text, okno nesmie kresliť rám (TLI 37).
+    vykresli("", "varovanie");
     invoke("nacitaj_nastavenia")
         .then((n) => nastavPriehladnost(n && n.rozlozenie && n.rozlozenie.priehladnost))
+        .catch(() => {});
+
+    // Poistka proti pretekom: keď `pripomienka-obsah` doletela skôr, než sa
+    // toto okno stihlo prihlásiť, payload je nenávratne preč a ostal by
+    // prázdny rám. Rust si posledný text drží, takže si ho appka vypýta
+    // sama. `.catch` — starší Rust tento príkaz nemá a nesmie to nič rozbiť.
+    invoke("posledna_pripomienka")
+        .then((p) => {
+            if (p && (p.text || "").trim()) {
+                vykresli(p.text, p.trieda);
+            }
+        })
         .catch(() => {});
 
     if (!window.__TAURI__ || !window.__TAURI__.event) {

@@ -161,6 +161,52 @@ pub struct Analyza {
     pub vyber_id: Option<i64>,
     /// Krátky popis obrazovky, keď je `obrazovka == "ine"`.
     pub popis: String,
+    /// TLI 37 — cieľ (Objective) PRÁVE BEŽIACEHO drilu. Server ho posiela
+    /// v KAŽDEJ tartarus odpovedi, nie len na obrazovke, kde sa zadal, aby
+    /// ho panel vedel ukazovať stále („Consume 2/4"). `None` znamená „žiadny
+    /// bežiaci cieľ" alebo starší server — appka sa vtedy správa ako pred
+    /// TLI 37.
+    pub objective: Option<Objective>,
+    /// Potvrdenie pre hráča na obrazovke Objective („Objective: Požretie
+    /// (Consume) 4× — stratégia upravená"). Mimo tej obrazovky prázdne.
+    pub potvrdenie: String,
+    /// 2–3 vety plánu po slovensky k tomuto cieľu. Mimo obrazovky Objective
+    /// prázdne — priebežný stav cieľa nesie `objective`.
+    pub plan: Vec<String>,
+}
+
+/// Cieľ behu Tartarusu (TLI 37). Všetko je `#[serde(default)]`, takže
+/// odpoveď staršieho servera sa parsuje ďalej a chýbajúce pole appku
+/// nezhodí — to isté poučenie ako `cez_scratch` v TLI 29.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Objective {
+    /// Strojový kód (`survival_of_the_fittest`) — appka ho len loguje.
+    pub kod: String,
+    /// Anglický názov z hry („Survival of the Fittest").
+    pub anglicky: String,
+    /// Slovenský názov z katalógu; keď objective v katalógu nie je, je to
+    /// ten istý text ako `anglicky`.
+    pub nazov: String,
+    /// Anglická podmienka z obrazovky („Consume 4 times").
+    pub podmienka: String,
+    /// Slovenský názov akcie, ktorú treba robiť („Požretie (Consume)").
+    pub akcia_sk: String,
+    /// Koľkokrát sa to má stať; `None`, keď sa číslo nedalo prečítať.
+    pub ciel_pocet: Option<i64>,
+    /// Koľkokrát sa to už stalo — ODHAD ZDOLA z F8 snímok dosky (server do
+    /// hry nevidí). `None` = merať sa to z dosky nedá.
+    pub aktualny: Option<i64>,
+    /// Koľko ešte chýba; `None` z tých istých dôvodov ako `aktualny`.
+    pub zostava: Option<i64>,
+    pub splneny: bool,
+    /// Hotový text priebehu („2/4"), prázdny keď sa nedá zmerať.
+    pub progres_text: String,
+    /// "odhad" | "nemerateľné" — appka to hovorí hráčovi nahlas, aby
+    /// nepovažoval číslo za presné.
+    pub progres_presnost: String,
+    /// `false` = objective, ktorý katalóg na serveri ešte nepozná.
+    pub v_katalogu: bool,
 }
 
 impl Default for Analyza {
@@ -184,6 +230,9 @@ impl Default for Analyza {
             istota_slovom: String::new(),
             vyber_id: None,
             popis: "".to_string(),
+            objective: None,
+            potvrdenie: String::new(),
+            plan: vec![],
         }
     }
 }
@@ -608,6 +657,72 @@ mod testy {
         let kreslitelne = pouzitelne_karticky_pokladu(&a);
         assert_eq!(kreslitelne.len(), 2);
         assert_eq!(kreslitelne[0].id.as_deref(), Some("horn"));
+    }
+
+    #[test]
+    fn parsovanie_obrazovky_objective() {
+        // TLI 37 — odpoveď servera pre obrazovku „Objective" z Richardovej
+        // snímky 18.10.2026 13:23:25 (Stage Level 77).
+        let json = r#"{
+            "ok": true, "modul": "tartarus-objective", "obrazovka": "objective",
+            "istota": 0.75,
+            "potvrdenie": "Objective: Požretie (Consume) 4× — stratégia upravená",
+            "plan": ["Ber požretie.", "Nenechaj deň prejsť naprázdno."],
+            "objective": {
+              "kod": "survival_of_the_fittest",
+              "anglicky": "Survival of the Fittest",
+              "nazov": "Prežije najsilnejší",
+              "podmienka": "Consume 4 times",
+              "akcia_sk": "Požretie (Consume)",
+              "ciel_pocet": 4, "aktualny": 2, "zostava": 2, "splneny": false,
+              "progres_text": "2/4", "progres_presnost": "odhad", "v_katalogu": true
+            },
+            "moznosti": [
+              {"index": 0, "nazov": "Confirm", "anglicky": "Confirm", "tier": "S",
+               "poradie": 1, "dovod": "Potvrdíš cieľ.", "odporucany": true,
+               "neznamy": false, "malo_dat": false, "sporne": false,
+               "box": {"x": 0.58, "y": 0.68, "w": 0.16, "h": 0.06}}
+            ]
+        }"#;
+        let a: Analyza = serde_json::from_str(json).unwrap();
+        assert_eq!(a.obrazovka, "objective");
+        assert!(a.potvrdenie.contains("stratégia upravená"));
+        assert_eq!(a.plan.len(), 2);
+        let o = a.objective.as_ref().expect("objective má prísť");
+        assert_eq!(o.anglicky, "Survival of the Fittest");
+        assert_eq!(o.ciel_pocet, Some(4));
+        assert_eq!(o.zostava, Some(2));
+        assert_eq!(o.progres_text, "2/4");
+        assert!(!o.splneny && o.v_katalogu);
+        assert_eq!(pouzitelne_moznosti(&a).len(), 1);
+    }
+
+    #[test]
+    fn starsi_server_bez_objective_appku_nerozbije() {
+        // Rovnaké poučenie ako `cez_scratch` v TLI 29: chýbajúce pole nesmie
+        // zhodiť parsovanie CELEJ odpovede — appka sa má správať ako pred
+        // TLI 37, nie napísať „server odpovedal niečím, čomu nerozumiem".
+        let a: Analyza =
+            serde_json::from_str(r#"{"ok": true, "obrazovka": "doska"}"#).unwrap();
+        assert!(a.objective.is_none());
+        assert_eq!(a.potvrdenie, "");
+        assert!(a.plan.is_empty());
+    }
+
+    #[test]
+    fn objective_bez_merateľneho_priebehu_sa_parsuje_s_null_hodnotami() {
+        // Server priebeh niektorých cieľov zmerať nedokáže (do hry nevidí) a
+        // posiela `null` — appka to musí uniesť a NEPREVIESŤ na nulu, inak by
+        // hráčovi ukázala „0/4" tam, kde pravdivá odpoveď je „neviem".
+        let json = r#"{"ok": true, "obrazovka": "doska", "objective": {
+            "anglicky": "Riddle", "podmienka": "Do something odd",
+            "ciel_pocet": null, "aktualny": null, "zostava": null,
+            "progres_text": "", "progres_presnost": "nemerateľné"}}"#;
+        let a: Analyza = serde_json::from_str(json).unwrap();
+        let o = a.objective.as_ref().unwrap();
+        assert_eq!(o.aktualny, None);
+        assert_eq!(o.ciel_pocet, None);
+        assert_eq!(o.progres_presnost, "nemerateľné");
     }
 
     #[test]

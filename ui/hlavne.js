@@ -103,10 +103,13 @@ if (typeof fetch === "function") {
         .catch(() => {});
 }
 
-/// `400021` → `Steel Forge Beacon (Timemark 7)`, alebo `#400021`, keď meno
-/// nepoznáme. Nikdy nevracia prázdny reťazec.
+/// `400021` → `Steel Forge Beacon (Timemark 7)`, alebo `neznáma položka
+/// #400021`, keď meno nepoznáme (TLI 37 — holé `#115` hráčovi nič nepovie
+/// a vyzerá ako chyba appky; v skutočnosti to id v balíku mien nie je).
+/// Nikdy nevracia prázdny reťazec.
 function nazovPolozky(id) {
-    return MENA_POLOZIEK[String(id)] || `#${id}`;
+    const meno = MENA_POLOZIEK[String(id)];
+    return meno || `neznáma položka #${id}`;
 }
 
 /// Posledný kus cesty zóny bez prípony, napr. `XZ_ShouGuSiDi000`.

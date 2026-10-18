@@ -25,6 +25,13 @@ pub struct Stav {
     /// automatické skrytie porovná značky, aby novší toast nezhasol starší
     /// časovač práve zobrazeného okna.
     pub pripomienka_zobrazena_od: Mutex<Option<Instant>>,
+    /// Posledný text a trieda toastu pripomienky (TLI 37). Rust posiela obsah
+    /// udalosťou `pripomienka-obsah` PRED `show()`, takže ju okno, ktoré sa
+    /// práve načítava, môže minúť — a hráčovi ostane visieť prázdny rám
+    /// (hlásil Richard 18.10.2026). Okno si preto po načítaní vypýta posledný
+    /// obsah príkazom `posledna_pripomienka`. Len v pamäti; po reštarte appky
+    /// niet čo dokresľovať.
+    pub pripomienka_obsah: Mutex<Option<(String, String)>>,
     /// Režim „Upraviť rozloženie" (TLI 21) — kým je zapnutý, F8/F9 analýzu
     /// nespúšťajú a Esc/Enter namiesto skrytia overlayu uloží polohu panelov.
     pub rezim_upravy: Mutex<bool>,

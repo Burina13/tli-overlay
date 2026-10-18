@@ -42,13 +42,18 @@ pub const PANEL_POKLAD: &str = "panel:poklad";
 /// ako `PANEL_POKLAD`: je to iná obrazovka (modál, lišta tlačidiel, zoznam
 /// cieľov) a hráč si ju chce posunúť nezávisle od dosky a kartičiek.
 pub const PANEL_PORADCA: &str = "panel:poradca";
+/// TLI 37 — obrazovka „Objective" (cieľ behu) na začiatku drilu. Vlastný kľúč
+/// z toho istého dôvodu ako `PANEL_PORADCA`: je to iný modál, na inom mieste
+/// obrazovky, a hráč si ho chce posunúť nezávisle.
+pub const PANEL_OBJECTIVE: &str = "panel:objective";
 
 /// Moduly v poradí, v akom ich ponúka prepínač v režime úpravy
 /// (`kľúč`, `čo to je pre hráča`).
-pub const MODULOVE_PANELY: [(&str, &str); 6] = [
+pub const MODULOVE_PANELY: [(&str, &str); 7] = [
     (PANEL_TARTARUS, "F8 — doska"),
     (PANEL_NASTROJ, "F8 — výber nástroja"),
     (PANEL_POKLAD, "F8 — výber pokladu"),
+    (PANEL_OBJECTIVE, "F8 — objective (cieľ behu)"),
     (PANEL_PORADCA, "F8 — poradca (neznáma obrazovka)"),
     (PANEL_CANVAS, "F9 — Frozen Canvas"),
     (PANEL_ARTISTRY, "Artistry"),
