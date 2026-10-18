@@ -30,7 +30,7 @@ Upraviť rozloženie) — presne to, čo pri incidente chýbalo: appka sa so ži
 chybou nehlásila (DIGIT3 sa zaregistrovať podarilo), len to nebola klávesa,
 ktorú hráč čakal pod F8.
 
-Testy: `core` 24 testov v `nastavenia.rs` (+3), `src-tauri` nový
+Testy: `core` 24 testov v `nastavenia.rs` (+1), `src-tauri` nový
 `#[cfg(test)] mod testy` s 10 testami na `konfliktne_moduly`/
 `text_prehladu_klaves` (overené mimo Tauri, `rustc --test` nad extrahovanou
 kópiou funkcií — plný `cargo test` v `src-tauri` sa na tomto hostiteľovi
