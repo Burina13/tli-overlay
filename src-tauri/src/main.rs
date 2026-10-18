@@ -323,6 +323,29 @@ fn poloha_alebo_predvolena_modulu(n: &Nastavenia, panel: &str, monitor_sig: &str
         .unwrap_or_else(|| predvolena_poloha(panel))
 }
 
+/// Vynúti okno na VRCH pásma „vždy navrchu" bez toho, aby mu to vzalo focus
+/// hre (TLI 31, `2026-10-18-1057-mcp.md`). `.show()` samo o sebe z-poradie
+/// NEMENÍ — tao na Windowse ho volá s `SWP_NOZORDER` (rovnaký dôvod ako pri
+/// `.set_position()`/`.set_size()`, TLI 26 bod 1). Okno preto zostáva tam, kde
+/// bolo v pásme topmost naposledy — keď medzitým iný topmost (Overwolf,
+/// Discord overlay, Logitech G-HUB — všetky bežia súčasne, TLI 28) dostal
+/// vlastné `SetWindowPos(HWND_TOPMOST, …)`, posunul SA pred náš overlay a ten
+/// potom sedí pod ním, aj keď je stále nad hrou.
+///
+/// `set_always_on_top(true)`, keď je príznak UŽ `true`, je v tao no-op —
+/// `apply_diff` reaguje len na ZMENU hodnoty (XOR starého/nového stavu), takže
+/// bez vypnutia najprv by sa `SetWindowPos` vôbec nezavolalo. Prepnutím
+/// false→true appka vynúti nové `SetWindowPos(HWND_TOPMOST, SWP_NOACTIVATE)`
+/// (tao `window_state.rs`), ktoré okno vráti na vrch topmost pásma — a
+/// `SWP_NOACTIVATE` je presne to, prečo sa namiesto toho nepoužíva
+/// `.set_focus()` (ako pri mini/pripomienke v režime úpravy, TLI 26): tam je
+/// focus-stealing prijateľný (hráč vtedy ťahá myšou panely), tu by hre odobral
+/// klávesnicu uprostred hrania.
+fn vynut_navrch(okno: &tauri::WebviewWindow) {
+    let _ = okno.set_always_on_top(false);
+    let _ = okno.set_always_on_top(true);
+}
+
 /// Postaví overlay presne nad okno hry a ukáže ho. Pozícia aj veľkosť idú vo
 /// FYZICKÝCH pixeloch — logické by sa na monitore so 150 % DPI rozišli s hrou.
 ///
@@ -332,12 +355,32 @@ fn poloha_alebo_predvolena_modulu(n: &Nastavenia, panel: &str, monitor_sig: &str
 /// dalo nezmyselné súradnice.
 fn ukaz_overlay_nad(app: &AppHandle, obd: &OknoFyz, s_rozlozenim: bool, panel_kluc: &str) {
     if let Some(overlay) = app.get_webview_window(OVERLAY) {
-        let _ = overlay.set_position(PhysicalPosition::new(obd.x, obd.y));
-        let _ = overlay.set_size(PhysicalSize::new(obd.sirka, obd.vyska));
+        let poz_chyba = overlay.set_position(PhysicalPosition::new(obd.x, obd.y)).err();
+        let vel_chyba = overlay.set_size(PhysicalSize::new(obd.sirka, obd.vyska)).err();
         let _ = overlay.set_ignore_cursor_events(true);
-        let _ = overlay.show();
+        let show_chyba = overlay.show().err();
+        vynut_navrch(&overlay);
         let _ = app.global_shortcut().register(esc());
         *app.state::<Stav>().zobrazene_od.lock().unwrap() = Some(Instant::now());
+
+        let monitor = monitor_okna_app(app, obd)
+            .and_then(|m| m.nazov)
+            .unwrap_or_else(|| "neznámy".to_string());
+        match (poz_chyba, vel_chyba, show_chyba) {
+            (None, None, None) => denik::zapis(
+                "zobraz",
+                &format!(
+                    "overlay panel={panel_kluc} @ ({},{}) {}x{}, monitor {monitor}, rozlozenie={s_rozlozenim}",
+                    obd.x, obd.y, obd.sirka, obd.vyska
+                ),
+            ),
+            (p, v, s) => denik::zapis(
+                "zobraz",
+                &format!(
+                    "overlay panel={panel_kluc}: CHYBA pri zobrazení — poloha={p:?} velkost={v:?} show={s:?}"
+                ),
+            ),
+        }
 
         if s_rozlozenim {
             let mierka = mierka_okna(app, obd);
@@ -707,6 +750,14 @@ V hre prepni Nastavenia → Zobrazenie → Režim okna na „Okno bez okrajov“
                             .collect();
 
                         let (sirka_log, vyska_log) = suradnice::logicka_velkost(&obdlznik, mierka);
+                        // TLI 31: predtým táto, najčastejšia vetva (doska) na
+                        // rozdiel od „vyber_nastroja"/„ine" nelogovala vôbec
+                        // nič — po „analyza OK" tak v logu nebola žiadna stopa
+                        // o tom, že appka sa chystá niečo vykresliť.
+                        denik::zapis(
+                            "zobraz",
+                            &format!("doska: {} polí, emitujem stav=hotovo", obdlzniky.len()),
+                        );
                         let _ = app.emit(
                             "stav",
                             json!({
@@ -1347,6 +1398,8 @@ fn ukaz_pripomienku_toast(app: &AppHandle, text: &str, trieda: &str, sekund: u64
     }
     let _ = okno.set_ignore_cursor_events(true);
     let _ = okno.show();
+    vynut_navrch(&okno);
+    denik::zapis("zobraz", &format!("pripomienka trieda={trieda}, text={text}"));
 
     let znacka = Instant::now();
     *app.state::<Stav>().pripomienka_zobrazena_od.lock().unwrap() = Some(znacka);

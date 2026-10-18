@@ -2,6 +2,45 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.18.6 — 18.10.2026 (TLI 31 — F8 analýza prejde, ale výsledok sa nezobrazí nad hrou)
+
+Úloha `2026-10-18-1057-mcp.md`. Richard na 0.18.5 dostal po F8 štyrikrát (10:54:58,
+10:55:32, 10:56:04, 10:56:45) kompletný beh — hotkey zaregistrovaný, okno hry
+nájdené, snímka odoslaná, `analyza OK` za 7–10 s — ale panel s výsledkom sa nad
+hrou neukázal; cez tray „Odfotiť Tartarus teraz" (rovnaká `spusti_analyzu`,
+rovnaké `stav` eventy) to fungovalo.
+
+- **Príčina: `.show()` v tao na Windowse z-poradie NEMENÍ** — volá sa so
+  `SWP_NOZORDER` (rovnaký mechanizmus ako pri `.set_position()`/`.set_size()`,
+  zdokumentovaný už v TLI 26 bode 1 pre mini-panel/pripomienku). Keď medzitým
+  iný „vždy navrchu" program (Overwolf, Discord overlay, Logitech G-HUB — podľa
+  TLI 28 bežia naraz) dostal svoj vlastný `SetWindowPos(HWND_TOPMOST, …)`,
+  predbehol overlay appky v pásme topmost — ten ostal nad hrou, ale POD tým
+  druhým oknom, teda v praxi neviditeľný. Prečo to fungovalo cez tray: žiadny
+  rozdiel v kóde (`spusti_analyzu` je identická funkcia), len náhoda poradia
+  v topmost pásme v danom okamihu.
+- **Oprava: `vynut_navrch()`** — pred/po `.show()` appka prepne
+  `set_always_on_top(false)` → `true`. Samotné volanie `set_always_on_top(true)`,
+  keď je príznak už `true`, je v tao no-op (XOR starého/nového stavu); prepnutím
+  cez `false` appka vynúti nový `SetWindowPos(HWND_TOPMOST, SWP_NOACTIVATE)`,
+  ktorý okno reálne vráti na vrch topmost pásma. **Zámerne nie `.set_focus()`**
+  (ako pri mini/pripomienke v režime úpravy) — to by hre odobralo klávesnicu
+  uprostred hrania; `SWP_NOACTIVATE` je presne to, čo `.set_focus()` nerobí.
+  Použité v `ukaz_overlay_nad` (hlavný panel — doska, výber nástroja, Frozen
+  Canvas) aj `ukaz_pripomienku_toast` (toast „Enable Log", ceny z trhu).
+- **Pridané logovanie `[zobraz]`** — pri každom zobrazení panela/toastu appka
+  zapíše okno, polohu, veľkosť, monitor a (pri chybe) ktoré volanie zlyhalo;
+  doštová (najčastejšia) vetva F8 predtým po „analyza OK" nelogovala vôbec nič,
+  na rozdiel od vetiev „výber nástroja"/„ine".
+- **E2E (`src-tauri/tests/e2e_mock.rs`)**: rovnaká odpoveď servera (doska, výber
+  nástroja, neznáma obrazovka) overená cez obe cesty vyvolania —
+  `spusti_analyzu` priamo aj cez `naplanuj_odfotenie` — vedie k rovnakému
+  `stav` eventu; nemožno z Linux CI overiť samotné Windows z-poradie, len že
+  appka sa správa rovnako bez ohľadu na to, čo ju spustilo.
+- Skutočné overenie „vidno to nad hrou" je na Richardovom ďalšom teste —
+  logy `[zobraz]` ukážu, či `vynut_navrch()` stačil, alebo treba ísť ďalej
+  (napr. vypnúť Windows „Fullscreen optimizations" pre hru).
+
 ## 0.18.5 — 18.10.2026 (TLI 29 — F8 dorazí, ale appka hlási „Server odpovedal niečím, čomu nerozumiem.")
 
 Úloha `2026-10-18-0135-mcp.md`. Richard na 0.18.4 dostal po F8 dvakrát (01:34:21

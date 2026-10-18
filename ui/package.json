@@ -3,7 +3,7 @@
   "private": true,
   "description": "E2E testy nad ui/*.js a ui/*.html (klik na záložky, uloz_prepinac) — beží cez `node --test`, appku samotnú ani Tauri nepotrebuje.",
   "scripts": {
-    "test": "node --test testy-zalozky.e2e.mjs testy-rozlozenie.e2e.mjs testy-rezim-upravy-prenosne-okna.e2e.mjs testy-stav-fazy.e2e.mjs testy-nastroje.e2e.mjs"
+    "test": "node --test testy-zalozky.e2e.mjs testy-rozlozenie.e2e.mjs testy-rezim-upravy-prenosne-okna.e2e.mjs testy-stav-fazy.e2e.mjs testy-nastroje.e2e.mjs testy-zobraz-doska-a-ine.e2e.mjs"
   },
   "devDependencies": {
     "jsdom": "^24.1.3"
