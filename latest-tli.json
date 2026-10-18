@@ -1,6 +1,6 @@
 {
-  "version": "0.18.4",
-  "notes": "TLI 28: F8 nič neodosielal a v logu po ňom nebol ani riadok — appka doteraz logovala len stlačenie klávesy, nie samotný pokus o REGISTRÁCIU hotkey pri štarte. Od tejto verzie sa registrácia každej zo 4 skratiek (Tartarus, Frozen Canvas, ceny z trhu, Ctrl+F8) vždy zaloguje — OK / „obsadená iným programom“ / iná chyba s dôvodom od Windows. Nastavenia ukážu červený stav pod poľom hneď pri otvorení okna, appka pri kolízii pošle aj toast. Pribudlo tlačidlo „Nahrať…“ pri každej skratke (zaznamenanie priamo stlačením) a tlačidlá „Odfotiť Tartarus/Canvas teraz“ v tray menu aj hlavnom okne — fungujú úplne bez klávesy, s 2s oneskorením na prepnutie do hry. Opravené aj kódovanie log súboru (diakritika sa predtým zobrazovala poškodená).",
-  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.18.4/Tvoj-Tatko-TLI-Overlay_0.18.4_x64_en-US.msi",
-  "msiSha256": "881e9165a6a25d8fc2e23d431e06f63a35bb7c6a1c14d12d9ee004549d1385c7"
+  "version": "0.18.5",
+  "notes": "TLI 29: po F8 niekedy prišla hláška „Server odpovedal niečím, čomu nerozumiem.“ namiesto odporúčania — aj keď server dosku rozpoznal úplne správne. Príčina bola na serveri: pole cez_scratch sa pre odporúčania iné než „požretie“ (typicky „patrol“, bežný stav pri otvorenej mape) posielalo ako null, čo appke zhodilo parsovanie celej odpovede. Opravené na serveri aj v appke (pole je teraz voliteľné, pre prípad podobnej chyby nabudúce). Pridaný jeden opakovaný pokus pri krátkom zlyhaní rozpoznávania a pri nečitateľnej odpovedi appka teraz v logu aj v hláške ukáže HTTP kód, nie len všeobecnú vetu. Overené aj to, že F8/F9 fungujú bez otvoreného okna Nastavení.",
+  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.18.5/Tvoj-Tatko-TLI-Overlay_0.18.5_x64_en-US.msi",
+  "msiSha256": "0d0542bd480688754815201f13cec9b415a021b5fdb6d4dc3114df3e6995454a"
 }
