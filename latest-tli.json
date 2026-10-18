@@ -1,6 +1,6 @@
 {
-  "version": "0.18.9",
-  "notes": "TLI 34: oranžové rámiky sa už kreslia len na cielenú celu (predtým na všetkých 16 naraz, aj keď sa odporúčanie týkalo tlačidla, nie cely). Panel rady má novú predvolenú polohu vpravo pod mini-panelom (predtým vľavo hore, kde sa prekrýval s herným textom „Objective/Trigger“ aj s mini-panelom) — platí len pre nikdy neuloženú/obnovenú polohu. Istota ťahu a chýbajúce alternatívy (6 % pri jasnom odporúčaní, prázdne porovnanie) boli opravené na serveri tli-web, nie v tejto appke.",
-  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.18.9/Tvoj-Tatko-TLI-Overlay_0.18.9_x64_en-US.msi",
-  "msiSha256": "2aecaab977550cbac6b32fe02961e57d8d3bce059f038839128239924dee62a4"
+  "version": "0.18.10",
+  "notes": "TLI 35: appka rozpoznáva tretiu obrazovku mechaniky Tartarus — „Select a Warden's Treasure“ (výber 1 zo 4 darov po dosiahnutí Chromatic: Ring/Horn/Wine/Brand). Kreslí ju tou istou cestou ako doteraz výber nástroja (rámik s tierom a poradím nad každou kartičkou, odporúčanú zvýrazní zlato, panel s poradím a dôvodom) a má vlastnú uloženú polohu panela, posúvateľnú nezávisle od ostatných. Server pri tomto type obrazovky prepočíta odporúčanie priamo nad tvojou aktuálnou doskou, keď je po ruke, nie len podľa priemeru.",
+  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.18.10/Tvoj-Tatko-TLI-Overlay_0.18.10_x64_en-US.msi",
+  "msiSha256": "0d353fda941a4f461e483238a2e61210cd4715aab0968e21042f13f38246fc60"
 }
