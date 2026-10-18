@@ -1,6 +1,6 @@
 {
-  "version": "0.18.13",
-  "notes": "TLI 39: opravená skutočná príčina „F8 nefunguje“ z 18.10. — appka už neprijme ako klávesovú skratku holé písmeno/číslicu/medzerník bez Ctrl/Alt/Shift (presne to appku 18.10. omylom prepísalo a ukradlo hre klávesu „3“), nahrávanie klávesy stlačením si pred zápisom vyžiada potvrdenie, skratka pre ceny z trhu má teraz vlastnú predvolenú klávesu F10 a appka ťa červenou hláškou upozorní, ak si dvom modulom omylom nastavíš rovnakú klávesu. Pri štarte appky aj v menu na tray ikone je odteraz prehľad „Klávesy: …“ so všetkými aktívnymi skratkami.",
-  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.18.13/Tvoj-Tatko-TLI-Overlay_0.18.13_x64_en-US.msi",
-  "msiSha256": "1062b70098bb10adb8ee3a03a166c72464605d33f1acaedf46c0f0feb8b315ca"
+  "version": "0.18.14",
+  "notes": "TLI 40 (hotfix): opravené „F8 spustí analýzu, ale rada sa nad hrou nikdy nezobrazí“ — ručné spustenie z tray/tlačidla to isté ukázalo bez problémov, lebo klik naše okno krátko aktivuje a F8 ako globálna klávesová skratka to nikdy neurobí (WebView2 v neaktivovanom okne vie obsah vykresliť interne a napriek tomu ho neukázať na obrazovke). Appka teraz po F8 sama krátko aktivuje overlay a hneď vráti popredie späť hre (žiadny vstup sa nesimuluje), a log aj navyše automaticky over, že sa panel naozaj objavil na obrazovke.",
+  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.18.14/Tvoj-Tatko-TLI-Overlay_0.18.14_x64_en-US.msi",
+  "msiSha256": "2e4e707065d7dc19ddb1f555a7d300a8a694256dbd8995a5d29e97e6fa9f9137"
 }
