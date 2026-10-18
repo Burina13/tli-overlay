@@ -129,6 +129,14 @@ function vykresliDropy(zivo, bezi) {
         if (typeof d.hodnota === "number") {
             hodnota.className = "hodnota";
             hodnota.textContent = fe(d.hodnota);
+            // TLI 43: cena z titracku dostane atribúciu ako tooltip, nie ako
+            // viditeľný text — panel je úzky (viď komentár vyššie pri FE/h)
+            // a tri riadky s dlhým textom by sa doň nezmestili.
+            if (d.zdroj === "titrack.ninja") {
+                const prisp = typeof d.prispievatelia === "number" ? d.prispievatelia : "?";
+                const vek = d.vek || "";
+                hodnota.title = `${d.zdroj} · ${prisp} prisp.${vek ? " · " + vek : ""}`;
+            }
         } else {
             hodnota.className = "hodnota bez-ceny";
             hodnota.textContent = "bez ceny";

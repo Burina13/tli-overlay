@@ -58,6 +58,20 @@ test("mini-panel pomenuje aj položku, ktorú nemá v balíku mien", (t) => {
     assert.ok(!text.includes("#10001") || text.includes("neznáma položka #10001"), text);
 });
 
+test("TLI 43: cena z titracku dostane tooltip s atribúciou, vlastná/partiová nie", (t) => {
+    const { window, document, zavri } = postav("mini.html", "mini.js",
+        { tracker_prehlad: null });
+    t.after(zavri);
+    window.vykresliDropy({ top_dropy: [
+        { polozka: 10001, pocet: 2, hodnota: 42.0, zdroj: "titrack.ninja",
+          prispievatelia: 15, vek: "pred 8 min" },
+        { polozka: 10002, pocet: 1, hodnota: 5.0 },
+    ] }, true);
+    const riadky = document.querySelectorAll("#mini-dropy-zoznam .hodnota");
+    assert.equal(riadky[0].title, "titrack.ninja · 15 prisp. · pred 8 min");
+    assert.equal(riadky[1].title, "", "vlastná/partiová cena nesmie dostať cudziu atribúciu");
+});
+
 test("pripomienka bez textu nekreslí rám", (t) => {
     const { document, poslucháči, zavri } = postav("pripomienka.html", "pripomienka.js");
     t.after(zavri);

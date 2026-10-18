@@ -2,6 +2,71 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.19.0 — 18.10.2026 (TLI 43 — ceny z titrack.ninja)
+
+Úloha `2026-10-18-2043-mcp.md`. Richard: žiadne návrhy správ autorom TITracku,
+chce funkčný zdroj cien — partia sama cez `XchgSearchPrice` prakticky nič
+nevyhľadáva (TLI 20), takže cenník bol riedky. Zdroj: verejná crowd-sourced
+ekonomika `titrack.ninja` (poe.ninja pre Torchlight Infinite, server „SS14
+Tartarus"), objavená a zdokumentovaná v `docs/fakty/.../README.md`
+18.10.2026 20:5x.
+
+**Toto NIE JE návrat rozhodnutia z TLI 20** („na komunitné ceny TITracku sa
+nenapájame") — tamojší zákaz mieril na iný prístup: priamy Supabase backend
+projektu TITrack s natvrdo zapísaným kľúčom v zdrojáku, bez verejného API a
+bez podmienok pre tretie strany. `titrack.ninja` je bežná verejná webstránka
+(iný branding, Next.js, Vercel) — appka na ňu robí len obyčajné GET, presne
+ako prehliadač, bez prihlásenia, bez robots.txt zákazu (overené, vracia 404).
+
+**Zmeny sú celé na SERVERI** (`stacks/games/tli-web/app.py`, ops repo) —
+appka hráča naďalej berie ceny výhradne z `/api/ceny`, nikdy priamo z
+cudzieho servera:
+- Nové vlákno na pozadí sťahuje `https://www.titrack.ninja/?season=1601` á
+  25 min (slušné `User-Agent`), parsuje Next.js server-render RSC payload
+  (žiadne samostatné `/api/prices` neexistuje), a drží cache na disku — pri
+  výpadku siete alebo zmene tvaru stránky appka tíško pokračuje s poslednou
+  známou cache, nikdy nespadne na nulu.
+- `config_base_id` z titracku JE priamo naše ConfigBaseId (obe pochádzajú z
+  tej istej TITrack komunity, overené krížovo oproti `polozky-seed-en.json`)
+  — žiadne mapovanie podľa mena netreba, čo je presnejšie než pôvodné
+  zadanie predpokladalo. Malá kontrola zhody mena beží pre prípad budúceho
+  rozchodu ID priestorov, len loguje, nič nevyraďuje.
+- `/api/ceny` teraz zlučuje partiu s titrackom: keď má položku oboje,
+  vyhráva silnejšie skóre `dôveryhodnosť_istoty × váha_veku` (rovnaký
+  princíp ako klientovo `Cennik::vloz_v_case` z TLI 20, len medzi dvoma
+  stiahnutými zdrojmi). Odpoveď nesie nové pole `zdroj` (`"partia"` alebo
+  `"titrack"`) pri každej položke.
+- Atribúcia „Ceny: titrack.ninja (komunita) a hráči partie." je v pätičke
+  `base.html` na celom webe.
+
+**Klient** dostal `Zdroj::Titrack` (dôveryhodnosť 0,7 — medzi `Partia` 0,8 a
+`Rucne` 0,6, keďže ide o externý, nie vlastný pozorovaný zdroj) a `/api/ceny`
+odpoveď prevezme nové pole `zdroj` priamo (predtým malo appka natvrdo
+„partia" aj pre budúce iné zdroje — opravené aj v lokálnej perzistencii
+`prijmi_ceny_partie`). Mini-panel „čo padlo" (TLI 25) ukáže pri cenách z
+titracku tooltip `titrack.ninja · N prisp. · pred X` — viditeľný text sa
+nemenil, panel je príliš úzky na tretí riadok. Nastavenia (prepínač „Zdieľať
+ceny s partiou") dostali vetu o titracku.
+
+**Bod 3 zadania — „prepočítaj ocenenie behov druhým prechodom":** po každom
+`sync_cien_kolo`, ktorý cenník naozaj zmenil, appka spustí `db::
+precen_nevycislene` — rovnaký princíp ako druhý prechod pri importe logu
+(TLI 20), len nad CELOU históriou behov s `cisty_zisk_fe IS NULL`, nie len
+nad práve prečítaným úsekom. Bežia v krátkych dávkach (200 behov), zvyšok
+doženie ďalšie kolo o 5 min.
+
+Testy: `tli-web` 197/197 (+13 nových — parsovanie RSC payloadu vrátane
+vnorených polí, výpadok siete/zmena tvaru stránky necháva starú cache,
+mergovanie skóre, krížová kontrola mien, perzistencia cache na disk). `core`
+392/392 (+8 — nový `Zdroj::Titrack`, `precen_nevycislene`, `top_dropy` nesie
+atribúciu), `src-tauri` `cargo check`/`cargo check --tests` zelené, `ui`
+jsdom 51/51 (+1 — tooltip). `core` bump `0.13.7` → `0.13.8` (zmenené
+`ceny.rs`/`ceny_sync.rs`/`agregacie.rs`/`db.rs`).
+
+Rollback: `tli-web.yml` → `titrack.zapnute: false` + redeploy — `/api/ceny`
+sa vráti k samotnej partii, posledná cache na disku ostáva nedotknutá
+(nič sa nemaže).
+
 ## 0.18.16 — 18.10.2026 (TLI 42 — 0.18.14/0.18.15 sa nespustia, oprava)
 
 Úloha `2026-10-18-2042-mcp.md`. Richard nahlásil, že appka 0.18.14 sa u neho

@@ -654,6 +654,41 @@ pub fn precen_beh(
     Ok(true)
 }
 
+/// Druhý prechod NAD CELOU históriou (TLI 43), nie len nad behmi z práve
+/// prebiehajúceho importu ako `precen_beh` vyššie. Keď server po zlúčení
+/// s titrack.ninja zrazu pozná ceny, ktoré predtým nepoznal (partia ani
+/// vlastné vyhľadania ich nemali), staré behy v `behy` ostanú navždy
+/// `cisty_zisk_fe IS NULL`, kým ich niekto neprepočíta nanovo — presne to
+/// robí táto funkcia, volaná po každom úspešnom `sync_cien_kolo` so
+/// zmeneným cenníkom (`src-tauri/src/tracker.rs::sync_cien_kolo`).
+///
+/// `limit` drží jedno volanie krátke (appka to robí na vlákne trackera,
+/// nie je to naliehavé) — pri veľkej histórii sa zvyšok dobehne nabudúce,
+/// o `ceny_sync::INTERVAL_S` neskôr. Vracia počet behov, ktorým sa hodnota
+/// naozaj doplnila.
+pub fn precen_nevycislene(
+    conn: &Connection,
+    cennik: &Cennik,
+    nastavenie: &Nastavenie,
+    limit: usize,
+) -> rusqlite::Result<usize> {
+    let mut dotaz = conn.prepare(
+        "SELECT id FROM behy WHERE cisty_zisk_fe IS NULL ORDER BY id LIMIT ?1",
+    )?;
+    let beh_idy: Vec<i64> = dotaz
+        .query_map(params![limit as i64], |r| r.get(0))?
+        .collect::<rusqlite::Result<_>>()?;
+    drop(dotaz);
+
+    let mut precenenych = 0;
+    for beh_id in beh_idy {
+        if precen_beh(conn, beh_id, cennik, nastavenie)? {
+            precenenych += 1;
+        }
+    }
+    Ok(precenenych)
+}
+
 /// Uloží jeden zostatok meny/počítadla (z `Sledovac::odober_zostatky()`).
 pub fn uloz_zostatok(conn: &Connection, nazov: &str, hodnota: i64, cas: Option<&Cas>) -> rusqlite::Result<()> {
     conn.execute(
@@ -1315,6 +1350,63 @@ mod testy {
         uloz_build_snapshot(&conn, beh_id, &HracSnimka::default(), Some("DROPPS"), Some(100.0), None, cas(1).as_ref()).unwrap();
         let pocet2: i64 = conn.query_row("SELECT COUNT(*) FROM build_snapshoty", [], |r| r.get(0)).unwrap();
         assert_eq!(pocet2, 1);
+    }
+
+    #[test]
+    fn precen_nevycislene_doplni_stare_behy_az_ked_cennik_polozku_pozna() {
+        // TLI 43 bod 3: cenník sa rozšíri (napr. titrack.ninja pokryl niečo,
+        // čo partia nikdy nevyhľadala) a staré behy uviaznuté na
+        // `cisty_zisk_fe IS NULL` majú dostať hodnotu bez nového importu logu.
+        let mut conn = otvor_v_pamati().unwrap();
+        let mut beh = prazdny_beh(1, "MapaX", 0);
+        beh.dropy.insert(400021, 3);
+        beh.vsetky_zmeny.push(Zmena { polozka: 400021, mnozstvo: 3, dovod: Dovod::Drop, cas: cas(1) });
+        let (beh_id, _) =
+            uloz_beh(&mut conn, &beh, &HracSnimka::default(), &OceneneHodnoty::default()).unwrap();
+
+        let nastavenie = Nastavenie { dan: false };
+
+        // Cenník ešte položku nepozná — nič sa neprepočíta.
+        let prazdny_cennik = Cennik::novy();
+        assert_eq!(precen_nevycislene(&conn, &prazdny_cennik, &nastavenie, 10).unwrap(), 0);
+        let zisk: Option<f64> =
+            conn.query_row("SELECT cisty_zisk_fe FROM behy WHERE id = ?1", params![beh_id], |r| r.get(0)).unwrap();
+        assert_eq!(zisk, None);
+
+        // Cenník sa rozšíri (titrack) — druhý prechod beh doplní.
+        let mut cennik = Cennik::novy();
+        cennik.vloz(Cena {
+            polozka: 400021, fe: 2.0, zdroj: Zdroj::Titrack, kedy: 1000,
+            median: None, pocet_ponuk: 0, zdrojov: 5,
+        });
+        assert_eq!(precen_nevycislene(&conn, &cennik, &nastavenie, 10).unwrap(), 1);
+        let zisk2: Option<f64> =
+            conn.query_row("SELECT cisty_zisk_fe FROM behy WHERE id = ?1", params![beh_id], |r| r.get(0)).unwrap();
+        assert_eq!(zisk2, Some(6.0));
+
+        // Beh je už ocenený — ďalšie kolo nemá čo prepočítať.
+        assert_eq!(precen_nevycislene(&conn, &cennik, &nastavenie, 10).unwrap(), 0);
+    }
+
+    #[test]
+    fn precen_nevycislene_respektuje_limit() {
+        let mut conn = otvor_v_pamati().unwrap();
+        for i in 0..5u64 {
+            let mut beh = prazdny_beh(i + 1, "MapaX", i as u8);
+            beh.dropy.insert(400021, 1);
+            beh.vsetky_zmeny.push(Zmena { polozka: 400021, mnozstvo: 1, dovod: Dovod::Drop, cas: cas(1) });
+            uloz_beh(&mut conn, &beh, &HracSnimka::default(), &OceneneHodnoty::default()).unwrap();
+        }
+        let mut cennik = Cennik::novy();
+        cennik.vloz(Cena {
+            polozka: 400021, fe: 1.0, zdroj: Zdroj::Titrack, kedy: 1000,
+            median: None, pocet_ponuk: 0, zdrojov: 5,
+        });
+        let nastavenie = Nastavenie { dan: false };
+        assert_eq!(precen_nevycislene(&conn, &cennik, &nastavenie, 2).unwrap(), 2);
+        assert_eq!(precen_nevycislene(&conn, &cennik, &nastavenie, 2).unwrap(), 2);
+        assert_eq!(precen_nevycislene(&conn, &cennik, &nastavenie, 2).unwrap(), 1);
+        assert_eq!(precen_nevycislene(&conn, &cennik, &nastavenie, 2).unwrap(), 0);
     }
 
     #[test]

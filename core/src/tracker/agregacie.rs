@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
-use super::ceny::{ocen_v_case, Cennik, Nastavenie};
+use super::ceny::{ocen_v_case, vek_text, Cennik, Nastavenie, Zdroj};
 use super::stav::Beh;
 
 /// Výsledok jedného behu po ocenení.
@@ -480,6 +480,14 @@ pub struct DropRiadok {
     /// panel ukáže počet a „bez ceny", nie nulu. Nula a „neviem" sú dve
     /// rôzne veci a hráč ich musí rozoznať.
     pub hodnota: Option<f64>,
+    /// TLI 43: keď cena pochádza z titracku, UI nad hodnotou ukáže
+    /// atribúciu (`"titrack.ninja · N prisp. · pred X"`) — pri vlastných/
+    /// partiových cenách `None`, nech sa tooltip nezobrazuje zbytočne.
+    pub zdroj: Option<&'static str>,
+    pub prispievatelia: Option<u32>,
+    /// Hotový text ako `vek_cien` v `tracker_prehlad` (`vek_text` nižšie) —
+    /// JS tooltip ho len zreťazí, neprepočítava sekundy znova.
+    pub vek: Option<String>,
 }
 
 /// Najhodnotnejšie dropy jedného behu, najviac `limit` riadkov.
@@ -490,11 +498,16 @@ pub struct DropRiadok {
 ///
 /// Samotná mena FE (`POLOZKA_FE`) sa do zoznamu NEDÁVA — je už v čísle
 /// „zisk" vedľa a ako riadok „Flame Essence ×1 200" by len zabrala miesto.
+///
+/// `teraz` (TLI 43) je len na dopočet `vek_s` pri titrack cenách pre UI —
+/// samotné ocenenie vekom neváži (`ocen_v_case` nižšie dostáva `None`,
+/// rovnako ako doteraz: stará cena je lepší odhad než žiadna, pozri TLI 20).
 pub fn top_dropy(
     beh: &Beh,
     cennik: &Cennik,
     nastavenie: &Nastavenie,
     limit: usize,
+    teraz: u64,
 ) -> Vec<DropRiadok> {
     let mut ocenene: Vec<DropRiadok> = Vec::new();
     let mut bez_ceny: Vec<DropRiadok> = Vec::new();
@@ -508,9 +521,19 @@ pub fn top_dropy(
                 if nastavenie.dan {
                     hodnota *= 0.875;
                 }
-                ocenene.push(DropRiadok { polozka, pocet, hodnota: Some(hodnota) });
+                let (zdroj, prispievatelia, vek) = if cena.zdroj == Zdroj::Titrack {
+                    (Some("titrack.ninja"), Some(cena.zdrojov),
+                     Some(vek_text(teraz.saturating_sub(cena.kedy))))
+                } else {
+                    (None, None, None)
+                };
+                ocenene.push(DropRiadok {
+                    polozka, pocet, hodnota: Some(hodnota), zdroj, prispievatelia, vek,
+                });
             }
-            None => bez_ceny.push(DropRiadok { polozka, pocet, hodnota: None }),
+            None => bez_ceny.push(DropRiadok {
+                polozka, pocet, hodnota: None, zdroj: None, prispievatelia: None, vek: None,
+            }),
         }
     }
     ocenene.sort_by(|a, b| {
@@ -550,7 +573,7 @@ mod testy_dropy {
     fn radi_podla_hodnoty_nie_podla_poctu() {
         let beh = beh_s_dropmi(&[(10, 100), (20, 2)]);
         let c = cennik(&[(10, 1.0), (20, 500.0)]);
-        let v = top_dropy(&beh, &c, &Nastavenie { dan: false }, 5);
+        let v = top_dropy(&beh, &c, &Nastavenie { dan: false }, 5, 0);
         assert_eq!(v[0].polozka, 20);          // 1000 FE za 2 kusy
         assert_eq!(v[0].hodnota, Some(1000.0));
         assert_eq!(v[1].polozka, 10);          // 100 FE za 100 kusov
@@ -560,7 +583,7 @@ mod testy_dropy {
     fn polozky_bez_ceny_idu_na_koniec_a_maju_none_nie_nulu() {
         let beh = beh_s_dropmi(&[(10, 1), (99, 7), (98, 3)]);
         let c = cennik(&[(10, 5.0)]);
-        let v = top_dropy(&beh, &c, &Nastavenie { dan: false }, 5);
+        let v = top_dropy(&beh, &c, &Nastavenie { dan: false }, 5, 0);
         assert_eq!(v.iter().map(|d| d.polozka).collect::<Vec<_>>(), vec![10, 99, 98]);
         assert_eq!(v[1].hodnota, None);
         assert_eq!(v[1].pocet, 7);
@@ -570,7 +593,7 @@ mod testy_dropy {
     fn samotne_fe_sa_do_zoznamu_nedava() {
         let beh = beh_s_dropmi(&[(crate::tracker::stav::POLOZKA_FE, 1200), (10, 1)]);
         let c = cennik(&[(10, 5.0)]);
-        let v = top_dropy(&beh, &c, &Nastavenie { dan: false }, 5);
+        let v = top_dropy(&beh, &c, &Nastavenie { dan: false }, 5, 0);
         assert_eq!(v.len(), 1);
         assert_eq!(v[0].polozka, 10);
     }
@@ -579,8 +602,8 @@ mod testy_dropy {
     fn dan_znizi_hodnotu_rovnako_ako_pri_ocenovani_behu() {
         let beh = beh_s_dropmi(&[(10, 2)]);
         let c = cennik(&[(10, 100.0)]);
-        let bez = top_dropy(&beh, &c, &Nastavenie { dan: false }, 5)[0].hodnota.unwrap();
-        let s_danou = top_dropy(&beh, &c, &Nastavenie { dan: true }, 5)[0].hodnota.unwrap();
+        let bez = top_dropy(&beh, &c, &Nastavenie { dan: false }, 5, 0)[0].hodnota.unwrap();
+        let s_danou = top_dropy(&beh, &c, &Nastavenie { dan: true }, 5, 0)[0].hodnota.unwrap();
         assert_eq!(bez, 200.0);
         assert!((s_danou - 175.0).abs() < 1e-9);
     }
@@ -589,7 +612,33 @@ mod testy_dropy {
     fn limit_oreze_zoznam_az_po_zoradeni() {
         let beh = beh_s_dropmi(&[(1, 1), (2, 1), (3, 1)]);
         let c = cennik(&[(1, 1.0), (2, 9.0), (3, 5.0)]);
-        let v = top_dropy(&beh, &c, &Nastavenie { dan: false }, 2);
+        let v = top_dropy(&beh, &c, &Nastavenie { dan: false }, 2, 0);
         assert_eq!(v.iter().map(|d| d.polozka).collect::<Vec<_>>(), vec![2, 3]);
+    }
+
+    #[test]
+    fn vlastna_cena_nenesie_titrack_atribuciu() {
+        let beh = beh_s_dropmi(&[(10, 1)]);
+        let c = cennik(&[(10, 1.0)]); // `cennik()` helper used Cena::vlastna
+        let v = top_dropy(&beh, &c, &Nastavenie { dan: false }, 5, 2000);
+        assert_eq!(v[0].zdroj, None);
+        assert_eq!(v[0].prispievatelia, None);
+        assert_eq!(v[0].vek, None);
+    }
+
+    #[test]
+    fn titrack_cena_nesie_zdroj_prispievatelov_a_vek_pre_ui() {
+        use crate::tracker::ceny::Zdroj;
+        let beh = beh_s_dropmi(&[(10, 2)]);
+        let mut c = Cennik::novy();
+        c.vloz(Cena {
+            polozka: 10, fe: 3.0, zdroj: Zdroj::Titrack, kedy: 1000,
+            median: None, pocet_ponuk: 0, zdrojov: 40,
+        });
+        let v = top_dropy(&beh, &c, &Nastavenie { dan: false }, 5, 1500);
+        assert_eq!(v[0].hodnota, Some(6.0));
+        assert_eq!(v[0].zdroj, Some("titrack.ninja"));
+        assert_eq!(v[0].prispievatelia, Some(40));
+        assert_eq!(v[0].vek.as_deref(), Some("pred 8 min"));
     }
 }

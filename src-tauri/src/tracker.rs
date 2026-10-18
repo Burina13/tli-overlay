@@ -231,7 +231,11 @@ impl StavTrackera {
                         median_fe: None,
                         pocet_ponuk: Some(c.pocet_ponuk),
                         sezona: None,
-                        zdroj: "partia".to_string(),
+                        // TLI 43: server už posiela, ktorý zdroj za túto
+                        // položku vyhral (`"partia"` alebo `"titrack"`) —
+                        // predtým tu bolo natvrdo "partia", čo by titrack
+                        // ceny v lokálnej DB tíško označilo nesprávne.
+                        zdroj: c.zdroj.clone(),
                         cas: None,
                         zapisane: c.kedy,
                     },
@@ -608,7 +612,7 @@ pub fn prehlad_pre_ui(stav: &StavTrackera, zapnuty: bool, dan: bool) -> PrehladP
             trvanie_ms: v.trvanie_ms,
             cisty_zisk: v.cisty_zisk,
             podpis_vstupov: v.podpis_vstupov,
-            top_dropy: top_dropy(b, &stav.cennik, &nastavenie, TOP_DROPOV),
+            top_dropy: top_dropy(b, &stav.cennik, &nastavenie, TOP_DROPOV, teraz),
         })
     };
     let zivo = stav.sledovac.aktualny().and_then(na_zivo);
@@ -924,6 +928,22 @@ pub fn sync_cien_kolo(app: &AppHandle) -> Result<String, String> {
     };
     if zmenenych > 0 {
         let _ = app.emit(UDALOST_ZMENA, 0);
+        // TLI 43 bod 3 — „prepočítaj ocenenie behov druhým prechodom": cenník
+        // sa práve rozšíril (typicky titrack.ninja pokryl položky, ktoré
+        // partia nikdy nevyhľadala), takže staré behy uviaznuté na
+        // `cisty_zisk_fe IS NULL` môžu teraz dostať hodnotu. Rovnaký princíp
+        // ako druhý prechod pri importe logu (`import.rs`), len nad celou
+        // históriou, nie len nad práve prečítaným úsekom. Bez vlákna navyše —
+        // toto UŽ BEŽÍ na vlákne trackera, krátky dobeh (`LIMIT_PRECENENIA`)
+        // stačí, zvyšok doženie ďalšie kolo o `ceny_sync::INTERVAL_S`.
+        const LIMIT_PRECENENIA: usize = 200;
+        let t = tracker.0.lock().unwrap();
+        if let Some(conn) = t.db() {
+            // Best-effort, rovnako ako ostatné zápisy v tomto bloku vyššie
+            // (`let _ = db::uloz_cenu(...)`) — chyba tu appku nemá zastaviť,
+            // ďalšie kolo o `ceny_sync::INTERVAL_S` to skúsi znova.
+            let _ = db::precen_nevycislene(conn, &t.cennik, &Nastavenie::default(), LIMIT_PRECENENIA);
+        }
     }
     Ok(ceny_sync::zhrnutie(poslanych, stiahnutych, zmenenych))
 }

@@ -126,6 +126,14 @@ pub struct CenaPartie {
     pub kedy: i64,
     /// `overena` (3+ zdroje) / `dobra` (2) / `slaba` (1).
     pub istota: String,
+    /// TLI 43: `"partia"` alebo `"titrack"` — server už sám rozhodol, ktorý
+    /// zdroj pre túto položku vyhral (dôveryhodnosť × váha veku), toto je
+    /// len nálepka na to, akú `Zdroj` dať uloženej cene. Staré servery toto
+    /// pole neposielajú — `#[serde(default)]` na štruktúre by bez vlastného
+    /// defaultu dalo prázdny reťazec a `Zdroj::z_kodu("")` by omylom spadol
+    /// na `VlastnyTrh` (najvyššia dôvera); vlastný `Default` impl nižšie
+    /// preto drží `"partia"`, teda presne to, čo appka robila PRED TLI 43.
+    pub zdroj: String,
 }
 
 impl Default for CenaPartie {
@@ -137,6 +145,7 @@ impl Default for CenaPartie {
             pocet_ponuk: 0,
             kedy: 0,
             istota: "slaba".to_string(),
+            zdroj: "partia".to_string(),
         }
     }
 }
@@ -172,7 +181,7 @@ pub fn zapis_do_cennika(agregat: &AgregatPartie, cennik: &mut Cennik, teraz: u64
         let cena = Cena {
             polozka: c.polozka,
             fe: c.fe,
-            zdroj: Zdroj::Partia,
+            zdroj: Zdroj::z_kodu(&c.zdroj),
             kedy: c.kedy.max(0) as u64,
             median: None,
             pocet_ponuk: c.pocet_ponuk,
@@ -295,6 +304,36 @@ mod testy {
         assert_eq!(c.fe, 1.6);
         assert_eq!(c.zdroj, Zdroj::Partia);
         assert_eq!(c.zdrojov, 3);
+    }
+
+    #[test]
+    fn chybajuce_pole_zdroj_sa_bezpecne_predvoli_na_partiu() {
+        // Staré/testovacie telo bez `"zdroj"` (presne fixture vyššie) sa musí
+        // správať PRESNE tak, ako appka robila pred TLI 43 — nie spadnúť na
+        // `VlastnyTrh` (najvyššia dôvera) len preto, že chýbajúce `String`
+        // pole by inak defaultovalo na "".
+        let v: serde_json::Value = serde_json::from_str(
+            r#"{"polozka":1,"fe":1.0,"zdrojov":1,"pocet_ponuk":0,"kedy":0,"istota":"slaba"}"#,
+        )
+        .unwrap();
+        let c: CenaPartie = serde_json::from_value(v).unwrap();
+        assert_eq!(c.zdroj, "partia");
+    }
+
+    #[test]
+    fn agregat_oznaceny_ako_titrack_dostane_zdroj_titrack() {
+        // TLI 43: server už sám rozhodol víťaza (partia vs. titrack) a tágol
+        // ho poľom `zdroj` — klient to len prevezme do `Zdroj::Titrack`.
+        let telo = r#"{"ok":true,"cas":2000,"ceny":[
+            {"polozka":400099,"fe":42.0,"zdrojov":15,"pocet_ponuk":0,"kedy":1999,
+             "istota":"overena","zdroj":"titrack"}
+        ]}"#;
+        let a = z_odpovede_agregatu(telo).unwrap();
+        let mut cennik = Cennik::novy();
+        assert_eq!(zapis_do_cennika(&a, &mut cennik, 2000), 1);
+        let c = cennik.cena(400099).unwrap();
+        assert_eq!(c.fe, 42.0);
+        assert_eq!(c.zdroj, Zdroj::Titrack);
     }
 
     #[test]

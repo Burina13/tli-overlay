@@ -14,8 +14,16 @@ pub enum Zdroj {
     /// 3–5 najnižších viditeľných ponúk, nie celý trh — o niečo menej
     /// dôveryhodné než `VlastnyTrh`, stále vlastné pozorovanie hráča.
     Obrazovka,
-    /// Prišlo od partie cez tli.tvojtatko.sk.
+    /// Prišlo od partie cez tli.tvojtatko.sk (medián z vlastných vyhľadaní
+    /// hráčov partie).
     Partia,
+    /// TLI 43: verejné komunitné ceny z titrack.ninja, server ich zlúči s
+    /// `Partia` (silnejšie skóre dôveryhodnosť × váha veku vyhráva) ešte PRED
+    /// odoslaním — tento variant teda dostane len to, čo server označil ako
+    /// víťaza z titracku. Menej dôveryhodné než vlastné pozorovania partie
+    /// (externý zdroj, nie priamo odpozorované niekým od nás), ale viac než
+    /// ručný zápis.
+    Titrack,
     /// Ručne zadané hráčom v nastaveniach.
     Rucne,
 }
@@ -28,6 +36,7 @@ impl Zdroj {
             Zdroj::VlastnyTrh => 1.0,
             Zdroj::Obrazovka => 0.9,
             Zdroj::Partia => 0.8,
+            Zdroj::Titrack => 0.7,
             Zdroj::Rucne => 0.6,
         }
     }
@@ -38,6 +47,7 @@ impl Zdroj {
             Zdroj::VlastnyTrh => "vlastny_trh",
             Zdroj::Obrazovka => "obrazovka",
             Zdroj::Partia => "partia",
+            Zdroj::Titrack => "titrack",
             Zdroj::Rucne => "rucne",
         }
     }
@@ -46,6 +56,7 @@ impl Zdroj {
         match kod {
             "obrazovka" => Zdroj::Obrazovka,
             "partia" => Zdroj::Partia,
+            "titrack" => Zdroj::Titrack,
             "rucne" => Zdroj::Rucne,
             _ => Zdroj::VlastnyTrh,
         }
