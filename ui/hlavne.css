@@ -707,3 +707,149 @@ tr.riadok-klikatelny {
 #analyza-detail {
     margin: 18px 24px 24px;
 }
+
+/* ── Dashboard podľa TITracku (TLI 45) ───────────────────────────────────── */
+
+/* Malé okrúhle tlačidlo pre ⚙ v hlavičke — rovnaký rozmer ako prepínač témy. */
+button.btn-ikona {
+    background-color: var(--farba-priehladna);
+    color: var(--farba-text-hlavny);
+    border: 1px solid var(--farba-okraj);
+    border-radius: 50%;
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    cursor: pointer;
+    font-size: 1rem;
+    line-height: 1;
+}
+
+button.btn-ikona:hover {
+    background-color: var(--farba-okraj);
+}
+
+.riadok-grafov {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 12px;
+}
+
+.karta-grafu {
+    background-color: var(--farba-karta);
+    border: 1px solid var(--farba-okraj);
+    border-radius: 8px;
+    padding: 16px;
+    box-shadow: var(--tien-karty);
+}
+
+.karta-grafu svg {
+    width: 100%;
+    height: 90px;
+    display: block;
+    overflow: visible;
+}
+
+.graf-prazdny {
+    font-size: 0.85rem;
+    color: var(--farba-text-tlmeny);
+}
+
+/* Krátke zvýraznenie cieľa po skoku z tlačidla Economy/Cloud Sync v hlavičke. */
+@keyframes zvyraznenie-skoku {
+    0%, 100% { box-shadow: none; }
+    30% { box-shadow: 0 0 0 3px var(--farba-akcent); }
+}
+
+.zvyraznene-skokom {
+    animation: zvyraznenie-skoku 1.6s ease;
+    border-radius: 8px;
+}
+
+/* Rozbalenie „čo padlo" pod riadkom histórie máp (Recent Runs). */
+tr.riadok-behu {
+    cursor: pointer;
+}
+
+tr.riadok-rozbalenia td {
+    background-color: var(--farba-pozadie);
+    padding: 10px 16px;
+}
+
+.rozbalenie-dropy {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+}
+
+.rozbalenie-prazdne {
+    font-size: 0.85rem;
+    color: var(--farba-text-tlmeny);
+}
+
+/* Jednoduchý modálny dialóg — Instructions (TLI 45). Žiadna knižnica,
+   len `position: fixed` + `.skryte`, rovnaký vzor ako zvyšok appky. */
+.modal {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 50;
+}
+
+.modal-obsah {
+    background-color: var(--farba-karta);
+    border-radius: 10px;
+    border: 1px solid var(--farba-okraj);
+    box-shadow: var(--tien-karty);
+    padding: 20px 24px;
+    max-width: 520px;
+    max-height: 80vh;
+    overflow-y: auto;
+}
+
+.modal-hlavicka {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 12px;
+}
+
+.modal-hlavicka h2 {
+    margin: 0;
+}
+
+.instructions-zoznam {
+    margin: 0;
+    padding-left: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+/* Footer „Collector" — lišta v štýle TITracku na úplnom spodku okna. */
+.pita-collector {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 8px 24px;
+    background-color: var(--farba-karta);
+    border-top: 1px solid var(--farba-okraj);
+    font-size: 0.8rem;
+    color: var(--farba-text-tlmeny);
+}
+
+.pita-bod {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: var(--farba-text-tlmeny);
+    display: inline-block;
+}
+
+.pita-bod-bezi {
+    background-color: var(--farba-zisk);
+}

@@ -30,6 +30,18 @@ licenciou. Súbor sa dopĺňa pri KAŽDOM ďalšom prevzatí — nie spätne.
    `core/src/tracker/stav.rs` (`test_xchg_realny_tvar_*`) — riadky pochádzajú
    z `tests/unit/test_exchange_parser.py` v TITracku a sú to výpisy z reálnych
    herných logov z 26./28. 1. 2026.
+4. **Rozloženie a pomenovanie hlavného dashboardu** (TLI 45, 19. 10. 2026) —
+   Richard chcel záložku Tracker vzhľadovo aj funkčne bližšie k desktopovej
+   appke TITracku. Prevzaté sú anglické NÁZVY siedmich štatistických kariet
+   (NET WORTH, CUMULATIVE VALUE, FE/HOUR, FE/MAP, RUNS, AVG RUN TIME, TOTAL
+   TIME) a koncept rozloženia (karty hore, grafy pod nimi, história máp s
+   rozbaliteľným „čo padlo", tlačidlá Overlay/Economy/Cloud Sync/Instructions/
+   Reset Stats, pätička „Collector"). **Žiadny kód ani obrázok prevzatý nie
+   je** — grafy sú vlastné inline SVG, výpočty idú z vlastného `core`
+   (`agregacie.rs`), CSS je vlastné (`ui/hlavne.css`, existujúce premenné
+   témy). TITrack layout/pomenovania samy osebe nie sú chránené dielo v
+   zmysle kódu, ale zápis je tu pre úplnosť a transparentnosť rovnako ako pri
+   bodoch 1–3.
 
 ### Čo prevzaté NIE JE
 

@@ -335,6 +335,7 @@ fn e2e_sync_posle_mapy_a_precita_zhrnutie() {
             bez_ceny: vec![],
             najstarsia_cena: None,
             zastarane: vec![],
+            top_dropy: vec![],
         },
         // Bez času začiatku — podpis by nebol stabilný, takže sa neposiela.
         VysledokBehu {
@@ -350,6 +351,7 @@ fn e2e_sync_posle_mapy_a_precita_zhrnutie() {
             bez_ceny: vec![],
             najstarsia_cena: None,
             zastarane: vec![],
+            top_dropy: vec![],
         },
     ];
 

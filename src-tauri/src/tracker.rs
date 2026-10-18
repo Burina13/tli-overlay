@@ -245,6 +245,17 @@ impl StavTrackera {
         zmenenych
     }
 
+    /// „Reset Stats" (TLI 45, dashboard podľa TITracku). VYMAŽE len živé
+    /// behy tejto relácie (čo kreslí záložka Tracker/dashboard) — nič iné:
+    /// pozícia čítania logu (`sledovac`/`chvost`) aj lokálna DB pre záložku
+    /// Analýza ostávajú nedotknuté, takže dlhodobá história sa nestratí a
+    /// appka nezačne čítať log odznova. Presne to vyžaduje zadanie („Nič
+    /// nemaž") — toto nemaže žiadny súbor, len vyprázdni zoznam v pamäti,
+    /// ktorý sa rovnako nanovo napĺňa z bežiaceho logu od každého reštartu.
+    pub fn resetuj_zive_staty(&mut self) {
+        self.behy.clear();
+    }
+
     /// TLI 22: zistí a VYNULUJE, či posledné `precitaj` uvidelo otvorenie
     /// obrazovky trhu — volajúci (vlákno na pozadí) má na `true` zareagovať
     /// práve raz, nie pri každom ďalšom tiku.

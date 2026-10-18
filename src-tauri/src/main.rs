@@ -1644,6 +1644,15 @@ fn tracker_csv(
     Ok(tracker::csv(&prehlad.behy))
 }
 
+/// „Reset Stats" z dashboardu (TLI 45) — vymaže len živé behy tejto relácie
+/// v pamäti, nič na disku. Potvrdenie rieši UI (`window.confirm`), appka tu
+/// už žiadnu ďalšiu otázku nekladie.
+#[tauri::command]
+fn tracker_reset_zive_staty(tracker: tauri::State<tracker::Tracker>) -> Result<(), String> {
+    tracker.0.lock().unwrap().resetuj_zive_staty();
+    Ok(())
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Záložka „Analýza" (TLI 13)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2811,6 +2820,7 @@ fn main() {
             skontroluj_aktualizaciu,
             tracker_prehlad,
             tracker_csv,
+            tracker_reset_zive_staty,
             tracker_navrh_cestu,
             tracker_stav_cesty,
             tracker_vyber_subor,

@@ -5,6 +5,11 @@ use std::collections::BTreeMap;
 use super::ceny::{ocen_v_case, vek_text, Cennik, Nastavenie, Zdroj};
 use super::stav::Beh;
 
+/// Koľko položiek drží rozbalené „čo padlo" pri KAŽDOM uloženom behu
+/// (TLI 45). Väčší limit než mini-panel (ten má 5) — tu ide hráč cielene
+/// otvoriť jeden konkrétny beh, nie prelietavať viacero naraz.
+pub const TOP_DROPOV_HISTORIA: usize = 8;
+
 /// Výsledok jedného behu po ocenení.
 /// Oddeľuje čisté herné dáta od finančného vyjadrenia, aby sa UI a ďalšie agregácie
 /// mohli spoliehať na hotové, vypočítané čísla a nemuseli riešiť cenníky.
@@ -33,6 +38,11 @@ pub struct VysledokBehu {
     /// oceňoval bez znalosti aktuálneho času (`ocen_beh`).
     #[serde(default)]
     pub zastarane: Vec<(u32, i64)>,
+    /// Čo reálne padlo (TLI 45, dashboard „Recent Runs" rozbalenie) — rovnaké
+    /// zoradenie a limit ako mini-panel pri živej mape (`top_dropy`), len
+    /// počítané pre KAŽDÝ uložený beh, nie len pre ten práve bežiaci.
+    #[serde(default)]
+    pub top_dropy: Vec<DropRiadok>,
 }
 
 /// Ocení jeden beh. Hubové behy (`je_hub`) sa NEOCEŇUJÚ — vracia `None`,
@@ -96,6 +106,7 @@ pub fn ocen_beh_v_case(
         bez_ceny,
         najstarsia_cena,
         zastarane,
+        top_dropy: top_dropy(beh, cennik, nastavenie, TOP_DROPOV_HISTORIA, teraz.unwrap_or(0)),
     })
 }
 
@@ -297,6 +308,7 @@ mod testy {
             bez_ceny: vec![],
             najstarsia_cena: None,
             zastarane: vec![],
+            top_dropy: vec![],
         }
     }
 
@@ -483,7 +495,7 @@ pub struct DropRiadok {
     /// TLI 43: keď cena pochádza z titracku, UI nad hodnotou ukáže
     /// atribúciu (`"titrack.ninja · N prisp. · pred X"`) — pri vlastných/
     /// partiových cenách `None`, nech sa tooltip nezobrazuje zbytočne.
-    pub zdroj: Option<&'static str>,
+    pub zdroj: Option<String>,
     pub prispievatelia: Option<u32>,
     /// Hotový text ako `vek_cien` v `tracker_prehlad` (`vek_text` nižšie) —
     /// JS tooltip ho len zreťazí, neprepočítava sekundy znova.
@@ -522,7 +534,7 @@ pub fn top_dropy(
                     hodnota *= 0.875;
                 }
                 let (zdroj, prispievatelia, vek) = if cena.zdroj == Zdroj::Titrack {
-                    (Some("titrack.ninja"), Some(cena.zdrojov),
+                    (Some("titrack.ninja".to_string()), Some(cena.zdrojov),
                      Some(vek_text(teraz.saturating_sub(cena.kedy))))
                 } else {
                     (None, None, None)
@@ -637,8 +649,22 @@ mod testy_dropy {
         });
         let v = top_dropy(&beh, &c, &Nastavenie { dan: false }, 5, 1500);
         assert_eq!(v[0].hodnota, Some(6.0));
-        assert_eq!(v[0].zdroj, Some("titrack.ninja"));
+        assert_eq!(v[0].zdroj.as_deref(), Some("titrack.ninja"));
         assert_eq!(v[0].prispievatelia, Some(40));
         assert_eq!(v[0].vek.as_deref(), Some("pred 8 min"));
+    }
+
+    /// TLI 45 — „Recent Runs" rozbalenie potrebuje `top_dropy` na KAŽDOM
+    /// uloženom behu, nie len na tom živom. Overuje, že `ocen_beh` (cesta,
+    /// ktorou ide celá história do UI) ho naozaj napočíta, nie že ostane
+    /// prázdny `vec![]` z predvolenej hodnoty.
+    #[test]
+    fn ocen_beh_vrati_aj_top_dropy_nie_len_sucty() {
+        let beh = beh_s_dropmi(&[(10, 2), (20, 1)]);
+        let c = cennik(&[(10, 5.0), (20, 50.0)]);
+        let v = ocen_beh(&beh, &c, &Nastavenie { dan: false }).expect("beh nie je hubový");
+        assert_eq!(v.top_dropy.len(), 2);
+        assert_eq!(v.top_dropy[0].polozka, 20); // drahšia položka prvá
+        assert_eq!(v.top_dropy[0].hodnota, Some(50.0));
     }
 }

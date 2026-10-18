@@ -209,20 +209,75 @@ function karta(popis, hodnota, detail, trieda) {
     </div>`;
 }
 
+// TLI 45 — sedem kariet presne podľa TITracku (zadanie bod 1). Appka zatiaľ
+// NEČÍTA celý batoh (to je samostatná časť 3 toho istého zadania), takže
+// NET WORTH je tu len „čistý zisk spolu" — rovnaké číslo ako CUMULATIVE
+// VALUE — a karta to hovorí nahlas odznakom namiesto predstierania hodnoty
+// inventára, ktorú appka ešte nepozná (BACKLOG).
 function vykresliKarty(p) {
     const c = p.prehlad.celkom;
     const zaHodinu = c.cas_ms > 0 ? (c.cisty_zisk * 3600000) / c.cas_ms : 0;
-    const mapZaHodinu = c.cas_ms > 0 ? (c.pocet_map * 3600000) / c.cas_ms : 0;
     const priemer = c.pocet_map > 0 ? c.cisty_zisk / c.pocet_map : 0;
     const priemernyCas = c.pocet_map > 0 ? c.cas_ms / c.pocet_map : 0;
 
     document.getElementById("karty-statistik").innerHTML = [
-        karta("Čistý zisk", fe(c.cisty_zisk), "dropy mínus vstupy", triedaZnamienka(c.cisty_zisk)),
-        karta("Čistý zisk za hodinu", fe(zaHodinu), "", triedaZnamienka(zaHodinu)),
-        karta("Máp za hodinu", mapZaHodinu.toFixed(1), `spolu ${c.pocet_map}`, ""),
-        karta("Priemer na mapu", fe(priemer), `priemerný čas ${cas(priemernyCas)}`, triedaZnamienka(priemer)),
-        karta("Hodnota dropov", fe(c.hodnota_dropov), `vstupy ${fe(c.hodnota_vstupov)}`, ""),
+        karta("NET WORTH", fe(c.cisty_zisk), "⏳ bez hodnoty batoha — pozri Backlog", triedaZnamienka(c.cisty_zisk)),
+        karta("CUMULATIVE VALUE", fe(c.cisty_zisk), "dropy mínus vstupy, od spustenia appky", triedaZnamienka(c.cisty_zisk)),
+        karta("FE/HOUR", fe(zaHodinu), "", triedaZnamienka(zaHodinu)),
+        karta("FE/MAP", fe(priemer), "priemer na dokončenú mapu", triedaZnamienka(priemer)),
+        karta("RUNS", String(c.pocet_map), "dokončených máp", ""),
+        karta("AVG RUN TIME", cas(priemernyCas), "", ""),
+        karta("TOTAL TIME", cas(c.cas_ms), "", ""),
     ].join("");
+}
+
+// ─── Grafy Cumulative value a FE/hour (TLI 45) ──────────────────────────────
+// Čisté inline SVG bez knižnice — appka smie kresliť len to, čo sama spočíta
+// z dát, ktoré už aj tak má (`p.behy`), nikam sa kvôli tomu nepripája.
+function behyChronologicky(p) {
+    return (p.behy || [])
+        .filter((b) => b.zaciatok)
+        .slice()
+        .sort((a, b) => a.zaciatok.localeCompare(b.zaciatok));
+}
+
+function miniGraf(hodnoty, zaporneSuMozne) {
+    if (hodnoty.length < 2) {
+        return '<p class="graf-prazdny">Zatiaľ málo dokončených máp na graf.</p>';
+    }
+    const sirka = 600;
+    const vyska = 90;
+    const min = Math.min(0, ...hodnoty);
+    const max = Math.max(0, ...hodnoty);
+    const rozsah = max - min || 1;
+    const bod = (i, v) => {
+        const x = (i / (hodnoty.length - 1)) * sirka;
+        const y = vyska - ((v - min) / rozsah) * vyska;
+        return `${x.toFixed(1)},${y.toFixed(1)}`;
+    };
+    const body = hodnoty.map((v, i) => bod(i, v)).join(" ");
+    const posledna = hodnoty[hodnoty.length - 1];
+    const farba = zaporneSuMozne && posledna < 0 ? "var(--farba-strata)" : "var(--farba-zisk)";
+    // Nulová os sa kreslí len vtedy, keď sa dáta cez ňu naozaj preklápajú —
+    // inak by bola buď zbytočne na okraji, alebo úplne mimo rozsahu.
+    const nulaY = vyska - ((0 - min) / rozsah) * vyska;
+    const osNula = min < 0 && max > 0
+        ? `<line x1="0" y1="${nulaY.toFixed(1)}" x2="${sirka}" y2="${nulaY.toFixed(1)}" stroke="var(--farba-okraj)" stroke-width="1"/>`
+        : "";
+    return `<svg viewBox="0 0 ${sirka} ${vyska}" preserveAspectRatio="none">
+        ${osNula}
+        <polyline points="${body}" fill="none" stroke="${farba}" stroke-width="2"
+            stroke-linejoin="round" stroke-linecap="round"/>
+    </svg>`;
+}
+
+function vykresliGrafy(p) {
+    const behy = behyChronologicky(p);
+    let bezik = 0;
+    const kumulativ = behy.map((b) => (bezik += b.cisty_zisk));
+    const feZaHodinu = behy.map((b) => (b.trvanie_ms > 0 ? (b.cisty_zisk * 3600000) / b.trvanie_ms : 0));
+    document.getElementById("graf-kumulativ").innerHTML = miniGraf(kumulativ, true);
+    document.getElementById("graf-fe-za-hodinu").innerHTML = miniGraf(feZaHodinu, true);
 }
 
 function vykresliKombinacie(p) {
@@ -250,6 +305,24 @@ function vykresliKombinacie(p) {
         .join("");
 }
 
+// TLI 45 — „Recent Runs": riadok histórie sa dá rozbaliť kliknutím a ukáže
+// „čo reálne padlo" (server to teraz počíta pre KAŽDÝ beh, nie len pre ten
+// živý — `VysledokBehu.top_dropy`) a tlačidlo Report na export jednej mapy.
+let POSLEDNY_PREHLAD = null;
+
+function rozbalenieBehu(b) {
+    const dropy = b.top_dropy || [];
+    const zoznam = dropy.length
+        ? dropy
+              .map((d) => {
+                  const hodnota = d.hodnota != null ? fe(d.hodnota) : "bez ceny";
+                  return `<span class="odznak" title="#${d.polozka}">${nazovPolozky(d.polozka)} ×${d.pocet} — ${hodnota}</span>`;
+              })
+              .join("")
+        : '<span class="rozbalenie-prazdne">Z tejto mapy nepadlo nič oceniteľné.</span>';
+    return `<div class="rozbalenie-dropy">${zoznam}<button type="button" class="btn-vedlajsi btn-report" data-beh-report="${b.id}">Report</button></div>`;
+}
+
 function vykresliBehy(p) {
     const telo = document.querySelector("#tabulka-behov tbody");
     const behy = (p.behy || []).slice().reverse();
@@ -261,7 +334,7 @@ function vykresliBehy(p) {
             const bezCeny = (b.bez_ceny || []).length
                 ? ` <span class="odznak odznak-bez-ceny">bez ceny: ${b.bez_ceny.length}</span>`
                 : "";
-            return `<tr>
+            return `<tr class="riadok-behu" data-beh-id="${b.id}" title="Klikni pre „čo padlo" (Recent Runs)">
                 <td class="cislo">${b.id}</td>
                 <td>${nazovMapy(b.zona)}</td>
                 <td>${odznakyVstupov(b.podpis_vstupov)}</td>
@@ -269,10 +342,51 @@ function vykresliBehy(p) {
                 <td class="cislo">${fe(b.hodnota_dropov)}${bezCeny}</td>
                 <td class="cislo">${fe(b.hodnota_vstupov)}</td>
                 <td class="cislo ${triedaZnamienka(b.cisty_zisk)}">${fe(b.cisty_zisk)}</td>
+            </tr>
+            <tr class="riadok-rozbalenia skryte" data-beh-rozbalenie="${b.id}">
+                <td colspan="7">${rozbalenieBehu(b)}</td>
             </tr>`;
         })
         .join("");
 }
+
+function textReportuBehu(b) {
+    const dropy = (b.top_dropy || [])
+        .map((d) => `  - ${nazovPolozky(d.polozka)} ×${d.pocet}: ${d.hodnota != null ? fe(d.hodnota) : "bez ceny"}`)
+        .join("\n") || "  (nič oceniteľné)";
+    return [
+        `Report mapy #${b.id} — ${nazovMapy(b.zona)}`,
+        `Začiatok: ${b.zaciatok || "neznámy"}`,
+        `Trvanie: ${cas(b.trvanie_ms)}`,
+        `Vstupy: ${odznakyVstupov(b.podpis_vstupov).replace(/<[^>]+>/g, "")}`,
+        `Hodnota dropov: ${fe(b.hodnota_dropov)}`,
+        `Hodnota vstupov: ${fe(b.hodnota_vstupov)}`,
+        `Čistý zisk: ${fe(b.cisty_zisk)}`,
+        `Čo padlo:`,
+        dropy,
+    ].join("\n");
+}
+
+// Delegovaný listener (tabuľka sa prekresľuje á 3 s, takže sa pripája raz na
+// tbody, nie na každý riadok pri každom obnovení).
+document.querySelector("#tabulka-behov tbody").addEventListener("click", (e) => {
+    const btnReport = e.target.closest("[data-beh-report]");
+    if (btnReport) {
+        const id = btnReport.dataset.behReport;
+        const beh = (POSLEDNY_PREHLAD?.behy || []).find((b) => String(b.id) === id);
+        if (!beh) return;
+        const odkaz = document.createElement("a");
+        odkaz.href = URL.createObjectURL(new Blob([textReportuBehu(beh)], { type: "text/plain;charset=utf-8" }));
+        odkaz.download = `tli-report-mapa-${id}.txt`;
+        odkaz.click();
+        URL.revokeObjectURL(odkaz.href);
+        return;
+    }
+    const riadok = e.target.closest("tr.riadok-behu");
+    if (!riadok) return;
+    const rozbalenie = document.querySelector(`tr[data-beh-rozbalenie="${riadok.dataset.behId}"]`);
+    rozbalenie?.classList.toggle("skryte");
+});
 
 function vykresliZivo(p) {
     const pas = document.getElementById("zivy-pas");
@@ -452,8 +566,10 @@ async function obnovTracker() {
         if (!p) {
             return;
         }
+        POSLEDNY_PREHLAD = p;
         vykresliZivo(p);
         vykresliKarty(p);
+        vykresliGrafy(p);
         vykresliKombinacie(p);
         vykresliBehy(p);
         vykresliStav(p);
@@ -816,6 +932,65 @@ btnUploadTeraz.addEventListener("click", async () => {
 });
 
 
+// ─── Hlavičkové tlačidlá podľa TITracku (TLI 45) ───────────────────────────
+// Overlay/Economy/Cloud Sync/⚙/Instructions/Reset Stats — každé otvára
+// existujúcu funkciu appky (prepnutie záložky, skok na existujúci prepínač,
+// nový modál alebo nový príkaz), nič sa neduplikuje.
+function skocNaZalozkuA(panel, cielId) {
+    const tlacidloZalozky = document.querySelector(`.zalozka[data-panel="${panel}"]`);
+    if (tlacidloZalozky) prepniZalozku(tlacidloZalozky);
+    if (!cielId) return;
+    const ciel = document.getElementById(cielId);
+    if (!ciel) return;
+    ciel.scrollIntoView({ behavior: "smooth", block: "center" });
+    ciel.classList.remove("zvyraznene-skokom");
+    // Reflow pred opätovným pridaním triedy, nech sa animácia prehrá aj pri
+    // druhom kliku na to isté tlačidlo za sebou.
+    void ciel.offsetWidth;
+    ciel.classList.add("zvyraznene-skokom");
+}
+
+document.getElementById("btn-nav-overlay").addEventListener("click", () => skocNaZalozkuA("panel-solvery"));
+document.getElementById("btn-nav-economy").addEventListener("click", () => skocNaZalozkuA("panel-tracker", "skupina-economy"));
+document.getElementById("btn-nav-cloudsync").addEventListener("click", () => skocNaZalozkuA("panel-tracker", "skupina-cloudsync"));
+document.getElementById("btn-nav-nastavenia").addEventListener("click", () => skocNaZalozkuA("panel-nastavenia"));
+
+const modalInstructions = document.getElementById("modal-instructions");
+document.getElementById("btn-nav-instructions").addEventListener("click", () => modalInstructions.classList.remove("skryte"));
+document.getElementById("btn-instructions-zavri").addEventListener("click", () => modalInstructions.classList.add("skryte"));
+modalInstructions.addEventListener("click", (e) => {
+    if (e.target === modalInstructions) modalInstructions.classList.add("skryte");
+});
+
+// „Reset Stats" (TLI 45) — potvrdenie natívnym `confirm()`, appka na to
+// nepotrebuje žiadny plugin (rovnaký prístup ako Blob-download exporty
+// vyššie). Vymaže len živé behy tejto relácie — história v Analýze ostáva.
+document.getElementById("btn-nav-resetstats").addEventListener("click", async () => {
+    const ok = window.confirm(
+        "Vynulovať zobrazené štatistiky (NET WORTH, CUMULATIVE VALUE, Recent Runs)?\n" +
+        "Dlhodobá história v záložke Analýza sa tým NEMAŽE."
+    );
+    if (!ok) return;
+    try {
+        await invoke("tracker_reset_zive_staty");
+        await obnovTracker();
+    } catch (e) {
+        console.error(e);
+    }
+});
+
+// ─── Footer „Collector" (TLI 45) ────────────────────────────────────────────
+document.getElementById("btn-pita-aktualizacia").addEventListener("click", async () => {
+    const el = document.getElementById("pita-aktualizacia-stav");
+    el.textContent = "Kontrolujem…";
+    try {
+        const urlNovejVerzie = await invoke("skontroluj_aktualizaciu");
+        el.textContent = urlNovejVerzie === null ? "Máš najnovšiu verziu." : "Je vonku novšia verzia — otvor Nastavenia.";
+    } catch (e) {
+        el.textContent = "Chyba pri kontrole: " + e;
+    }
+});
+
 // ─── Štart ──────────────────────────────────────────────────────────────────
 document.getElementById("btn-otvor-nastavenia").addEventListener("click", async () => {
     try {
@@ -829,6 +1004,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     try {
         const v = await invoke("verzia");
         document.getElementById("verzia-text").textContent = `v${v}`;
+        document.getElementById("pita-verzia").textContent = `verzia ${v}`;
     } catch (e) {
         console.error(e);
     }

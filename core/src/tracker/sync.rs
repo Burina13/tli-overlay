@@ -162,6 +162,7 @@ mod testy {
             bez_ceny: vec![],
             najstarsia_cena: None,
             zastarane: vec![],
+            top_dropy: vec![],
         }
     }
 

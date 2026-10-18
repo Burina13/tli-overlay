@@ -2,6 +2,50 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.19.2 — 19.10.2026 (TLI 45 časť 1/3 — dashboard podľa TITracku)
+
+Úloha `2026-10-19-0024-mcp.md`, nedozorovaný nočný beh. Richard pred spaním (cez
+Cowork) chce záložku Tracker vizuálne aj funkčne bližšie k TITracku
+(astockman99/TITrack, MIT, appka je len pre partiu a nepublikuje sa — smieme
+preberať vzhľad/pomenovania s atribúciou). Zadanie malo 6 bodov; tento release
+pokrýva **časť vzhľadu a dashboardu bez čítania celého inventára** (to je
+samostatná, výrazne väčšia časť — pozri BACKLOG.md a STAV.md `ROZPRACOVANE`).
+
+- **7 kariet presne podľa TITracku**: NET WORTH, CUMULATIVE VALUE, FE/HOUR,
+  FE/MAP, RUNS, AVG RUN TIME, TOTAL TIME. Appka ešte NEČÍTA celý batoh, takže
+  NET WORTH je zatiaľ len čistý zisk spolu (rovnaké číslo ako CUMULATIVE
+  VALUE) — karta to hovorí nahlas odznakom „⏳ bez hodnoty batoha", nepredstiera
+  hodnotu, ktorú appka nepozná.
+- **Dva grafy** (Cumulative value, FE/hour) — čisté inline SVG z `p.behy`
+  (žiadna knižnica, žiadne nové pripojenie).
+- **Recent Runs**: riadok histórie máp sa dá rozbaliť kliknutím a ukáže „čo
+  reálne padlo" — server teraz počíta `top_dropy` pre KAŽDÝ uložený beh
+  (`VysledokBehu.top_dropy`, `core/src/tracker/agregacie.rs`), nie len pre
+  živú mapu ako doteraz (mini-panel, TLI 25). Pridané tlačidlo **Report**
+  (stiahne `.txt` so zhrnutím tej jednej mapy).
+- **Hlavičkové tlačidlá podľa TITracku**: Overlay / Economy / Cloud Sync / ⚙ /
+  Instructions / Reset Stats — každé otvára EXISTUJÚcu funkciu appky (skok na
+  záložku/prepínač, nový modál, alebo nový príkaz), nič sa neduplikuje.
+  **Instructions** je nový statický slovenský modál (Enable Log, Sort batohu
+  pred čítaním inventára, hotkeys, mini-panel, Guide).
+  **Reset Stats** je nový príkaz `tracker_reset_zive_staty` — vymaže LEN živé
+  behy tejto relácie v pamäti (čo kreslí dashboard), nič na disku: pozícia
+  čítania logu aj lokálna DB pre záložku Analýza ostávajú nedotknuté. Žiadne
+  mazanie súboru, presne podľa zadania („Nič nemaž").
+- **Footer „Collector"**: Beží / verzia / Check for Updates (reuse
+  `verzia`/`skontroluj_aktualizaciu`, rovnaké ako v Nastaveniach) a
+  „Auto-refresh: každé 3 s" (existujúci `setInterval`, teraz pomenovaný).
+- Testy: nový `core` test (`ocen_beh_vrati_aj_top_dropy_nie_len_sucty`, 394
+  core testov spolu), nový jsdom balík `ui/testy-dashboard-titrack.e2e.mjs`
+  (9 testov — karty, grafy, rozbalenie, Report, nav tlačidlá, Instructions,
+  Reset Stats, footer), `cargo check` pre `core` aj `src-tauri` zelené.
+
+**Čo v tomto release NIE JE** (pozri BACKLOG.md): CURRENT INVENTORY (čítanie
+celého batoha po Sort v hre), loot overlay ťahateľný bez Ctrl+F8, plný
+prehliadač cien (Economy zatiaľ len odkazuje na existujúci prepínač a počet
+cien), E2E/screenshot CI nad novým dashboardom ako samostatný krok a finálny
+release 0.20.0 — ten príde až keď budú hotové aj zvyšné časti zadania.
+
 ## 0.19.1 — 19.10.2026 (TLI 44 — Ctrl+Q rada sa pri objective/poradcovi nezobrazí)
 
 Úloha `2026-10-18-2331-mcp.md`. Richard 18.10. večer naživo zistil, že cez

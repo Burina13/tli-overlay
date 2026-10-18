@@ -52,10 +52,16 @@ const UKAZKA_TRACKER = {
     dropy_spolu: { 5080: 220, 140005: 300, 100300: 850 },
     bez_ceny_spolu: { 999999: 3 },
   },
+  // `zaciatok`/`top_dropy` pribudli v TLI 45 (dashboard grafy + „Recent Runs"
+  // rozbalenie „čo padlo") — bez nich by graf ukázal „zatiaľ málo dát" a
+  // rozbalenie by bolo prázdne na každom riadku, hoci appka to reálne posiela.
   behy: [
-    { id: 1, zona: OAZA, podpis_vstupov: "400021x1+500101x2", podpis_kombinacie: "", trvanie_ms: 300000, hodnota_dropov: 468.0, hodnota_vstupov: 3.1, cisty_zisk: 464.9, bez_ceny: [], najstarsia_cena: null },
-    { id: 2, zona: LAVA, podpis_vstupov: "400021x1+500102x1", podpis_kombinacie: "", trvanie_ms: 240000, hodnota_dropov: 306.0, hodnota_vstupov: 3.1, cisty_zisk: 302.9, bez_ceny: [[999999, 3]], najstarsia_cena: null, zastarane: [[5080, 12]] },
-    { id: 3, zona: OAZA, podpis_vstupov: "400021x1+500101x2", podpis_kombinacie: "", trvanie_ms: 180000, hodnota_dropov: 104.0, hodnota_vstupov: 3.1, cisty_zisk: 100.9, bez_ceny: [], najstarsia_cena: null },
+    { id: 1, zona: OAZA, podpis_vstupov: "400021x1+500101x2", podpis_kombinacie: "", zaciatok: "2026-10-19 08:00:00", trvanie_ms: 300000, hodnota_dropov: 468.0, hodnota_vstupov: 3.1, cisty_zisk: 464.9, bez_ceny: [], najstarsia_cena: null,
+      top_dropy: [{ polozka: 400021, pocet: 1, hodnota: 420.0 }, { polozka: 500101, pocet: 2, hodnota: 48.0 }] },
+    { id: 2, zona: LAVA, podpis_vstupov: "400021x1+500102x1", podpis_kombinacie: "", zaciatok: "2026-10-19 08:05:30", trvanie_ms: 240000, hodnota_dropov: 306.0, hodnota_vstupov: 3.1, cisty_zisk: 302.9, bez_ceny: [[999999, 3]], najstarsia_cena: null, zastarane: [[5080, 12]],
+      top_dropy: [{ polozka: 400021, pocet: 1, hodnota: 280.0, zdroj: "titrack.ninja", prispievatelia: 12, vek: "pred 4 min" }] },
+    { id: 3, zona: OAZA, podpis_vstupov: "400021x1+500101x2", podpis_kombinacie: "", zaciatok: "2026-10-19 08:10:00", trvanie_ms: 180000, hodnota_dropov: 104.0, hodnota_vstupov: 3.1, cisty_zisk: 100.9, bez_ceny: [], najstarsia_cena: null,
+      top_dropy: [] },
   ],
   vek_cien: { 400021: "pred 4 min", 500101: "pred 4 min", 5080: "pred 12 min" },
   pocet_cien: 5,

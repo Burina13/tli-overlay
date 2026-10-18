@@ -13,12 +13,54 @@
             <span id="verzia-text" class="verzia"></span>
         </div>
         <div class="hlavicka-vpravo">
+            <!-- TLI 45 — rozloženie tlačidiel podľa TITracku (Overlay/Economy/
+                 Cloud Sync/⚙/Instructions/Reset Stats). Každé otvára existujúcu
+                 funkciu appky, nič sa nepresúva ani neduplikuje v logike. -->
+            <button type="button" class="btn-vedlajsi" id="btn-nav-overlay"
+                    title="Prehľad hotkeys a Overlay modulov">Overlay</button>
+            <button type="button" class="btn-vedlajsi" id="btn-nav-economy"
+                    title="Odkiaľ appka berie ceny a koľko ich pozná">Economy</button>
+            <button type="button" class="btn-vedlajsi" id="btn-nav-cloudsync"
+                    title="Zdieľanie výsledkov a cien s partiou">Cloud Sync</button>
+            <button type="button" class="btn-vedlajsi" id="btn-nav-instructions"
+                    title="Ako appku zapnúť a čo robiť v hre">Instructions</button>
+            <button type="button" class="btn-vedlajsi" id="btn-nav-resetstats"
+                    title="Vynuluje zobrazené štatistiky tejto relácie (história v Analýze ostáva)">Reset Stats</button>
+            <button type="button" class="btn-ikona" id="btn-nav-nastavenia"
+                    title="Nastavenia" aria-label="Nastavenia">⚙</button>
             <button type="button" class="btn-vedlajsi" id="btn-odfot-tartarus"
                     title="Odfotí Tartarus o 2 sekundy — funguje aj bez klávesy">Odfotiť Tartarus teraz</button>
             <button type="button" class="btn-vedlajsi" id="btn-odfot-canvas"
                     title="Odfotí Frozen Canvas o 2 sekundy — funguje aj bez klávesy">Odfotiť Canvas teraz</button>
             <button type="button" class="prepinac-temy" id="prepinac-temy"
                     title="Prepnúť svetlú a tmavú tému" aria-label="Prepnúť svetlú a tmavú tému"></button>
+        </div>
+    </div>
+
+    <!-- Instructions (TLI 45) — statický slovenský návod, vrátane Enable Log
+         a Sort v hre (treba pre CURRENT INVENTORY, TLI 45 časť 3). -->
+    <div id="modal-instructions" class="modal skryte" role="dialog" aria-modal="true" aria-labelledby="modal-instructions-nadpis">
+        <div class="modal-obsah">
+            <div class="modal-hlavicka">
+                <h2 id="modal-instructions-nadpis">Instructions</h2>
+                <button type="button" class="btn-vedlajsi" id="btn-instructions-zavri">Zavrieť</button>
+            </div>
+            <ol class="instructions-zoznam">
+                <li><strong>Enable Log.</strong> V hre: Settings → Other Settings → „Enable Log". Hra si to
+                    NEPAMÄTÁ medzi spusteniami — appka na to sama upozorní (toast nad hrou aj v záložke
+                    Tracker), keď log do 60 s nerastie.</li>
+                <li><strong>Sort (batoh).</strong> Pred čítaním celého inventára zotrieď batoh v hre (Sort) —
+                    appka z toho vie spoľahlivo prečítať všetky sloty naraz. Bez Sortu vidí len zmeny
+                    (dropy/spotreba), nie celý stav naraz.</li>
+                <li><strong>Hotkeys.</strong> Tartarus a Frozen Canvas majú vlastné klávesy (pozri tlačidlo
+                    „Overlay" vyššie alebo záložku Solvery) — appka odfotí obrazovku a nad hrou ukáže radu.
+                    Appka NIKDY nečíta pamäť hry ani neklika za teba.</li>
+                <li><strong>Mini-panel a história.</strong> Záložka Tracker ukazuje aktuálny beh aj
+                    históriu máp; prepínače „Mini-panel nad hrou" a „Posielať výsledky partii" sú
+                    predvolene vypnuté a zapínajú sa tu.</li>
+                <li><strong>Guide.</strong> Záložka Guide má sprievodcu Erika 1 aj offline, keď si appka raz
+                    stiahla aktualizáciu.</li>
+            </ol>
         </div>
     </div>
 
@@ -61,15 +103,15 @@
                     <small>Zobrazuje zisk FE tejto mapy, čas a FE/h v malom priehľadnom okne navrchu.</small>
                 </label>
 
-                <!-- Prepinac pre synchronizaciu ucasti -->
-                <label class="prepinac">
+                <!-- Prepinac pre synchronizaciu ucasti — ciel tlacidla "Cloud Sync" v hlavicke (TLI 45) -->
+                <label class="prepinac" id="skupina-cloudsync">
                     <input type="checkbox" id="chk-sync">
                     Posielať výsledky partii
                     <small>Výsledky máp sa objavia v rebríčku na tli.tvojtatko.sk/tracker. Bez zapnutia sa neposiela nič.</small>
                 </label>
 
-                <!-- Prepinac zdielania cien s partiou (TLI 20) -->
-                <label class="prepinac">
+                <!-- Prepinac zdielania cien s partiou (TLI 20) — ciel tlacidla "Economy" v hlavicke (TLI 45) -->
+                <label class="prepinac" id="skupina-economy">
                     <input type="checkbox" id="chk-ceny">
                     Zdieľať ceny s partiou
                     <small>Ceny, ktoré si vyhľadáš na Exchange, dostane celá partia — a ty ich ceny tiež. Nič iné sa neposiela. Server ich dopĺňa aj verejnými komunitnými cenami z <strong>titrack.ninja</strong> (len sa odtiaľ číta, nič sa tam neposiela).</small>
@@ -104,6 +146,20 @@
             </div>
 
             <div class="karty-statistik" id="karty-statistik"></div>
+
+            <!-- Grafy (TLI 45, dashboard podľa TITracku) — kreslené čistým
+                 inline SVG z už existujúcich dát (`p.behy`), žiadna nová
+                 knižnica, žiadne volanie mimo appku. -->
+            <div class="riadok-grafov">
+                <div class="karta-grafu">
+                    <div class="karta-popis">Cumulative value</div>
+                    <div id="graf-kumulativ"></div>
+                </div>
+                <div class="karta-grafu">
+                    <div class="karta-popis">FE/hour</div>
+                    <div id="graf-fe-za-hodinu"></div>
+                </div>
+            </div>
 
             <div class="riadok-akcii">
                 <h3 class="nadpis-tabulky">Ktorá kombinácia sa oplatí</h3>
@@ -308,6 +364,18 @@
             <button type="button" id="btn-otvor-nastavenia" class="btn-hlavny">Otvoriť nastavenia</button>
         </section>
     </main>
+
+    <!-- Footer „Collector" (TLI 45, podľa TITracku) — appka nič neposiela,
+         len ukazuje, že beží, akú má verziu a dá sa z neho rovno
+         skontrolovať aktualizácia (rovnaké volania ako v Nastaveniach). -->
+    <footer class="pita-collector">
+        <span class="pita-bod pita-bod-bezi"></span>
+        <span>Collector: Beží</span>
+        <span id="pita-verzia"></span>
+        <span id="pita-auto-refresh">Auto-refresh: každé 3 s</span>
+        <button type="button" class="btn-vedlajsi" id="btn-pita-aktualizacia">Check for Updates</button>
+        <span id="pita-aktualizacia-stav"></span>
+    </footer>
 
     <script src="hlavne.js"></script>
 </body>
