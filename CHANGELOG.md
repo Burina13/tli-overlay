@@ -2,6 +2,45 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.18.16 — 18.10.2026 (TLI 42 — 0.18.14/0.18.15 sa nespustia, oprava)
+
+Úloha `2026-10-18-2042-mcp.md`. Richard nahlásil, že appka 0.18.14 sa u neho
+VÔBEC NESPUSTÍ (opakovateľné 6×, aj po zabití osirelých `msedgewebview2`
+procesov): panika hneď pri štarte, `Failed to setup app: ... WebView2 error:
+WindowsError(HRESULT(0x8007139F) "The group or resource is not in the
+correct state to perform the requested operation.")`. **Rollback bol prvý
+krok** — `latest-tli.json` aj `/pripojenie` (`stacks/games/tli-web`, ops repo)
+sa hneď vrátili na poslednú fungujúcu `0.18.13`, aby auto-updater medzitým
+nerozdával rozbitú appku.
+
+**Príčina:** TLI 40 (0.18.14) pridal `additionalBrowserArgs` len oknu
+`overlay` v `tauri.conf.json` — zvyšné štyri okná (`nastavenia`, `mini`,
+`hlavne`, `pripomienka`) ho nemali vôbec. Všetkých päť okien je vytváraných
+hneď pri štarte appky (len `visible: false`) a zdieľa jeden WebView2
+user-data-folder — a WebView2 odmietne vytvoriť druhé okno nad tým istým
+user-data-folderom, keď dostane INÉ argumenty prehliadača než to prvé, presne
+s chybou `0x8007139F`. 0.18.15 (TLI 41) tauri.conf.json nemenil, takže zdedil
+rovnakú chybu a bol rozbitý rovnako.
+
+**Oprava:** rovnaké `additionalBrowserArgs` (disable occlusion
+calculation/backgrounding) teraz majú VŠETKÝCH päť okien, nie len `overlay` —
+žiadna appka v procese tak nežiada o iný WebView2 environment. Pôvodná oprava
+z TLI 40 (`SetForegroundWindow` pre F8 render, diagnostika zdroja popudu) sa
+nemení.
+
+**Nová poistka v CI:** `verify-install.yml` doteraz overoval len inštaláciu/
+odinštaláciu MSI, appku nikdy nespustil — presne preto tento pád neodhalil.
+Pribudol krok, ktorý appku po inštalácii na Windows runneri spustí, počká
+10 s, overí, že proces stále beží (appka s touto chybou panikári do pár
+stoviek ms) a že jej denník (`%APPDATA%\sk.tvojtatko.tli-overlay\logs\
+tli-overlay.log`) obsahuje aspoň jednu úspešnú registráciu klávesovej
+skratky (`"registrácia OK"`) — dôkaz, že setup appky dobehol. Release, ktorý
+sa nespustí, teraz CI nepustí ďalej.
+
+Testy: `cargo check` aj `cargo check --tests` v `core/` a `src-tauri/`
+zelené, `ui` jsdom 50/50 (UI sa nemenilo). `core` sa nemenil, verzia ostáva
+`0.13.7`.
+
 ## 0.18.15 — 18.10.2026 (TLI 41, časť 1/2 — opakované Ctrl+Q nehlási chybu)
 
 Úloha `2026-10-18-1816-mcp.md`. Audit 162 reálnych F8 snímok Richarda

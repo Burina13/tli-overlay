@@ -78,6 +78,46 @@ jobs:
           Write-Host "UpgradeCode v MSI: $najdeny"
           if ($najdeny.ToUpper() -ne $ocakavany) { throw "zlý UpgradeCode: $najdeny (čakal sa $ocakavany)" }
 
+      - name: Appka sa po inštalácii naozaj spustí (TLI 42, WebView2 0x8007139F)
+        shell: pwsh
+        run: |
+          # 0.18.14/0.18.15 mali v `tauri.conf.json` `additionalBrowserArgs` len
+          # na okne `overlay`, ostatné 4 okná ho nemali — WebView2 odmietol
+          # vytvoriť viac než jedno okno nad tým istým user-data-folderom s
+          # rôznymi argumentmi a appka hneď pri štarte panikárila
+          # (`Failed to setup app: ... WebView2 error: ... 0x8007139F`), bez
+          # toho, aby to dovtedajší test (inštalácia + odinštalácia) vôbec
+          # zachytil. Táto appka beží ako GUI bez konzoly
+          # (`windows_subsystem = "windows"`), takže panika sa neukáže v
+          # stdout/stderr procesu — jediný spoľahlivý dôkaz „appka naozaj
+          # nabehla" je, že proces po chvíli stále beží A stihla zapísať do
+          # svojho denníka aspoň jednu úspešnú registráciu klávesovej skratky.
+          $exe = Get-ChildItem "C:\Program Files\Tvoj Tatko TLI Overlay" -Filter *.exe | Select-Object -First 1
+          $logPath = Join-Path $env:APPDATA "sk.tvojtatko.tli-overlay\logs\tli-overlay.log"
+          if (Test-Path $logPath) { Remove-Item $logPath -Force }
+
+          $proc = Start-Process -FilePath $exe.FullName -PassThru
+          Start-Sleep -Seconds 10
+
+          if ($proc.HasExited) {
+            throw "appka po 10 s nebeží (exit code $($proc.ExitCode)) — release sa nespustí u hráča, nesmie prejsť CI"
+          }
+
+          if (-not (Test-Path $logPath)) {
+            Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+            throw "appka beží, ale denník $logPath vôbec nevznikol — setup appky sa nedostal ani k prvému zápisu"
+          }
+
+          $log = Get-Content $logPath -Raw
+          Write-Host $log
+          if ($log -notmatch "registrácia OK") {
+            Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+            throw "denník neobsahuje žiadnu úspešnú registráciu klávesovej skratky (`"registrácia OK`") — appka nedobehla setup"
+          }
+
+          Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+          Write-Host "appka po 10 s beží a klávesové skratky sú zaregistrované"
+
       - name: V binárke nie je cudzí aktualizačný endpoint
         shell: pwsh
         run: |
