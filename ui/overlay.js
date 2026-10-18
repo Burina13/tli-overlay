@@ -22,7 +22,23 @@ const pSkontroluj = document.getElementById("panel-skontroluj");
 const pAlternativy = document.getElementById("panel-alternativy");
 
 // Resetovanie zobrazenia všetkých okien
+// TLI 36 bod 4 — cieľová latencia je do 8 s, ale pri neznámej obrazovke sa
+// model volá DVA razy (rozpoznanie + poradca) a to sa občas natiahne. Aby
+// hráč nemal pocit, že appka zamrzla, text indikátora sa po `PRAH_PRACUJEM_MS`
+// zmení z „Odoslané, čakám na radu…" na „Pracujem…". Je to JEDINE text —
+// žiadne ďalšie volanie, žiadny timeout, odpoveď sa čaká ďalej.
+const PRAH_PRACUJEM_MS = 8000;
+let casovacPracujem = null;
+
+function zrusCasovacPracujem() {
+    if (casovacPracujem !== null) {
+        clearTimeout(casovacPracujem);
+        casovacPracujem = null;
+    }
+}
+
 function skryVsetko() {
+    zrusCasovacPracujem();
     elIndikator.classList.add("skryte");
     elChyba.classList.add("skryte");
     elPanel.classList.add("skryte");
@@ -71,6 +87,11 @@ listen("stav", (event) => {
     else if (payload.faza === "odosielam") {
         elIndikatorText.textContent = "Odoslané, čakám na radu…";
         elIndikator.classList.remove("skryte");
+        zrusCasovacPracujem();
+        casovacPracujem = setTimeout(() => {
+            elIndikatorText.textContent = "Pracujem… (neznámu obrazovku rozoberám podrobnejšie)";
+            casovacPracujem = null;
+        }, PRAH_PRACUJEM_MS);
     }
     else if (payload.faza === "chyba") {
         // VŽDY používame textContent pre ochranu pred XSS. 
@@ -82,6 +103,12 @@ listen("stav", (event) => {
         vykresliHotovo(payload);
     }
     else if (payload.faza === "hotovo_nastroj") {
+        vykresliHotovoNastroj(payload);
+    }
+    else if (payload.faza === "hotovo_poradca") {
+        // TLI 36 — univerzálny poradca. Vedome TÁ ISTÁ funkcia ako pri
+        // nástroji a dare: zadanie žiada „rovnaké zobrazenie ako pri známych
+        // typoch", nie druhý vzhľad pre neznáme obrazovky.
         vykresliHotovoNastroj(payload);
     }
     else if (payload.faza === "hotovo_poklad") {
@@ -516,18 +543,26 @@ function vykresliHotovoNastroj(data) {
     // TLI 35: rovnaké vykreslenie pre výber nástroja aj daru — rozlišuje sa
     // len slovíčkom v texte, polia kartičiek majú rovnaký tvar.
     const jePoklad = analyza.obrazovka === "vyber_pokladu";
+    // TLI 36: poradca posiela možnosti v `analyza.moznosti` a má vlastný
+    // nadpis — názov obrazovky, ktorý rozpoznal, nech hráč vidí, že appka
+    // vie, kde je, aj keď je to obrazovka bez špecializovaného modulu.
+    const jePoradca = analyza.obrazovka === "poradca";
+    const nazovObrazovky = (analyza.nazov_obrazovky || "").trim() || "Neznáma obrazovka";
     if (karticky.length === 0) {
-        pNadpis.textContent = jePoklad
-            ? "Výber pokladu — kartičky sa nepodarilo umiestniť"
-            : "Výber nástroja — kartičky sa nepodarilo umiestniť";
+        pNadpis.textContent = jePoradca
+            ? `${nazovObrazovky} — možnosti sa nepodarilo umiestniť`
+            : (jePoklad
+                ? "Výber pokladu — kartičky sa nepodarilo umiestniť"
+                : "Výber nástroja — kartičky sa nepodarilo umiestniť");
         pDovod.textContent = "Server kartičky prečítal, ale nevrátil ich polohu na obrazovke, "
             + "takže ich neviem orámovať. Poradie je v paneli nižšie.";
         pIstota.textContent = "";
         pIkony.classList.add("skryte");
         pSkontroluj.classList.add("skryte");
-        vypisKartickyDoPanela(analyza.nastroje || analyza.poklady || []);
+        vypisKartickyDoPanela(analyza.moznosti || analyza.nastroje || analyza.poklady || []);
         elPanel.classList.remove("skryte");
-        logPanelVykreslene(jePoklad ? "poklad-bez-polohy" : "nastroj-bez-polohy");
+        logPanelVykreslene(jePoradca ? "poradca-bez-polohy"
+            : (jePoklad ? "poklad-bez-polohy" : "nastroj-bez-polohy"));
         return;
     }
 
@@ -573,17 +608,31 @@ function vykresliHotovoNastroj(data) {
 
     // --- 2. Panel: poradie všetkých kartičiek pod sebou ---
     const najlepsia = karticky.find((k) => k.odporucany);
-    pNadpis.textContent = najlepsia
-        ? `Ber: ${najlepsia.nazov}`
-        : "Ani jednu z týchto kartičiek nepoznám";
+    if (jePoradca) {
+        pNadpis.textContent = najlepsia
+            ? `${nazovObrazovky} — klikni: ${najlepsia.nazov}`
+            : nazovObrazovky;
+    } else {
+        pNadpis.textContent = najlepsia
+            ? `Ber: ${najlepsia.nazov}`
+            : "Ani jednu z týchto kartičiek nepoznám";
+    }
 
     const istotaPercenta = Math.round((analyza.istota || 0) * 100);
-    pIstota.textContent = `Istota odporúčania: ${istotaPercenta} %`;
+    // Poradca neráta Monte Carlo nad známym stavom — je to odhad nad
+    // pravidlami hry, a tak sa aj hlási. Percento by predstieralo presnosť,
+    // ktorú tá rada nemá.
+    pIstota.textContent = jePoradca
+        ? `Istota rady: ${analyza.istota_slovom || "nízka"} (${istotaPercenta} %) — poradca, nie presný výpočet`
+        : `Istota odporúčania: ${istotaPercenta} %`;
     pIstota.classList.toggle("nizka", istotaPercenta < 50);
 
     pDovod.textContent = najlepsia
-        ? najlepsia.dovod
-        : (jePoklad
+        ? ((jePoradca && analyza.odporucanie && analyza.odporucanie.dovod)
+            || najlepsia.dovod)
+        : (jePoradca
+            ? "Na tejto obrazovke som nenašiel, na čo sa dá kliknúť."
+            : jePoklad
             ? "Tieto dary nemám v katalógu — rozhodni sa sám a pošli screenshot do #torchlight."
             : "Tieto nástroje nemám v katalógu — rozhodni sa sám a pošli screenshot do #torchlight.");
     pIkony.classList.add("skryte");
@@ -597,7 +646,7 @@ function vykresliHotovoNastroj(data) {
         pSkontroluj.classList.add("skryte");
     }
     elPanel.classList.remove("skryte");
-    logPanelVykreslene(jePoklad ? "poklad" : "nastroj");
+    logPanelVykreslene(jePoradca ? "poradca" : (jePoklad ? "poklad" : "nastroj"));
 }
 
 // Zoznam pod hlavným textom panela — používa sa aj vtedy, keď sa rámiky

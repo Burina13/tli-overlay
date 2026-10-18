@@ -141,6 +141,21 @@ pub struct Analyza {
     /// posledná doska toho istého hráča, server poradie prepočíta Monte Carlom
     /// priamo nad ňou namiesto katalógového priemeru.
     pub poklady: Vec<KartickaNastroja>,
+    /// TLI 36 — univerzálny poradca (`obrazovka == "poradca"`). Možnosti,
+    /// ktoré hráč na obrazovke reálne má: ten istý tvar položky ako
+    /// `nastroje`/`poklady` (appka ich kreslí rovnako — zadanie: „rovnaké
+    /// zobrazenie ako pri známych typoch"), len ich nevyrobil špecializovaný
+    /// modul, ale poradca nad pravidlami hry. `tier` tu NIE JE tier karty:
+    /// server ho odvodil z poradia (S = ber túto, A = druhá v poradí), aby
+    /// appka nepotrebovala druhú farebnú logiku.
+    pub moznosti: Vec<KartickaNastroja>,
+    /// Strojový slug typu obrazovky (`make_your_decision`, `tartarus_lobby`,
+    /// …). Appka ho len loguje — zbiera sa podľa neho na serveri.
+    pub typ_obrazovky: String,
+    /// Názov obrazovky po slovensky do nadpisu panela.
+    pub nazov_obrazovky: String,
+    /// Istota poradcu slovom: "nizka" | "stredna" | "vysoka".
+    pub istota_slovom: String,
     /// Id riadku učenia na serveri — appka ho nikam neposiela sama, je to
     /// len stopa do logu, aby sa dala snímka spätne nájsť.
     pub vyber_id: Option<i64>,
@@ -163,6 +178,10 @@ impl Default for Analyza {
             obrazovka: "doska".to_string(),
             nastroje: vec![],
             poklady: vec![],
+            moznosti: vec![],
+            typ_obrazovky: String::new(),
+            nazov_obrazovky: String::new(),
+            istota_slovom: String::new(),
             vyber_id: None,
             popis: "".to_string(),
         }
@@ -185,6 +204,17 @@ pub fn pouzitelne_karticky(a: &Analyza) -> Vec<&KartickaNastroja> {
 pub fn pouzitelne_karticky_pokladu(a: &Analyza) -> Vec<&KartickaNastroja> {
     let mut v: Vec<&KartickaNastroja> = a
         .poklady
+        .iter()
+        .filter(|k| k.box_.map(|b| b.w > 0.0 && b.h > 0.0).unwrap_or(false))
+        .collect();
+    v.sort_by_key(|k| k.poradie);
+    v
+}
+
+/// To isté ako `pouzitelne_karticky`, len nad `moznosti` (TLI 36).
+pub fn pouzitelne_moznosti(a: &Analyza) -> Vec<&KartickaNastroja> {
+    let mut v: Vec<&KartickaNastroja> = a
+        .moznosti
         .iter()
         .filter(|k| k.box_.map(|b| b.w > 0.0 && b.h > 0.0).unwrap_or(false))
         .collect();
@@ -578,6 +608,53 @@ mod testy {
         let kreslitelne = pouzitelne_karticky_pokladu(&a);
         assert_eq!(kreslitelne.len(), 2);
         assert_eq!(kreslitelne[0].id.as_deref(), Some("horn"));
+    }
+
+    #[test]
+    fn poradca_sa_parsuje_a_kreslitelne_su_zoradene_podla_poradia() {
+        // TLI 36 — odpoveď servera pre obrazovku bez špecializovaného modulu.
+        // Tretia možnosť nemá box (server ju označil ako neumiestnenú), takže
+        // sa nad hru nekreslí — ale z odpovede nezmizne, panel ju vypíše.
+        let json = r#"{
+            "ok": true,
+            "obrazovka": "poradca",
+            "typ_obrazovky": "make_your_decision",
+            "nazov_obrazovky": "Rozhodnutie o cieli väzňa",
+            "istota": 0.8,
+            "istota_slovom": "vysoka",
+            "odporucanie": { "akcia": "", "nazov": "Consume", "dovod": "Zdvihne raritu." },
+            "moznosti": [
+                { "index": 1, "poradie": 2, "nazov": "Replace", "tier": "A",
+                  "box": { "x": 0.41, "y": 0.69, "w": 0.17, "h": 0.16 } },
+                { "index": 0, "poradie": 1, "nazov": "Consume", "tier": "S",
+                  "odporucany": true,
+                  "box": { "x": 0.23, "y": 0.69, "w": 0.17, "h": 0.16 } },
+                { "index": 2, "poradie": 3, "nazov": "End", "tier": "C" }
+            ]
+        }"#;
+        let a: Analyza = serde_json::from_str(json).unwrap();
+        assert_eq!(a.obrazovka, "poradca");
+        assert_eq!(a.typ_obrazovky, "make_your_decision");
+        assert_eq!(a.nazov_obrazovky, "Rozhodnutie o cieli väzňa");
+        assert_eq!(a.istota_slovom, "vysoka");
+        assert_eq!(a.moznosti.len(), 3);
+
+        let kreslitelne = pouzitelne_moznosti(&a);
+        assert_eq!(kreslitelne.len(), 2, "možnosť bez boxu sa nad hru nekreslí");
+        assert_eq!(kreslitelne[0].nazov, "Consume");
+        assert!(kreslitelne[0].odporucany);
+        assert_eq!(kreslitelne[1].nazov, "Replace");
+    }
+
+    #[test]
+    fn stara_odpoved_bez_poli_poradcu_je_dalej_citatelna() {
+        // Appka musí fungovať aj proti serveru pred TLI 36 — chýbajúce polia
+        // dá `#[serde(default)]` ako prázdne, nie ako chybu parsovania.
+        let a: Analyza = serde_json::from_str(r#"{"ok": true, "obrazovka": "doska"}"#).unwrap();
+        assert!(a.moznosti.is_empty());
+        assert_eq!(a.typ_obrazovky, "");
+        assert_eq!(a.istota_slovom, "");
+        assert!(pouzitelne_moznosti(&a).is_empty());
     }
 
     #[test]

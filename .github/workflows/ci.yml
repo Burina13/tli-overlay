@@ -246,6 +246,32 @@ jobs:
           path: overlay-nahlad-nastroj.png
           if-no-files-found: warn
 
+      - name: Náhľad univerzálneho poradcu (TLI 36) ako obrázok (artefakt behu)
+        shell: pwsh
+        run: |
+          # Rovnaký mechanizmus ako pri výbere nástroja, len `nahlad-poradca.html`/.js
+          # podsunie mock odpoveď `faza: "hotovo_poradca"` — tri tlačidlá panela
+          # „Make Your Decision" z Richardovej snímky 18.10.2026 13:16:48,
+          # presne s tými boxmi, ktoré poradca naživo vrátil.
+          $edge = @(
+            "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+            "C:\Program Files\Microsoft\Edge\Application\msedge.exe"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $edge) { Write-Warning "Edge sa nenašiel, náhľad preskakujem."; exit 0 }
+          $cesta = (Resolve-Path "ui/nahlad-poradca.html").Path
+          $p = Start-Process -FilePath $edge -ArgumentList @(
+            "--headless", "--disable-gpu", "--screenshot=$PWD\overlay-nahlad-poradca.png",
+            "--window-size=1600,900", "--virtual-time-budget=4000",
+            "file:///$($cesta -replace '\\','/')"
+          ) -NoNewWindow -Wait -PassThru
+          Write-Host "Edge exit code: $($p.ExitCode)"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: overlay-nahlad-poradca
+          path: overlay-nahlad-poradca.png
+          if-no-files-found: warn
+
       - name: Náhľad mini-overlayu — snímka
         shell: pwsh
         run: |

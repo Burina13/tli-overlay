@@ -24,7 +24,7 @@ use tli_overlay_core::nastavenia::Nastavenia;
 use tli_overlay_core::nastavenia::PolohaOkna;
 use tli_overlay_core::rozlozenie::{
     Obdlznik01, MODULOVE_PANELY, PANEL_CANVAS, PANEL_HLAVNY, PANEL_MINI, PANEL_NASTROJ,
-    PANEL_POKLAD, PANEL_PRIPOMIENKA, PANEL_TARTARUS,
+    PANEL_POKLAD, PANEL_PORADCA, PANEL_PRIPOMIENKA, PANEL_TARTARUS,
 };
 use tli_overlay_core::suradnice::OknoFyz;
 use tli_overlay_core::{api, suradnice, zmensenie};
@@ -785,6 +785,67 @@ V hre prepni Nastavenia → Zobrazenie → Režim okna na „Okno bez okrajov“
                             "stav",
                             json!({
                                 "faza": "hotovo_poklad",
+                                "analyza": v.analyza,
+                                "karticky": karticky,
+                                "mierka": mierka,
+                                "sirka": sirka_log,
+                                "vyska": vyska_log,
+                                "trvanie_ms": v.trvanie_ms,
+                            }),
+                        );
+                    }
+                    // TLI 36: univerzálny poradca. Server obrazovku nezaradil pod
+                    // žiadny špecializovaný modul (alebo pod ním nemal čo poradiť)
+                    // a poslal namiesto toho možnosti s bounding boxmi. Appka ich
+                    // kreslí PRESNE tak ako kartičky nástroja a daru — tá istá
+                    // funkcia v `overlay.js`, len iné pole v odpovedi. Richard
+                    // chcel „nech mi vždy pomôže pri hocijakom výbere", nie druhú
+                    // sadu grafiky.
+                    Ok(v) if v.analyza.obrazovka == "poradca" => {
+                        denik::zapis(
+                            "poradca",
+                            &format!(
+                                "neznáma obrazovka ({}): {} možností, odporúčam {}",
+                                if v.analyza.typ_obrazovky.is_empty() {
+                                    "bez typu"
+                                } else {
+                                    &v.analyza.typ_obrazovky
+                                },
+                                v.analyza.moznosti.len(),
+                                v.analyza
+                                    .odporucanie
+                                    .as_ref()
+                                    .map(|o| o.nazov.clone())
+                                    .unwrap_or_else(|| "nič".to_string())
+                            ),
+                        );
+                        let karticky: Vec<_> = api::pouzitelne_moznosti(&v.analyza)
+                            .into_iter()
+                            .map(|k| {
+                                let b = k.box_.expect("filtrované pouzitelne_moznosti");
+                                let css = suradnice::box01_na_css(b.x, b.y, b.w, b.h, &obdlznik, mierka);
+                                json!({
+                                    "index": k.index,
+                                    "poradie": k.poradie,
+                                    "nazov": k.nazov.clone(),
+                                    "anglicky": k.anglicky.clone(),
+                                    "tier": k.tier.clone(),
+                                    "dovod": k.dovod.clone(),
+                                    "skore": k.skore,
+                                    "odporucany": k.odporucany,
+                                    "neznamy": k.neznamy,
+                                    "malo_dat": k.malo_dat,
+                                    "sporne": k.sporne,
+                                    "x": css.x, "y": css.y, "w": css.w, "h": css.h,
+                                })
+                            })
+                            .collect();
+                        posli_polohu_panela(&app, &obdlznik, mierka, PANEL_PORADCA);
+                        let (sirka_log, vyska_log) = suradnice::logicka_velkost(&obdlznik, mierka);
+                        let _ = app.emit(
+                            "stav",
+                            json!({
+                                "faza": "hotovo_poradca",
                                 "analyza": v.analyza,
                                 "karticky": karticky,
                                 "mierka": mierka,

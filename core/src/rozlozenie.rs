@@ -38,13 +38,18 @@ pub const PANEL_ARTISTRY: &str = "panel:artistry";
 /// výber nástroja (TLI 25 bod 5): iná obrazovka, iný typický počet kartičiek
 /// (4, nie 3), hráč ju chce vedieť posunúť nezávisle od ostatných.
 pub const PANEL_POKLAD: &str = "panel:poklad";
+/// TLI 36 — univerzálny poradca výberu. Vlastný kľúč z toho istého dôvodu
+/// ako `PANEL_POKLAD`: je to iná obrazovka (modál, lišta tlačidiel, zoznam
+/// cieľov) a hráč si ju chce posunúť nezávisle od dosky a kartičiek.
+pub const PANEL_PORADCA: &str = "panel:poradca";
 
 /// Moduly v poradí, v akom ich ponúka prepínač v režime úpravy
 /// (`kľúč`, `čo to je pre hráča`).
-pub const MODULOVE_PANELY: [(&str, &str); 5] = [
+pub const MODULOVE_PANELY: [(&str, &str); 6] = [
     (PANEL_TARTARUS, "F8 — doska"),
     (PANEL_NASTROJ, "F8 — výber nástroja"),
     (PANEL_POKLAD, "F8 — výber pokladu"),
+    (PANEL_PORADCA, "F8 — poradca (neznáma obrazovka)"),
     (PANEL_CANVAS, "F9 — Frozen Canvas"),
     (PANEL_ARTISTRY, "Artistry"),
 ];

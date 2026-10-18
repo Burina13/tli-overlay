@@ -2,6 +2,43 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.18.11 — 18.10.2026 (TLI 36 — F8 poradí pri KAŽDOM výbere v Tartaruse)
+
+Úloha `2026-10-18-1323-mcp.md`. Richard: „chcem mačknúť F8 a nech mi vždy
+pomôže pri hocijakom výbere v tej minihre". Doteraz appka na obrazovke bez
+špecializovaného modulu ukázala len toast „Túto obrazovku zatiaľ neviem
+prečítať" a nenakreslila nič.
+
+Odteraz server (`tli-web`, iný repo) v takom prípade pustí **univerzálneho
+poradcu** a pošle `obrazovka: "poradca"` s poľom `moznosti` — zoznam toho,
+na čo sa dá na obrazovke kliknúť, s bounding boxmi, poradím a slovenským
+dôvodom. Appka to kreslí **tou istou cestou ako výber nástroja a daru**:
+zlatý rámik na odporúčanú možnosť, slabší na druhú, panel s dôvodom. Nová
+fáza `hotovo_poradca` len volá rovnaký vykresľovač — tvar položky je zhodný
+s `nastroje`/`poklady`.
+
+Čo je na poradcovi inak než na ostatných moduloch: `tier` nie je tier karty,
+ale poradie (S = ber túto, A = druhá), a istota sa hlási **slovom**
+(„nízka/stredná/vysoká"), lebo je to odhad nad pravidlami hry, nie Monte
+Carlo nad známym stavom — percento by predstieralo presnosť, ktorú tá rada
+nemá. Poradca má **vlastnú uloženú polohu panela** (`panel:poradca`) a
+pribudol do prepínača modulov v režime „Upraviť rozloženie".
+
+Druhá vec, ktorú to opravilo: na paneli „Make Your Decision"
+(Consume/Replace/End) solver odporúčal ŤAH, ktorý sa k žiadnemu z tých
+tlačidiel nepriradil (3 z 5 reálnych snímok z 18.10.2026), a appka zvýraznila
+celu, na ktorú sa v tom modále kliknúť nedalo. Teraz to preberá poradca
+a vráti boxy tlačidiel.
+
+Keďže poradca je DRUHÉ volanie modelu nad tou istou snímkou, odpoveď občas
+presiahne cieľových 8 s (nameraných 9,4 s nad doskou). Indikátor preto po
+8 sekundách zmení text z „Odoslané, čakám na radu…" na „Pracujem…" —
+nič iné sa nemení, odpoveď sa čaká ďalej.
+
+`Analyza` dostala polia `moznosti`, `typ_obrazovky`, `nazov_obrazovky`
+a `istota_slovom`, všetky `#[serde(default)]` — proti staršiemu serveru bez
+nich sa appka správa presne ako doteraz.
+
 ## 0.18.10 — 18.10.2026 (TLI 35 — nová obrazovka Tartarus „Warden's Treasure")
 
 Úloha `2026-10-18-1321-mcp.md`. F8 teraz rozpoznáva aj tretiu obrazovku
