@@ -12,6 +12,15 @@ const UKAZKA = {
     { index: 7, x: 912, y: 120, w: 150, h: 150, stredX: 987, stredY: 195, neiste: true },
     { index: 5, x: 592, y: 120, w: 150, h: 150, stredX: 667, stredY: 195, neiste: false },
   ],
+  // TLI 32: tlačidlo spodnej lišty ("Make Your Decision" → "Consume", ktoré
+  // zodpovedá odporúčanej akcii "devour" nižšie) namiesto zvýraznenia cely —
+  // súradnice prepočítané z reálnej analýzy (`2026-10-18-105532-76921df2.json`,
+  // panel "Replace"/"End" má rovnaké rozloženie, len iný text na tlačidlách).
+  // `tlacidlo_alt` je `null` — alternatíva nižšie ("swap") na TOMTO paneli
+  // (Consume/End) nemá zodpovedajúce tlačidlo, appka preto druhé tlačidlo
+  // nezvýrazňuje (presne správanie `_najdi_tlacidlo` v `app.py`).
+  tlacidlo: { x: 517, y: 624, w: 275, h: 143, text: "Consume" },
+  tlacidlo_alt: null,
   analyza: {
     ok: true,
     odporucanie: {
