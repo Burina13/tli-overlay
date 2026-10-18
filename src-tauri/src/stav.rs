@@ -8,6 +8,13 @@ use tli_overlay_core::tracker::chvost::StavChvosta;
 pub struct Stav {
     pub nastavenia: Mutex<Nastavenia>,
     pub beh: Mutex<bool>,
+    /// TLI 41 — požiadavka, ktorá prišla, kým `beh` bolo `true`. Namiesto
+    /// tichého zahodenia (Richard 18.10.2026: opakované Ctrl+Q počas analýzy
+    /// hlásilo chybu) appka drží len POSLEDNÚ takú požiadavku a spustí ju
+    /// hneď po dobehnutí tej prebiehajúcej — „vždy posledná snímka vyhráva",
+    /// nie prvé stlačenie. Jedno miesto (nie front), lebo viac rozostavaných
+    /// analýz naraz nad tým istým oknom nemá zmysel.
+    pub cakajuci_dalsi: Mutex<Option<(crate::Modul, &'static str)>>,
     pub zobrazene_od: Mutex<Option<Instant>>,
     /// Zber dát (TLI 4c) — koľko snímok sa za tento beh appky úspešne poslalo
     /// a uložilo na server v režime "Zber dát". Len v pamäti (reštart appky

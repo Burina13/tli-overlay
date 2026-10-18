@@ -2,6 +2,30 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.18.15 — 18.10.2026 (TLI 41, časť 1/2 — opakované Ctrl+Q nehlási chybu)
+
+Úloha `2026-10-18-1816-mcp.md`. Audit 162 reálnych F8 snímok Richarda
+(`docs/fakty/hry/torchlight-infinite/tartarus-audit.md` v repe `ops`) odhalil
+viacero konkrétnych príčin „rady sú zlé", riešených hlavne na serveri
+`tli-web` (samostatný deploy, bez novej verzie tohto klienta) — táto časť je
+JEDINÁ zmena priamo v `tli-overlay`: zadania bod 4, opakované Ctrl+Q počas
+prebiehajúcej analýzy.
+
+**Predtým:** appka mala zámok proti dvojitému spusteniu (`Stav.beh`), ale
+druhé stlačenie počas prebiehajúcej analýzy TICHO zahodila (len riadok
+v logu, žiadna spätná väzba hráčovi) — vyzeralo to, akoby appka na rýchle
+opakované Ctrl+Q nereagovala alebo „vypísala chybu" (Richard, 18.10.2026).
+
+**Teraz:** požiadavka, ktorá príde počas prebiehajúcej analýzy, sa uloží do
+nového poľa `Stav.cakajuci_dalsi` (jedno miesto, nie front) a spustí sa HNEĎ
+po dobehnutí tej prebiehajúcej. Ďalšie stlačenie medzitým nahradí predošlé
+čakajúce — vždy vyhráva POSLEDNÁ snímka, presne ako žiada zadanie bod 4.
+Žiadna viditeľná chyba, žiadne zahodenie poslednej požiadavky.
+
+Testy: `cargo check` aj `cargo check --tests` v `src-tauri` zelené (čistá
+Linux kontrola typov — logika zámku beží len pod `#[cfg(windows)]`, naživo ju
+overí Richard). `core` sa nemenil, verzia ostáva `0.13.7`.
+
 ## 0.18.14 — 18.10.2026 (TLI 40 — F8 rada sa nevykreslí, hotfix)
 
 Úloha `2026-10-18-1622-mcp.md`. TLI 39 opravil, že F8 vôbec spustí analýzu

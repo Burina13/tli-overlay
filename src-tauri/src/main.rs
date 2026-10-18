@@ -795,7 +795,7 @@ pub(crate) fn spusti_analyzu(app: AppHandle, modul: Modul, zdroj: &'static str) 
     }
 
     // Dvojité stlačenie hotkey (ktoréhokoľvek z dvoch) nemá poslať dve
-    // požiadavky — server púšťa 30 za minútu a zámok je zdieľaný medzi
+    // požiadavky naraz — server púšťa 30 za minútu a zámok je zdieľaný medzi
     // Tartarus aj Frozen Canvas, nemajú bežať naraz nad tým istým oknom.
     //
     // TLI 24: tento zámok je JEDINÉ miesto, kde appka vie úplne potichu
@@ -804,11 +804,22 @@ pub(crate) fn spusti_analyzu(app: AppHandle, modul: Modul, zdroj: &'static str) 
     // vrátením na `false`), appka by od tej chvíle na KAŽDÝ ďalší F8/F9
     // mlčala presne tak, ako to opísal Richard. Preto je zápis do logu tu
     // PRED early-returnom — keby sa to niekedy zopakovalo, log to ukáže.
+    //
+    // TLI 41: požiadavka, ktorá príde, kým predošlá ešte nedobehla, sa už
+    // NEZAHADZUJE ticho — uloží sa ako `cakajuci_dalsi` a spustí sa HNEĎ po
+    // dobehnutí tej prebiehajúcej (koniec funkcie nižšie). Keď medzitým
+    // príde ešte jedna, nahradí tú predchádzajúcu — vždy vyhráva POSLEDNÁ
+    // snímka, nie prvé stlačenie (Richard 18.10.2026: rýchle opakované
+    // Ctrl+Q hlásilo chybu namiesto toho, aby jednoducho počkalo).
     {
         let stav = app.state::<Stav>();
         let mut beh = stav.beh.lock().unwrap();
         if *beh {
-            denik::zapis("hotkey", "ignorované — predošlá analýza ešte nedobehla (beh=true)");
+            *stav.cakajuci_dalsi.lock().unwrap() = Some((modul, zdroj));
+            denik::zapis(
+                "hotkey",
+                &format!("{modul:?} čaká na dobehnutie predošlej analýzy (zdroj={zdroj})"),
+            );
             return;
         }
         *beh = true;
@@ -1334,6 +1345,19 @@ V hre prepni Nastavenia → Zobrazenie → Režim okna na „Okno bez okrajov“
         if let Some(znacka) = znacka {
             over_prezentaciu(&obdlznik, &snimok.rgb, zdroj);
             naplanuj_skrytie(app.clone(), znacka, nastavenia.autoskrytie_s);
+        }
+
+        // TLI 41: požiadavka zdržaná počas tohto behu (pozri `cakajuci_dalsi`
+        // vyššie) sa spustí TERAZ, hneď po uvoľnení zámku — appka teda nikdy
+        // nehlási chybu na rýchle opakované stlačenie, len dorieši poslednú
+        // snímku o pár sekúnd neskôr.
+        let dalsi = app.state::<Stav>().cakajuci_dalsi.lock().unwrap().take();
+        if let Some((dalsi_modul, dalsi_zdroj)) = dalsi {
+            denik::zapis(
+                "hotkey",
+                &format!("spúšťam zdržanú požiadavku ({dalsi_modul:?}, zdroj={dalsi_zdroj})"),
+            );
+            spusti_analyzu(app.clone(), dalsi_modul, dalsi_zdroj);
         }
     });
 }
@@ -2617,6 +2641,7 @@ fn main() {
         .manage(Stav {
             nastavenia: Mutex::new(nacitane),
             beh: Mutex::new(false),
+            cakajuci_dalsi: Mutex::new(None),
             zobrazene_od: Mutex::new(None),
             pocitadlo_zber: Mutex::new(0),
             poslane_behy: Mutex::new(std::collections::BTreeSet::new()),
