@@ -44,6 +44,14 @@ windows = { version = "=0.58.0", features = [
 # Čítanie Steam inštalácie z registra (TLI 11c) — len Windows, appka aj tak
 # beží len tam.
 winreg = "0.56"
+# `WebviewWindow::hwnd()` vracia `windows::...::HWND` z INEJ (vnútornej)
+# verzie kraty `windows`, než akú máme pripnutú vyššie (`0.58.0` vs. Tauriho
+# `0.62.x`) — Rust ich berie ako dva rôzne typy a `SetForegroundWindow` by
+# ten „cudzí" HWND odmietol (TLI 40, zistené priamo z chyby Windows CI).
+# `raw-window-handle` je naopak jediná spoločná, verzovo stabilná cesta k
+# HWND (Tauri ju používa interne rovnako), preto sa cez ňu HWND získava ako
+# obyčajné číslo a až z neho sa postaví NÁŠ `windows::...::HWND`.
+raw-window-handle = "0.6"
 
 [profile.release]
 strip = true

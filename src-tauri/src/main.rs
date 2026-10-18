@@ -491,8 +491,18 @@ fn vynut_navrch(okno: &tauri::WebviewWindow) {
 /// nesimuluje a hráč stratu klávesnice nezbadá, trvá to mikrosekundy.
 #[cfg(windows)]
 fn aktivuj_a_vrat_fokus(overlay: &tauri::WebviewWindow) {
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    use windows::Win32::Foundation::HWND;
     use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, SetForegroundWindow};
-    let Ok(hwnd_overlay) = overlay.hwnd() else { return };
+
+    // `WebviewWindow::hwnd()` by vrátilo HWND z inej (vnútornej) verzie kraty
+    // `windows`, než akú máme pripnutú my — preto sa HWND berie cez
+    // `raw-window-handle` (verzovo nezávislé) ako obyčajné číslo a z neho sa
+    // postaví HWND z NAŠEJ verzie.
+    let Ok(handle) = overlay.window_handle() else { return };
+    let RawWindowHandle::Win32(win32) = handle.as_raw() else { return };
+    let hwnd_overlay = HWND(win32.hwnd.get() as *mut std::ffi::c_void);
+
     // BEZPECNOST: len prepnutie, ktore okno je aktivne — ziadna cudzia pamat,
     // ziadny simulovany vstup.
     unsafe {
