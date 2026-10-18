@@ -1,6 +1,6 @@
 {
-  "version": "0.18.5",
-  "notes": "TLI 29: po F8 niekedy prišla hláška „Server odpovedal niečím, čomu nerozumiem.“ namiesto odporúčania — aj keď server dosku rozpoznal úplne správne. Príčina bola na serveri: pole cez_scratch sa pre odporúčania iné než „požretie“ (typicky „patrol“, bežný stav pri otvorenej mape) posielalo ako null, čo appke zhodilo parsovanie celej odpovede. Opravené na serveri aj v appke (pole je teraz voliteľné, pre prípad podobnej chyby nabudúce). Pridaný jeden opakovaný pokus pri krátkom zlyhaní rozpoznávania a pri nečitateľnej odpovedi appka teraz v logu aj v hláške ukáže HTTP kód, nie len všeobecnú vetu. Overené aj to, že F8/F9 fungujú bez otvoreného okna Nastavení.",
-  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.18.5/Tvoj-Tatko-TLI-Overlay_0.18.5_x64_en-US.msi",
-  "msiSha256": "0d0542bd480688754815201f13cec9b415a021b5fdb6d4dc3114df3e6995454a"
+  "version": "0.18.6",
+  "notes": "TLI 31: po F8 analýza prebehla (snímka aj odpoveď servera v poriadku), ale panel s výsledkom sa nad hrou nezobrazil — fungovalo to len cez tray „Odfotiť Tartarus teraz“. Príčina: appka na Windowse pri bežnom zobrazení svoje „vždy navrchu“ okno len ukázala, nerestackla — keď medzitým iný podobný program (Discord overlay, Overwolf, Logitech G-HUB) dostal vlastné „vždy navrchu“, predbehol ju v poradí a jej panel ostal pod ním, aj keď bol stále nad hrou. Appka teraz pri každom zobrazení vynúti svoje okno na vrch tohto poradia bez toho, aby hre vzala klávesnicu, a do logu pridáva stopu o každom zobrazení (okno, poloha, monitor).",
+  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.18.6/Tvoj-Tatko-TLI-Overlay_0.18.6_x64_en-US.msi",
+  "msiSha256": "8e0354a952e7ae3a78614a6345d49d6b021a6c6a092fc56ca6f6270b155701db"
 }
