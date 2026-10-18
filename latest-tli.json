@@ -1,6 +1,6 @@
 {
-  "version": "0.18.6",
-  "notes": "TLI 31: po F8 analýza prebehla (snímka aj odpoveď servera v poriadku), ale panel s výsledkom sa nad hrou nezobrazil — fungovalo to len cez tray „Odfotiť Tartarus teraz“. Príčina: appka na Windowse pri bežnom zobrazení svoje „vždy navrchu“ okno len ukázala, nerestackla — keď medzitým iný podobný program (Discord overlay, Overwolf, Logitech G-HUB) dostal vlastné „vždy navrchu“, predbehol ju v poradí a jej panel ostal pod ním, aj keď bol stále nad hrou. Appka teraz pri každom zobrazení vynúti svoje okno na vrch tohto poradia bez toho, aby hre vzala klávesnicu, a do logu pridáva stopu o každom zobrazení (okno, poloha, monitor).",
-  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.18.6/Tvoj-Tatko-TLI-Overlay_0.18.6_x64_en-US.msi",
-  "msiSha256": "8e0354a952e7ae3a78614a6345d49d6b021a6c6a092fc56ca6f6270b155701db"
+  "version": "0.18.7",
+  "notes": "TLI 32: overlay dnes ukazoval šípku na konkrétnu celu dosky, ale ťah sa v hre robí stlačením tlačidla v spodnej lište („Select a Destination“/„Make Your Decision“). Appka teraz zvýrazní PRIAMO to tlačidlo (žiara + krátky popis + istota) podľa toho, čo server rozpoznal na obrázku — a celu nezvýrazní vôbec. Keď sa tlačidlo nedá jednoznačne určiť, appka sa správa ako predtým (zvýrazní celu a nakreslí šípku).",
+  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.18.7/Tvoj-Tatko-TLI-Overlay_0.18.7_x64_en-US.msi",
+  "msiSha256": "9f6b6bae72e9786e0e19511b92464d16742ddc2d0cda53af506c54f7a3bd20db"
 }
