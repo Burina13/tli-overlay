@@ -1,6 +1,6 @@
 {
-  "version": "0.18.16",
-  "notes": "TLI 42: oprava — 0.18.14 aj 0.18.15 sa u niektorých hráčov vôbec nespustili (panika hneď pri štarte, WebView2 chyba 0x8007139F). Príčina: okno overlay malo iné argumenty WebView2 prehliadača než zvyšné okná appky nad tým istým profilom. Teraz majú všetky okná rovnaké argumenty. Oprava F8 rady z 0.18.14 (SetForegroundWindow) aj oprava opakovaného Ctrl+Q z 0.18.15 ostávajú v appke zachované.",
-  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.18.16/Tvoj-Tatko-TLI-Overlay_0.18.16_x64_en-US.msi",
-  "msiSha256": "23647b47d6f2946a7ddeea806f063598e77f5d749efd118bc8299bc0c0664117"
+  "version": "0.19.0",
+  "notes": "TLI 43: ceny z titrack.ninja. Server teraz dopĺňa riedky cenník partie verejnými komunitnými cenami z titrack.ninja (čisto čítanie, appka naďalej berie ceny len z nášho /api/ceny). Mini-panel „čo padlo“ pri takých cenách ukáže tooltip so zdrojom, počtom prispievateľov a vekom. Staré behy bez ocenenia sa po stiahnutí nových cien druhým prechodom prepočítajú.",
+  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.19.0/Tvoj-Tatko-TLI-Overlay_0.19.0_x64_en-US.msi",
+  "msiSha256": "d055f2bfc04fde42acc86ecd8385e8597038f2df4c5ea0fffc6e19899080d0e3"
 }
