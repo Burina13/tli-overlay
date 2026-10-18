@@ -1,6 +1,6 @@
 {
-  "version": "0.18.10",
-  "notes": "TLI 35: appka rozpoznáva tretiu obrazovku mechaniky Tartarus — „Select a Warden's Treasure“ (výber 1 zo 4 darov po dosiahnutí Chromatic: Ring/Horn/Wine/Brand). Kreslí ju tou istou cestou ako doteraz výber nástroja (rámik s tierom a poradím nad každou kartičkou, odporúčanú zvýrazní zlato, panel s poradím a dôvodom) a má vlastnú uloženú polohu panela, posúvateľnú nezávisle od ostatných. Server pri tomto type obrazovky prepočíta odporúčanie priamo nad tvojou aktuálnou doskou, keď je po ruke, nie len podľa priemeru.",
-  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.18.10/Tvoj-Tatko-TLI-Overlay_0.18.10_x64_en-US.msi",
-  "msiSha256": "0d353fda941a4f461e483238a2e61210cd4715aab0968e21042f13f38246fc60"
+  "version": "0.18.11",
+  "notes": "TLI 36: F8 ti poradí pri KAŽDOM výbere v Tartaruse, nie len na obrazovkách, ktoré appka pozná. Keď narazí na obrazovku bez vlastného modulu (lobby, výber cieľa, modál „Make Your Decision“…), nenapíše už „zatiaľ neviem prečítať“ — orámuje možnosti priamo nad hrou, odporúčanú zlato, a v paneli povie prečo. Opravené aj to, že pri paneli Consume/Replace/End appka zvýrazňovala celu, na ktorú sa v tom modále kliknúť nedalo. Pri neznámej obrazovke sa odpoveď počíta dlhšie (dve volania modelu) — indikátor sa po 8 sekundách prepne na „Pracujem…“.",
+  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.18.11/Tvoj-Tatko-TLI-Overlay_0.18.11_x64_en-US.msi",
+  "msiSha256": "837f046de7ab96d174712b1ec22041e14f408d276b1e40f09153365ddceb8c52"
 }
