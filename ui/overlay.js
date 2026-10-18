@@ -290,9 +290,16 @@ function vykresliHotovo(data) {
     // Server môže vrátiť odpoveď bez odporúčania (žiadny legálny ťah) — vtedy
     // sa kreslia len políčka a panel povie, že sa ťah nenašiel.
     const odporucanie = analyza.odporucanie || null;
-    const ciel = (odporucanie && odporucanie.ciel !== null && odporucanie.ciel !== undefined)
+    // TLI 32: keď server vie odporúčanie priradiť ku KONKRÉTNEMU tlačidlu
+    // spodnej lišty ("Go to Cell N", "Consume"/"Replace"/"End"...), hráč má
+    // kliknúť TAM, nie na celu — cela sa preto v tomto prípade vôbec
+    // nezvýrazňuje (žiadna trieda "ciel", žiadna šípka). Keď sa zhoda
+    // nenašla (iný panel, neznáma akcia), appka sa správa presne ako
+    // predtým TLI 32: zvýrazní celu a nakreslí šípku.
+    const maTlacidlo = !!(data.tlacidlo && data.tlacidlo.w > 0 && data.tlacidlo.h > 0);
+    const ciel = (!maTlacidlo && odporucanie && odporucanie.ciel !== null && odporucanie.ciel !== undefined)
         ? odporucanie.ciel : null;
-    
+
     // --- 1. Vykreslenie políčok ---
     let cielX = null;
     let cielY = null;
@@ -322,6 +329,8 @@ function vykresliHotovo(data) {
     // --- 2. Naplnenie textov v paneli (VŽDY textContent!) ---
     if (!odporucanie) {
         pNadpis.textContent = "Ťah sa nenašiel";
+    } else if (maTlacidlo && data.tlacidlo.text) {
+        pNadpis.textContent = `${odporucanie.nazov} → tlačidlo „${data.tlacidlo.text}“`;
     } else if (ciel !== null) {
         pNadpis.textContent = `${odporucanie.nazov} → políčko ${ciel}`;
     } else {
@@ -392,6 +401,11 @@ function vykresliHotovo(data) {
         pAlternativy.classList.add("skryte");
     }
 
+    // --- 2b. Tlačidlo spodnej lišty (TLI 32) — žiara priamo na mieste, kam
+    // má hráč kliknúť. Druhé najlepšie (keď je to iné tlačidlo) slabšie,
+    // bez popisu — rovnaká konvencia ako pri kartičkách nástrojov.
+    vykresliTlacidloAkcie(data, odporucanie);
+
     // Zobrazíme panel, aby sme vedeli vypočítať jeho pozíciu pre šípku
     elPanel.classList.remove("skryte");
 
@@ -410,6 +424,39 @@ function vykresliHotovo(data) {
             elSipkaCiara.setAttribute("y2", cielY);
             elSipka.classList.remove("skryte");
         });
+    }
+}
+
+// TLI 32 — zvýraznenie tlačidla spodnej lišty ("Go to Cell N",
+// "Consume"/"Replace"/"End"...), ktoré server priradil odporúčaniu
+// (`data.tlacidlo`) a prípadne prvej alternatíve (`data.tlacidlo_alt`).
+// Súradnice prichádzajú UŽ prepočítané na CSS pixely (Rust, `suradnice::box01_na_css`
+// — rovnaký prepočet ako pre cely), appka ich len nakreslí.
+function vykresliTlacidloAkcie(data, odporucanie) {
+    if (data.tlacidlo && data.tlacidlo.w > 0 && data.tlacidlo.h > 0) {
+        const div = document.createElement("div");
+        div.className = "tlacidlo-akcie";
+        div.style.left = data.tlacidlo.x + "px";
+        div.style.top = data.tlacidlo.y + "px";
+        div.style.width = data.tlacidlo.w + "px";
+        div.style.height = data.tlacidlo.h + "px";
+
+        const istotaPercenta = Math.round(((data.analyza && data.analyza.istota) || 0) * 100);
+        const popis = document.createElement("div");
+        popis.className = "tlacidlo-popis";
+        popis.textContent = `${(odporucanie && odporucanie.nazov) || "Odporúčaný ťah"} — ${istotaPercenta} %`;
+        div.appendChild(popis);
+
+        elVrstva.appendChild(div);
+    }
+    if (data.tlacidlo_alt && data.tlacidlo_alt.w > 0 && data.tlacidlo_alt.h > 0) {
+        const div = document.createElement("div");
+        div.className = "tlacidlo-akcie tlacidlo-alt";
+        div.style.left = data.tlacidlo_alt.x + "px";
+        div.style.top = data.tlacidlo_alt.y + "px";
+        div.style.width = data.tlacidlo_alt.w + "px";
+        div.style.height = data.tlacidlo_alt.h + "px";
+        elVrstva.appendChild(div);
     }
 }
 

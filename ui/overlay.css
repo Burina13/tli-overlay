@@ -205,6 +205,42 @@ body.rezim-upravy #panel-uchyt-velkost {
     animation: pulzovanie 2s infinite;
 }
 
+/* --- TLI 32: tlačidlo spodnej lišty ("Go to Cell N", "Consume"/"Replace"/
+   "End"...) namiesto/popri zvýraznení cely — zlatá, nech sa odlíši od
+   oranžových políčok aj od zelených krokov Frozen Canvas. --- */
+.tlacidlo-akcie {
+    position: absolute;
+    box-sizing: border-box;
+    border: 4px solid #ffce54;
+    border-radius: 10px;
+    box-shadow: inset 0 0 16px rgba(255, 206, 84, 0.45), 0 0 14px rgba(255, 206, 84, 0.55);
+    animation: pulzovanie 2s infinite;
+}
+
+/* Druhé najlepšie — tenšie, bez pulzovania, nech je na prvý pohľad jasné,
+   ktoré tlačidlo appka naozaj odporúča (rovnaká konvencia ako krok Frozen
+   Canvas, ktorý nie je prvý v poradí). */
+.tlacidlo-akcie.tlacidlo-alt {
+    border-width: 2px;
+    border-color: rgba(255, 206, 84, 0.65);
+    box-shadow: inset 0 0 8px rgba(255, 206, 84, 0.25);
+    animation: none;
+}
+
+.tlacidlo-popis {
+    position: absolute;
+    left: 0;
+    bottom: 100%;
+    margin-bottom: 6px;
+    white-space: nowrap;
+    background: rgba(20, 14, 8, 0.85);
+    color: #ffce54;
+    font-size: 13px;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 6px;
+}
+
 /* --- Frozen Canvas (TLI 4b): krok ČO→KAM --- */
 .krok-box {
     border-color: #36e05f;

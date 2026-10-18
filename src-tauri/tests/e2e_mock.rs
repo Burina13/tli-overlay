@@ -169,6 +169,60 @@ fn e2e_chyba_422_bez_tela_dostane_nasu_vetu() {
     assert!(chyba.contains("dosku Tartarus"), "neočakávaná veta: {chyba}");
 }
 
+// TLI 32 — telo presne podľa reálnej analýzy `2026-10-18-105603-67f8c864.json`
+// (CT 114), len skrátené na podstatné polia: patrol na cieľ 6 ("Go to Cell 7"),
+// alternatíva na cieľ 7 ("Go to Cell 8"), tri tlačidlá "Select a Destination"
+// z reálneho `gemini-beh.py` volania nad tou istou snímkou (úloha
+// `2026-10-18-1101-mcp.md`, krok 1).
+const ODPOVED_S_TLACIDLOM: &str = r#"{
+  "ok": true,
+  "board": {},
+  "odporucanie": {"akcia":"patrol","nazov":"Patrola","ciel":6,"cez_scratch":false,
+                  "nastroj":null,"dar":null,
+                  "dovod":"Zamknuté dvere prinášajú nový materiál pre reťaz.",
+                  "hodnota":33.4667,"tlacidlo":1},
+  "alternativy": [{"akcia":"patrol","nazov":"Patrola","ciel":7,"hodnota":33.05,
+                   "istota":0.1833,"dovod":"...","tlacidlo":2}],
+  "istota": 0.332,
+  "istota_rozpoznania": 0.93,
+  "skontroluj": [],
+  "polia": [{"index":6,"x":0.68,"y":0.2,"w":0.082,"h":0.115},
+            {"index":7,"x":0.68,"y":0.35,"w":0.082,"h":0.115}],
+  "akcie_dole": [
+    {"text": "Go to Cell 6", "x": 0.233, "y": 0.691, "w": 0.174, "h": 0.177},
+    {"text": "Go to Cell 7", "x": 0.413, "y": 0.691, "w": 0.174, "h": 0.177},
+    {"text": "Go to Cell 8", "x": 0.592, "y": 0.691, "w": 0.174, "h": 0.177}
+  ],
+  "trvanie_ms": 11368,
+  "subor": "2026-10-18-105603-67f8c864.jpg"
+}"#;
+
+/// E2E (TLI 32): JPEG → HTTP → JSON s `akcie_dole` → appka vie priradiť
+/// tlačidlo odporúčaniu AJ alternatíve, prepočítané na overlay rovnakým
+/// prepočtom ako cely (`box01_na_css`).
+#[test]
+fn e2e_doska_s_tlacidlom_spodnej_listy() {
+    let (port, _p) = mock(200, ODPOVED_S_TLACIDLOM);
+    let n = nastavenia(port);
+
+    let v = klient::posli_analyzu(&n, vec![0xFF, 0xD8]).expect("mock mal odpovedať 200");
+    assert_eq!(v.analyza.akcie_dole.len(), 3);
+
+    let o = v.analyza.odporucanie.as_ref().expect("odporúčanie chýba");
+    let tlacidlo = api::tlacidlo_podla_indexu(&v.analyza, o.tlacidlo).expect("tlačidlo sa nenašlo");
+    assert_eq!(tlacidlo.text, "Go to Cell 7");
+
+    let alt_tlacidlo = api::tlacidlo_podla_indexu(&v.analyza, v.analyza.alternativy[0].tlacidlo)
+        .expect("tlačidlo alternatívy sa nenašlo");
+    assert_eq!(alt_tlacidlo.text, "Go to Cell 8");
+
+    // Rovnaký prepočet na CSS ako pri celách — nad oknom 2560×1440 pri 125 % DPI.
+    let okno = OknoFyz { x: -2560, y: 0, sirka: 2560, vyska: 1440 };
+    let css = box01_na_css(tlacidlo.x, tlacidlo.y, tlacidlo.w, tlacidlo.h, &okno, 1.25);
+    assert!((css.x - 0.413 * 2560.0 / 1.25).abs() < 1e-9);
+    assert!((css.w - 0.174 * 2560.0 / 1.25).abs() < 1e-9);
+}
+
 /// E2E Frozen Canvas (TLI 4b): JPEG → HTTP `?modul=canvas` → JSON → PÁR
 /// zelených rámikov (zdroj v ruke + cieľ na plátne) na krok, prepočítaných
 /// na overlay presne tou istou funkciou ako Tartarus.

@@ -2,6 +2,47 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.18.7 — 18.10.2026 (TLI 32 — zvýrazniť tlačidlo akcie dole, nie šípku na celu)
+
+Úloha `2026-10-18-1101-mcp.md`. Richard: overlay dnes ukazuje šípku na konkrétnu celu
+dosky, ale ťah sa v hre robí stlačením tlačidla v spodnej lište ("Select a
+Destination"/"Make Your Decision"). Chce zvýrazniť TO tlačidlo, cela nech je najviac
+jemne doplnková alebo vôbec.
+
+- **Rozpoznanie lišty je teraz súčasť analýzy, nie natvrdo pixely.** Gemini
+  (`VISION_PROMPT` na serveri) vracia bounding box každého viditeľného tlačidla
+  spodnej lišty v novom poli `akcie_dole[]` (`{"text","x","y","w","h"}`) — pre
+  panel "Select a Destination" (`"Go to Cell N"` / pomenovaná miestnosť) aj
+  "Make Your Decision" (`"Consume"/"Replace"/"End"`). Z piatich reálnych F8
+  snímok Richarda (18.10.2026 10:54–10:58) a dvoch živých volaní
+  `gemini-beh.py --obrazok` overené naživo, že rozpoznanie sedí.
+- **Server páruje odporúčanie s tlačidlom** (`_najdi_tlacidlo` v `app.py`):
+  `patrol` podľa čísla cely v texte (`Cell N` = `ciel + 1`), `devour`/`swap`/
+  `koniec_dna` podľa doslovného textu (`Consume`/`Replace`/`End`). Index do
+  `akcie_dole` sa vracia ako nové pole `tlacidlo` v `odporucanie` aj v prvej
+  `alternativa` — `null`, keď sa zhoda nenašla.
+- **Appka (core/src-tauri):** nové `AkciaDole`, `Odporucanie.tlacidlo`/
+  `Alternativa.tlacidlo` (rovnaká `Option` opatrnosť ako `cez_scratch`, TLI 29 —
+  appka nikdy nepadne na chýbajúcom/neznámom poli). V `doska` vetve appka
+  prepočíta box tou istou funkciou ako cely (`box01_na_css`) a pošle
+  `tlacidlo`/`tlacidlo_alt` (druhé najlepšie, len keď je to INÉ tlačidlo).
+- **Overlay (`overlay.js`/`overlay.css`):** keď server vie tlačidlo priradiť,
+  appka ho zvýrazní (zlatá žiara + krátky SK popis akcie + istota) a **celu
+  nezvýrazní vôbec** (žiadna trieda `.ciel`, žiadna šípka) — presne zadanie.
+  Keď sa zhoda nenašla (iný panel, neznáma akcia), appka sa správa presne ako
+  predtým: zvýrazní celu a nakreslí šípku. Výber „Torture Instrument" (kartička
+  + Confirm) sa nemenil — bol už hotový.
+- **Webový simulátor** (`tli.tvojtatko.sk/simulator`) hovorí rovnakými pojmami
+  tlačidiel ako hra: „Stlač tlačidlo „Go to Cell 7““ namiesto „Patrola na
+  políčko 07", aby tréning zodpovedal tomu, čo appka reálne zvýrazňuje.
+- **Testy na reálnych snímkach:** `testy-tli-web.py` +6 (132/132, vrátane
+  doslovných `akcie_dole` z dvoch reálnych F8 snímok), core Rust +4 (386
+  testov), nový E2E `e2e_doska_s_tlacidlom_spodnej_listy` (telo presne z
+  `2026-10-18-105603-67f8c864.json`), UI jsdom `testy-tlacidlo-akcie.e2e.mjs`
+  (3 testy, vrátane fallbacku bez tlačidla).
+- **Rollback:** `latest-tli.json`/`tli-web.yml` späť na `tli-v0.18.6`. Zmena je
+  aditívna (nové voliteľné polia), žiadna zmena formátu uložených dát.
+
 ## 0.18.6 — 18.10.2026 (TLI 31 — F8 analýza prejde, ale výsledok sa nezobrazí nad hrou)
 
 Úloha `2026-10-18-1057-mcp.md`. Richard na 0.18.5 dostal po F8 štyrikrát (10:54:58,

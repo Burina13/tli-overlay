@@ -749,6 +749,32 @@ V hre prepni Nastavenia → Zobrazenie → Režim okna na „Okno bez okrajov“
                             })
                             .collect();
 
+                        // TLI 32: tlačidlo spodnej lišty namiesto zvýraznenia
+                        // cely — server priradil odporúčaniu (a prípadne prvej
+                        // alternatíve) index do `akcie_dole`, appka ho len
+                        // premení na CSS súradnice tým istým prepočtom ako pri
+                        // celách. Keď sa zhoda nenašla (iný panel, neznáma
+                        // akcia), `tlacidlo_best`/`tlacidlo_alt` ostanú `None`
+                        // a `overlay.js` sa vráti k pôvodnému zvýrazneniu cely.
+                        let najdi_tlacidlo_json = |index: Option<i64>| {
+                            api::tlacidlo_podla_indexu(&v.analyza, index).map(|t| {
+                                let css = suradnice::box01_na_css(t.x, t.y, t.w, t.h, &obdlznik, mierka);
+                                json!({"x": css.x, "y": css.y, "w": css.w, "h": css.h,
+                                       "text": t.text.clone()})
+                            })
+                        };
+                        let best_idx = v.analyza.odporucanie.as_ref().and_then(|o| o.tlacidlo);
+                        let alt_idx = v.analyza.alternativy.first().and_then(|a| a.tlacidlo);
+                        let tlacidlo = najdi_tlacidlo_json(best_idx);
+                        // Druhé najlepšie sa kreslí len vtedy, keď je to INÉ
+                        // tlačidlo než najlepšie — inak by sa dve žiary
+                        // prekrývali nad tým istým miestom.
+                        let tlacidlo_alt = if alt_idx.is_some() && alt_idx != best_idx {
+                            najdi_tlacidlo_json(alt_idx)
+                        } else {
+                            None
+                        };
+
                         let (sirka_log, vyska_log) = suradnice::logicka_velkost(&obdlznik, mierka);
                         // TLI 31: predtým táto, najčastejšia vetva (doska) na
                         // rozdiel od „vyber_nastroja"/„ine" nelogovala vôbec
@@ -756,7 +782,8 @@ V hre prepni Nastavenia → Zobrazenie → Režim okna na „Okno bez okrajov“
                         // o tom, že appka sa chystá niečo vykresliť.
                         denik::zapis(
                             "zobraz",
-                            &format!("doska: {} polí, emitujem stav=hotovo", obdlzniky.len()),
+                            &format!("doska: {} polí, tlačidlo {}, emitujem stav=hotovo",
+                                     obdlzniky.len(), if tlacidlo.is_some() { "nájdené" } else { "nenájdené" }),
                         );
                         let _ = app.emit(
                             "stav",
@@ -764,6 +791,8 @@ V hre prepni Nastavenia → Zobrazenie → Režim okna na „Okno bez okrajov“
                                 "faza": "hotovo",
                                 "analyza": v.analyza,
                                 "obdlzniky": obdlzniky,
+                                "tlacidlo": tlacidlo,
+                                "tlacidlo_alt": tlacidlo_alt,
                                 "mierka": mierka,
                                 "sirka": sirka_log,
                                 "vyska": vyska_log,

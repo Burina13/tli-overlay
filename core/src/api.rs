@@ -17,6 +17,14 @@ pub struct Odporucanie {
     pub dar: Option<String>,
     pub dovod: String,
     pub hodnota: Option<f64>,
+    /// TLI 32: index do `Analyza::akcie_dole`, keď server vie toto odporúčanie
+    /// priradiť ku konkrétnemu tlačidlu spodnej lišty ("Go to Cell N",
+    /// "Consume"/"Replace"/"End"...). `None`, keď sa zhoda nenašla (iný panel,
+    /// alebo akcia bez tlačidla v serverovom katalógu) — appka sa vtedy vráti
+    /// k pôvodnému zvýrazneniu cely. Rovnaká `Option` opatrnosť ako pri
+    /// `cez_scratch` (TLI 29): server toto pole posiela vždy, ale appka proti
+    /// staršiemu serveru nesmie padnúť na chýbajúcom poli.
+    pub tlacidlo: Option<i64>,
 }
 
 impl Default for Odporucanie {
@@ -30,6 +38,7 @@ impl Default for Odporucanie {
             dar: None,
             dovod: "".to_string(),
             hodnota: None,
+            tlacidlo: None,
         }
     }
 }
@@ -43,6 +52,8 @@ pub struct Alternativa {
     pub hodnota: Option<f64>,
     pub istota: Option<f64>,
     pub dovod: String,
+    /// TLI 32 — rovnaký význam ako `Odporucanie::tlacidlo`.
+    pub tlacidlo: Option<i64>,
 }
 
 impl Default for Alternativa {
@@ -54,6 +65,7 @@ impl Default for Alternativa {
             hodnota: None,
             istota: None,
             dovod: "".to_string(),
+            tlacidlo: None,
         }
     }
 }
@@ -85,6 +97,21 @@ pub struct KartickaNastroja {
     pub box_: Option<Box01>,
 }
 
+/// Jedno tlačidlo zo spodnej lišty akcie (TLI 32) — "Select a Destination"
+/// ("Go to Cell N" / pomenovaná miestnosť) alebo "Make Your Decision"
+/// ("Consume"/"Replace"/"End"). Rovnaká konvencia ako `Pole`: `text` namiesto
+/// `index`, lebo poradie v zozname nič neznamená, páruje sa podľa textu
+/// (server, `_najdi_tlacidlo`), nie podľa pozície.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct AkciaDole {
+    pub text: String,
+    pub x: f64,
+    pub y: f64,
+    pub w: f64,
+    pub h: f64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Analyza {
@@ -95,6 +122,11 @@ pub struct Analyza {
     pub istota_rozpoznania: Option<f64>,
     pub skontroluj: Vec<String>,
     pub polia: Vec<Pole>,
+    /// TLI 32: tlačidlá spodnej lišty, keď ich server rozpoznal — prázdne,
+    /// keď panel nie je na obrázku viditeľný. Staršie servery toto pole
+    /// neposielajú; `#[serde(default)]` dá prázdny zoznam a appka sa správa
+    /// presne ako doteraz (zvýrazní celu).
+    pub akcie_dole: Vec<AkciaDole>,
     pub trvanie_ms: Option<u64>,
     /// TLI 25: tá istá klávesa (F8) chodí na viac obrazoviek mechaniky a
     /// server povie, ktorú práve prečítal — "doska" (predvolené, pôvodné
@@ -120,6 +152,7 @@ impl Default for Analyza {
             istota_rozpoznania: None,
             skontroluj: vec![],
             polia: vec![],
+            akcie_dole: vec![],
             trvanie_ms: None,
             obrazovka: "doska".to_string(),
             nastroje: vec![],
@@ -389,11 +422,21 @@ pub fn pouzitelne_polia(a: &Analyza) -> Vec<&Pole> {
     a.polia.iter().filter(|p| p.w > 0.0 && p.h > 0.0).collect()
 }
 
-/// Identifikuje políčka, ktorými si server nie je celkom istý, 
+/// Identifikuje políčka, ktorými si server nie je celkom istý,
 /// aby sme ich vizuálne odlíšili a dali hráčovi možnosť manuálne si overiť ťah.
 pub fn je_neiste(a: &Analyza, index: u32) -> bool {
     let hladane = format!("[{}]", index);
     a.skontroluj.iter().any(|s| s.contains(&hladane))
+}
+
+/// Tlačidlo zo spodnej lišty (TLI 32) zodpovedajúce indexu z `tlacidlo`
+/// (`Odporucanie`/`Alternativa`) — `None`, keď index chýba, mimo rozsah, alebo
+/// má nulovú veľkosť (rovnaká konvencia ako `pouzitelne_polia`/
+/// `pouzitelne_karticky`: appka nekreslí neviditeľné štvorce).
+pub fn tlacidlo_podla_indexu(a: &Analyza, index: Option<i64>) -> Option<&AkciaDole> {
+    let i = usize::try_from(index?).ok()?;
+    let t = a.akcie_dole.get(i)?;
+    if t.w > 0.0 && t.h > 0.0 { Some(t) } else { None }
 }
 
 #[cfg(test)]
@@ -680,5 +723,66 @@ mod testy {
         let pouzitelne = pouzitelne_kroky(&a);
         assert_eq!(pouzitelne.len(), 1);
         assert_eq!(pouzitelne[0].poradie, 1);
+    }
+
+    // ── TLI 32 — tlačidlo spodnej lišty ──────────────────────────────────────
+
+    /// Starší server toto pole vôbec neposiela — appka sa musí správať presne
+    /// ako predtým TLI 32 (prázdny zoznam, `tlacidlo` v odporúčaní `None`).
+    #[test]
+    fn odpoved_bez_akcie_dole_je_prazdny_zoznam() {
+        let json = r#"{"ok": true, "odporucanie": {"akcia": "patrol", "ciel": 4}}"#;
+        let a: Analyza = serde_json::from_str(json).unwrap();
+        assert!(a.akcie_dole.is_empty());
+        assert_eq!(a.odporucanie.unwrap().tlacidlo, None);
+    }
+
+    /// Reálny tvar `akcie_dole` z `2026-10-18-105603-67f8c864.jpg` ("Select a
+    /// Destination", 3 tlačidlá) — server priradil `tlacidlo: 1` k odporúčaniu.
+    #[test]
+    fn parsovanie_akcie_dole_a_najdenie_tlacidla() {
+        let json = r#"{
+            "ok": true, "modul": "tartarus", "obrazovka": "doska",
+            "odporucanie": {"akcia": "patrol", "nazov": "Patrola", "ciel": 6,
+                            "dovod": "...", "tlacidlo": 1},
+            "alternativy": [
+                {"akcia": "patrol", "nazov": "Patrola", "ciel": 7, "tlacidlo": 2}
+            ],
+            "akcie_dole": [
+                {"text": "Go to Cell 6", "x": 0.233, "y": 0.691, "w": 0.174, "h": 0.177},
+                {"text": "Go to Cell 7", "x": 0.413, "y": 0.691, "w": 0.174, "h": 0.177},
+                {"text": "Go to Cell 8", "x": 0.592, "y": 0.691, "w": 0.174, "h": 0.177}
+            ],
+            "istota": 0.332
+        }"#;
+        let a: Analyza = serde_json::from_str(json).unwrap();
+        assert_eq!(a.akcie_dole.len(), 3);
+        let best = tlacidlo_podla_indexu(&a, a.odporucanie.as_ref().unwrap().tlacidlo).unwrap();
+        assert_eq!(best.text, "Go to Cell 7");
+        let alt = tlacidlo_podla_indexu(&a, a.alternativy[0].tlacidlo).unwrap();
+        assert_eq!(alt.text, "Go to Cell 8");
+    }
+
+    #[test]
+    fn tlacidlo_podla_indexu_vracia_none_mimo_rozsahu_a_bez_indexu() {
+        let a = Analyza {
+            akcie_dole: vec![AkciaDole { text: "End".to_string(), x: 0.5, y: 0.7, w: 0.17, h: 0.16 }],
+            ..Default::default()
+        };
+        assert!(tlacidlo_podla_indexu(&a, None).is_none());
+        assert!(tlacidlo_podla_indexu(&a, Some(5)).is_none());
+        assert!(tlacidlo_podla_indexu(&a, Some(-1)).is_none());
+        assert!(tlacidlo_podla_indexu(&a, Some(0)).is_some());
+    }
+
+    /// Tlačidlo s nulovou veľkosťou (server ho vrátil, ale appka ho nemá kresliť)
+    /// sa správa rovnako ako `pouzitelne_polia`/`pouzitelne_karticky` — zahodí sa.
+    #[test]
+    fn tlacidlo_podla_indexu_zahodi_nulovu_velkost() {
+        let a = Analyza {
+            akcie_dole: vec![AkciaDole { text: "End".to_string(), x: 0.5, y: 0.7, w: 0.0, h: 0.0 }],
+            ..Default::default()
+        };
+        assert!(tlacidlo_podla_indexu(&a, Some(0)).is_none());
     }
 }
