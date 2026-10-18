@@ -30,9 +30,34 @@ function skryVsetko() {
     elVrstva.innerHTML = ""; // Vymažeme staré obdĺžniky
 }
 
+// TLI 33 (`2026-10-18-1318-mcp.md`, bod 1) — appka u hráča „nič nezobrazila“
+// nad hrou, hoci Rust log ukázal „emitujem stav=hotovo“; z toho sa nedalo
+// zistiť, či event vôbec dorazil sem do JS, alebo dorazil a vykreslenie
+// zlyhalo/skrylo sa. Obe miesta logujú cez `invoke` späť do Rustu
+// (`zapis_ui_log` → `denik::zapis("ui", …)`), teda do TOHO ISTÉHO súboru ako
+// `[hotkey]`/`[zobraz]`/`[http]` — žiadny nový log, len nová trasa doň.
+// `.catch(() => {})`: zlyhanie zápisu diagnostiky nesmie appke nič rozbiť.
+function logUi(text) {
+    invoke("zapis_ui_log", { text }).catch(() => {});
+}
+
+// Zápis skutočne vykresleného stavu panela — AŽ PO `requestAnimationFrame`,
+// nech `getBoundingClientRect()` vráti rozmery PO rozložení prehliadačom
+// (rovnaký dôvod, prečo na to čaká aj vykreslenie šípky nižšie), nie hodnoty
+// spred vykreslenia, ktoré by vyzerali v poriadku aj keby panel ostal prázdny.
+function logPanelVykreslene(zdroj) {
+    requestAnimationFrame(() => {
+        const r = elPanel.getBoundingClientRect();
+        const viditelny = !elPanel.classList.contains("skryte");
+        logUi(`vykreslené panel (${zdroj}) x=${Math.round(r.x)} y=${Math.round(r.y)} ` +
+              `w=${Math.round(r.width)} h=${Math.round(r.height)} viditelny=${viditelny}`);
+    });
+}
+
 // Počúvame udalosti zo servera (Tauri okno zasiela eventy 'stav')
 listen("stav", (event) => {
     const payload = event.payload;
+    logUi(`prijaté stav=${payload.faza}`);
     skryVsetko();
 
     // TLI 24 (`2026-10-17-1238-mcp.md` bod 3): VŽDY viditeľná spätná väzba —
@@ -408,6 +433,7 @@ function vykresliHotovo(data) {
 
     // Zobrazíme panel, aby sme vedeli vypočítať jeho pozíciu pre šípku
     elPanel.classList.remove("skryte");
+    logPanelVykreslene("doska");
 
     // --- 3. Vykreslenie šípky ---
     if (cielX !== null && cielY !== null) {
@@ -490,6 +516,7 @@ function vykresliHotovoNastroj(data) {
         pSkontroluj.classList.add("skryte");
         vypisKartickyDoPanela(analyza.nastroje || []);
         elPanel.classList.remove("skryte");
+        logPanelVykreslene("nastroj-bez-polohy");
         return;
     }
 
@@ -557,6 +584,7 @@ function vykresliHotovoNastroj(data) {
         pSkontroluj.classList.add("skryte");
     }
     elPanel.classList.remove("skryte");
+    logPanelVykreslene("nastroj");
 }
 
 // Zoznam pod hlavným textom panela — používa sa aj vtedy, keď sa rámiky
@@ -611,6 +639,7 @@ function vykresliHotovoCanvas(data) {
         pSkontroluj.classList.add("skryte");
         pAlternativy.classList.add("skryte");
         elPanel.classList.remove("skryte");
+        logPanelVykreslene("canvas-bez-kroku");
         return;
     }
 
@@ -703,4 +732,5 @@ function vykresliHotovoCanvas(data) {
     }
 
     elPanel.classList.remove("skryte");
+    logPanelVykreslene("canvas");
 }

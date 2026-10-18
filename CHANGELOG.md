@@ -2,6 +2,57 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.18.8 — 18.10.2026 (TLI 33 — F8 rada sa nezobrazí, hoci server odpovie)
+
+Úloha `2026-10-18-1318-mcp.md`. Richard na 0.18.7 dostal po F8 trikrát (13:15:16,
+13:16:33, 13:16:55) kompletný beh — okno hry nájdené, `analyza OK` za 7–8 s,
+log „doska: 16 polí … emitujem stav=hotovo" — ale nad hrou sa neukázalo ÚPLNE
+NIČ (žiadna rada, žiadne zvýraznenie, žiadny panel). Z Windows strany (Claude
+na Richardovom PC, 13:17) EnumWindows potvrdil, že okno overlaya JE nad hrou,
+topmost a viditeľné — TLI 31 (vynútenie z-poradia) teda funguje, problém je
+v niečom ĎALEJ (JS/dáta), nie v okne samotnom.
+
+- **Reálne nájdená a opravená príčina: mini-panel (NIE hlavný panel) sa pri
+  ŠTARTE appky s už zapnutým mini-overlayom (uložené z minulého behu)
+  zobrazil na defaultnej OS pozícii, nie na uloženej** — `setup()` doteraz pri
+  štarte volal len `okno.show()`, zatiaľ čo jedinou cestou, ktorá polohu
+  naozaj prepočíta (`umiestni_native_okno` podľa uloženého zlomku okna hry),
+  bol prepínač v Nastaveniach (`nastav_mini`). Presne to sedí s Richardovým
+  pozorovaním „mini sa kreslí na zlom mieste (~182,182), ignoruje uloženú
+  polohu vpravo hore" a s empty-toast nálezom zapísaným 18.10. 13:23 do faktov
+  (`docs/fakty/hry/torchlight-infinite/tartarus-pravidla.md`). Oprava: štart
+  teraz volá `nastav_mini(&handle, mini_zapnuty)` namiesto ručného show/hide.
+- **Hlavný panel (F8/F9): príčinu sa cez statický code review a 30/30 zelených
+  JS e2e testov NEPODARILO jednoznačne izolovať** — `overlay.js` aj
+  `ukaz_overlay_nad`/emit `stav` zodpovedajú rovnakému, už testovanému tvaru
+  dát. Namiesto ďalšieho hádania pribudli DVE diagnostiky, ktoré nabudúce
+  rozlíšia „event nedorazil do JS" od „event dorazil, vykreslenie zlyhalo":
+  1. **`overlay.js` loguje späť do Rustu cez nový príkaz `zapis_ui_log`**
+     (→ `denik::zapis("ui", …)`, teda do toho istého `logs/aktualny.log` ako
+     `[hotkey]`/`[zobraz]`/`[http]`) — `[ui] prijaté stav=<fáza>` pri KAŽDOM
+     evente a `[ui] vykreslené panel (<zdroj>) x=… y=… w=… h=… viditelny=…`
+     tesne po `requestAnimationFrame` pri každom skutočnom vykreslení (doska,
+     výber nástroja, Frozen Canvas, aj ich prázdne/bez-polohy varianty).
+  2. **Tray → „Test overlaya"** (`test_overlay`) — prejde PRESNE tou istou
+     cestou ako reálny F8 (`ukaz_overlay_nad` so `s_rozlozenim=true`, teda aj
+     `posli_polohu_panela`, + `app.emit("stav", faza=hotovo)`) s vymyslenými
+     dátami namiesto volania servera, zobrazí vzorovú radu na 10 s. Funguje aj
+     bez bežiacej hry (spadne na primárny monitor). Keď sa po kliknutí
+     nezobrazí nič, chyba je v okne/evente a dá sa to zopakovať kedykoľvek bez
+     hry; keď sa vzorová rada ukáže, ale pri reálnom F8 nie, chyba je v
+     niečom, čo robí/posiela appka LEN v tej reálnej vetve.
+- **Rozpoznanie „Select a Destination"/„Go to Cell N" overené, nie zmenené** —
+  `_najdi_tlacidlo` (server, `app.py`) aj `_moznosti_pre_stav` (`engine/
+  solver.py`) už párujú podľa ČÍSLA cely z textu tlačidla (nie podľa poradia
+  v zozname) a solver pri otvorených `destinations` vracia VÝHRADNE patrolu na
+  ne — logika teda bola správna už pred touto úlohou. Pridané regresné testy
+  (`testy-tli-web.py`) nad presne číslami z Richardovej snímky (Go to Cell
+  11/12/14, mimo poradia aj mimo rozsahu 1-3), aby prípadná budúca zmena
+  tento prípad nerozbila ticho.
+- Appka sa server vôbec nepýtala na nič nové — zmeny sú v `tli-overlay`
+  (appka) a testoch v `stacks/games/tli-web` (ops repo), nie v produkčnom
+  `app.py`.
+
 ## 0.18.7 — 18.10.2026 (TLI 32 — zvýrazniť tlačidlo akcie dole, nie šípku na celu)
 
 Úloha `2026-10-18-1101-mcp.md`. Richard: overlay dnes ukazuje šípku na konkrétnu celu

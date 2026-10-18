@@ -959,6 +959,83 @@ fn odfot_canvas_teraz(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// TLI 33 (`2026-10-18-1318-mcp.md`, bod 2) — „Test overlaya“ z tray menu.
+/// Richard nahlásil, že po F8 appka doreší analýzu a log ukáže „emitujem
+/// stav=hotovo“, ale nad hrou sa nezobrazí ÚPLNE NIČ — bez servera (appka ho
+/// aj tak vôbec nevolá) sa to doteraz nedalo overiť nezávisle od toho, či je
+/// hra zapnutá a v správnej fáze. Táto funkcia prejde PRESNE tou istou cestou
+/// ako reálny F8/F9 (`ukaz_overlay_nad` s `s_rozlozenim=true`, teda aj
+/// `posli_polohu_panela`, + `app.emit("stav", faza=hotovo)`), len s
+/// vymyslenými dátami namiesto volania servera:
+///   - keď sa po kliknutí nezobrazí nič, chyba je v OKNE/EVENTE (Rust ↔ JS),
+///     rovnako ako pri reálnom F8 — a dá sa to zopakovať kedykoľvek, bez hry;
+///   - keď sa ukáže vzorová rada, ale pri skutočnom F8/F9 nie, chyba je v
+///     niečom, čo posiela/robí appka LEN v tej reálnej vetve (napr. v tvare
+///     dát zo servera pre konkrétnu obrazovku).
+/// Funguje aj bez bežiacej hry (spadne na primárny monitor, rovnaký vzor ako
+/// `okna::okno_pre_rezim_upravy`), nech appka test nerefúzne len preto, že
+/// Richard chce rýchlo overiť renderovanie bez toho, aby musel spúšťať hru.
+fn test_overlay(app: &AppHandle) {
+    let Some(obd) = okno_hry_pre_rozlozenie(app).or_else(|| primarny_monitor_ako_okno(app)) else {
+        denik::zapis("test-overlay", "ani hra, ani primárny monitor sa nenašli — nemám kam kresliť");
+        return;
+    };
+    denik::zapis(
+        "test-overlay",
+        &format!("spúšťam nad ({},{}) {}x{}", obd.x, obd.y, obd.sirka, obd.vyska),
+    );
+    ukaz_overlay_nad(app, &obd, true, PANEL_TARTARUS);
+
+    let mierka = mierka_okna(app, &obd);
+    let (sirka_log, vyska_log) = suradnice::logicka_velkost(&obd, mierka);
+    let obdlzniky = json!([
+        {"index": 5, "x": sirka_log * 0.30, "y": vyska_log * 0.20,
+         "w": vyska_log * 0.10, "h": vyska_log * 0.10,
+         "stredX": sirka_log * 0.35, "stredY": vyska_log * 0.25, "neiste": false},
+        {"index": 8, "x": sirka_log * 0.55, "y": vyska_log * 0.20,
+         "w": vyska_log * 0.10, "h": vyska_log * 0.10,
+         "stredX": sirka_log * 0.60, "stredY": vyska_log * 0.25, "neiste": true},
+    ]);
+    let tlacidlo = json!({
+        "x": sirka_log * 0.30, "y": vyska_log * 0.75,
+        "w": sirka_log * 0.15, "h": vyska_log * 0.12,
+        "text": "Test tlačidla",
+    });
+    let analyza = json!({
+        "obrazovka": "doska",
+        "istota": 0.77,
+        "skontroluj": [],
+        "odporucanie": {
+            "akcia": "devour", "nazov": "TEST — Požretie", "ciel": 5, "cez_scratch": false,
+            "nastroj": null, "dar": null,
+            "dovod": "Toto je vzorová rada z tray menu „Test overlaya“ — žiadny server sa nevolal.",
+            "hodnota": 10.0,
+        },
+        "alternativy": [],
+        "board": {"cells": []},
+    });
+    let _ = app.emit(
+        "stav",
+        json!({
+            "faza": "hotovo",
+            "analyza": analyza,
+            "obdlzniky": obdlzniky,
+            "tlacidlo": tlacidlo,
+            "tlacidlo_alt": null,
+            "mierka": mierka,
+            "sirka": sirka_log,
+            "vyska": vyska_log,
+            "trvanie_ms": 0,
+        }),
+    );
+    denik::zapis("test-overlay", "stav=hotovo (testovací) odoslaný, mizne o 10 s");
+
+    let znacka = *app.state::<Stav>().zobrazene_od.lock().unwrap();
+    if let Some(znacka) = znacka {
+        naplanuj_skrytie(app.clone(), znacka, 10);
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Farm tracker (TLI 11/11b)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1916,6 +1993,22 @@ fn skry_overlay(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// TLI 33 (`2026-10-18-1318-mcp.md`, bod 1) — denník doteraz vedel len to, čo
+/// urobil RUST (okno pozícia/veľkosť/show, emitovanie `stav`), nie čo sa s tým
+/// udalosťou stalo na strane JS vo webview `overlay`. Keď appka u hráča „nič
+/// nezobrazí", nedalo sa z logu rozlíšiť „event nedorazil do JS" od „event
+/// dorazil, ale vykreslenie zlyhalo/skrylo sa" — práve toto rozlíšenie bolo
+/// chýbajúce pri `2026-10-18-1318-mcp.md`. `overlay.js` volá tento príkaz pri
+/// prijatí KAŽDÉHO `stav` eventu a znova hneď po tom, čo si (ne)myslí, že
+/// panel ukázal — oba zápisy idú do toho istého `denik::zapis`, teda do
+/// `logs/aktualny.log`, ktorý appka posiela ako diagnostiku (rovnaký súbor
+/// ako `[hotkey]`/`[zobraz]`/`[http]`).
+#[tauri::command]
+fn zapis_ui_log(text: String) -> Result<(), String> {
+    denik::zapis("ui", &text);
+    Ok(())
+}
+
 /// Zapíše chybu z práce s oknom do `okna.log` namiesto jej ticheho zahodenia
 /// (TLI 23, bod 2 zadania).
 fn loguj_chybu_okna(kontext: &str, chyba: &str) {
@@ -2142,7 +2235,8 @@ fn main() {
             otvor_priecinok_logov,
             hotkey_upozornenia,
             odfot_tartarus_teraz,
-            odfot_canvas_teraz
+            odfot_canvas_teraz,
+            zapis_ui_log
         ])
         // TLI 23: Tauri v2 by zatvorením (X) KAŽDÉ okno ZNIČILO — appka by
         // potom na druhý klik (tray menu, `otvor_nastavenia`) narazila na
@@ -2214,15 +2308,22 @@ fn main() {
                 let _ = okno.hide();
             }
             // Mini-overlay sa pri štarte ukáže len vtedy, keď si ho hráč zapol.
-            let mini_zapnuty = app.state::<Stav>().nastavenia.lock().unwrap().mini_overlay;
+            //
+            // TLI 33 (`2026-10-18-1318-mcp.md`, bod 3): predtým tu bolo len
+            // `okno.show()` — pri zapnutom mini-overlayi (uložené z MINULÉHO
+            // behu appky) sa okno ukázalo na mieste, kde ho necháva Tauri bez
+            // vlastného `set_position()` (defaultné umiestnenie OS pre nové
+            // okno, pozorované Richardom cca na (182,182), prekrývajúce text
+            // hry) — NIE na uloženej polohe. `nastav_mini()` (volaná doteraz
+            // len z prepínača v Nastaveniach) polohu vždy prepočíta podľa
+            // `poloha_alebo_predvolena(PANEL_MINI, …)` pred `.show()`; tu sa
+            // len volá namiesto ručného show/hide, aby pri štarte s už
+            // zapnutým mini-overlayom skočilo rovno na uloženú polohu.
             if let Some(okno) = app.get_webview_window(MINI) {
                 let _ = okno.set_ignore_cursor_events(true);
-                if mini_zapnuty {
-                    let _ = okno.show();
-                } else {
-                    let _ = okno.hide();
-                }
             }
+            let mini_zapnuty = app.state::<Stav>().nastavenia.lock().unwrap().mini_overlay;
+            nastav_mini(&handle, mini_zapnuty);
 
             let polozka_hlavne =
                 tauri::menu::MenuItem::with_id(app, "hlavne", "Otvoriť", true, None::<&str>)?;
@@ -2244,6 +2345,16 @@ fn main() {
                 true,
                 None::<&str>,
             )?;
+            // TLI 33 (`2026-10-18-1318-mcp.md`, bod 2): vzorová rada bez
+            // servera, nech sa dá overiť, či appka nad hrou vôbec KRESLÍ,
+            // bez ohľadu na to, čo robí hra alebo server.
+            let polozka_test_overlay = tauri::menu::MenuItem::with_id(
+                app,
+                "test_overlay",
+                "Test overlaya",
+                true,
+                None::<&str>,
+            )?;
             let polozka_verzia = tauri::menu::MenuItem::with_id(
                 app,
                 "verzia",
@@ -2260,6 +2371,7 @@ fn main() {
                     &polozka_nastavenia,
                     &polozka_odfot_tartarus,
                     &polozka_odfot_canvas,
+                    &polozka_test_overlay,
                     &polozka_verzia,
                     &polozka_koniec,
                 ],
@@ -2277,6 +2389,7 @@ fn main() {
                     "nastavenia" => ukaz_a_zaostri(app, NASTAVENIA),
                     "odfot_tartarus" => naplanuj_odfotenie(app.clone(), Modul::Tartarus),
                     "odfot_canvas" => naplanuj_odfotenie(app.clone(), Modul::Canvas),
+                    "test_overlay" => test_overlay(app),
                     _ => {}
                 });
             if let Some(ikona) = app.default_window_icon().cloned() {
