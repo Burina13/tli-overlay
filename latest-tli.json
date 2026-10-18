@@ -1,6 +1,6 @@
 {
-  "version": "0.19.1",
-  "notes": "TLI 44: Ctrl+Q rada sa pri obrazovkách „Objective“ a univerzálny poradca cez hotkey nezobrazila (doska a výber nástroja fungovali). WebView2 sa „budí“ tesne pred samotným obsahom, nie len na začiatku analýzy, pridaný automatický fallback aj debounce proti dvojitému stlačeniu.",
-  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.19.1/Tvoj-Tatko-TLI-Overlay_0.19.1_x64_en-US.msi",
-  "msiSha256": "f494245b6a515852213e1fccd3b3b8dbb92a86c7740306a82590f912bcd37902"
+  "version": "0.19.2",
+  "notes": "TLI 45 časť 1/3: dashboard podľa TITracku — 7 kariet (NET WORTH, CUMULATIVE VALUE, FE/HOUR, FE/MAP, RUNS, AVG RUN TIME, TOTAL TIME), grafy Cumulative value a FE/hour, Recent Runs s rozbalením „čo padlo“ a tlačidlom Report, hlavičkové tlačidlá Overlay/Economy/Cloud Sync/⚙/Instructions/Reset Stats, footer Collector. Čítanie celého batoha (CURRENT INVENTORY) a loot overlay bez Ctrl+F8 prídu v ďalších častiach.",
+  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.19.2/Tvoj-Tatko-TLI-Overlay_0.19.2_x64_en-US.msi",
+  "msiSha256": "2ce93aadd18b882010dc7887d12a18f5bf64d1a9065a2d15280cb75ea736e381"
 }
