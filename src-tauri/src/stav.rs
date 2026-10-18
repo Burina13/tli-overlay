@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::Instant;
+use tauri_plugin_global_shortcut::Shortcut;
 use tli_overlay_core::nastavenia::Nastavenia;
 use tli_overlay_core::tracker::chvost::StavChvosta;
 
@@ -53,6 +54,15 @@ pub struct Stav {
     /// Nastavenia vedeli ukázať červený stav aj vtedy, keď sa otvoria AŽ PO
     /// štarte appky, nie len priamo pri uložení formulára.
     pub hotkey_upozornenia: Mutex<Vec<String>>,
+    /// TLI 44 (`2026-10-18-2331-mcp.md`, bod 3) — debounce na JEDNU skratku,
+    /// od poslednej „stlačenej" rovnakej klávesy. Richard 18.10.2026 naživo
+    /// videl v logu DVE „Tartarus stlačené (zdroj=hotkey)" v TEJ ISTEJ
+    /// sekunde na jediný stlak — `RegisterHotKey` na Windowse posiela
+    /// `WM_HOTKEY` opakovane, kým je kombinácia držaná (rovnako ako bežný
+    /// key-repeat), appka to doteraz brala ako dve samostatné analýzy.
+    /// Drží sa len POSLEDNÁ dvojica (skratka, čas) — nie front — presne tak,
+    /// ako `cakajuci_dalsi` vyššie drží len poslednú zdržanú požiadavku.
+    pub posledny_hotkey: Mutex<Option<(Shortcut, Instant)>>,
 }
 
 /// Kontext jedného behu režimu úpravy rozloženia (TLI 21) — pozri

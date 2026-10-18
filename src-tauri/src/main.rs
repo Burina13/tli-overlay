@@ -17,7 +17,7 @@ use serde_json::json;
 use stav::{RezimUpravyKontext, Stav};
 use std::str::FromStr;
 use std::sync::Mutex;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 use tli_overlay_core::nastavenia::Nastavenia;
@@ -522,6 +522,25 @@ fn aktivuj_a_vrat_fokus(_overlay: &tauri::WebviewWindow) {}
 /// druhý raz. Rádovo menej než `autoskrytie_s` (sekundy), takže na celkovú
 /// dobu zobrazenia panela nemá prakticky žiadny vplyv.
 const OVERENIE_PREZENTACIE_ONESKORENIE_MS: u64 = 400;
+/// TLI 44, bod 3: druhé `WM_HOTKEY` na tú istú skratku do tohto okna od
+/// predošlého sa ignoruje úplne potichu (žiadna analýza, žiadne skrytie) —
+/// je to key-repeat Windowsu, nie druhé stlačenie. 500 ms je výrazne nad
+/// bežným key-repeat intervalom (~30-50 ms) a výrazne pod tým, čo by hráč
+/// vnímal ako samostatný druhý stlak.
+const HOTKEY_DEBOUNCE_MS: u64 = 500;
+
+/// Čistá logika debounce (TLI 44, bod 3) — žiadne OS volanie, testovateľné aj
+/// mimo Windowsu. `posledny` je (skratka, kedy) z MINULÉHO doručenia, `nova`
+/// je skratka, ktorá práve prišla, `teraz` je jej čas. Vráti `true`, keď ide
+/// o echo tej istej skratky do `HOTKEY_DEBOUNCE_MS` od predošlej.
+fn hotkey_debounovany(posledny: Option<(Shortcut, Instant)>, nova: &Shortcut, teraz: Instant) -> bool {
+    match posledny {
+        Some((predosla, kedy)) => {
+            &predosla == nova && teraz.duration_since(kedy) < Duration::from_millis(HOTKEY_DEBOUNCE_MS)
+        }
+        None => false,
+    }
+}
 /// Nad touto hranicou podielu odlišných pixelov appka usúdi, že sa panel na
 /// obrazovke NAOZAJ objavil. Hra sama osebe (bez overlayu) sa za 400 ms zvykne
 /// zmeniť len nepatrne (kurzor, drobná animácia na pozadí) — samotný panel
@@ -533,47 +552,113 @@ const PREZENTACIA_PODIEL_PRAH: f64 = 0.0005;
 /// hodiť ±5-10, bez prahu by appka hlásila zmenu aj nad úplne pokojnou hrou.
 const PREZENTACIA_ROZDIEL_PRAH: u8 = 20;
 
-/// TLI 40, bod 3: appka nevie priamo nazrieť do WebView2, či sa panel naozaj
-/// zobrazil — vie len to, čo je NAOZAJ na obrazovke. Odfotí ten istý obdĺžnik
-/// znova (`pred` je snímka spred zobrazenia overlayu, zachytená ešte pred
-/// prvým `ukaz_overlay_nad` v `spusti_analyzu`) a porovná. Beží už v pozadí
-/// (appka je v tomto bode mimo `beh` zámku), takže krátky `sleep` nezdrží ani
-/// tray, ani ďalší hotkey.
+/// Podiel odlišných pixelov voči snímke spred zobrazenia — `None`, keď sa
+/// obdĺžnik nedá znova odfotiť (napr. zmenil sa rozmer okna hry medzitým).
 #[cfg(windows)]
-fn over_prezentaciu(obdlznik: &OknoFyz, pred: &[u8], zdroj: &'static str) {
+fn zmena_oproti(obdlznik: &OknoFyz, pred: &[u8]) -> Result<Option<f64>, String> {
+    let po = snimka::zachyt(obdlznik)?;
+    Ok(tli_overlay_core::obraz::percento_odlisnych_pixelov(
+        pred,
+        &po.rgb,
+        PREZENTACIA_ROZDIEL_PRAH,
+    ))
+}
+
+/// Čisté vyhodnotenie podielu zmeny (TLI 44, bod 2) — žiadne OS volanie,
+/// testovateľné aj mimo Windowsu. Oddelené od `over_prezentaciu`, nech sa
+/// hranica ÁNO/NIE/nedá-sa-overiť dá overiť bez skutočného snímania obrazovky.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum VysledokPrezentacie {
+    Ano,
+    Nie,
+    NedaSaOverit,
+}
+
+fn vyhodnot_prezentaciu(podiel: Option<f64>) -> VysledokPrezentacie {
+    match podiel {
+        Some(p) if p > PREZENTACIA_PODIEL_PRAH => VysledokPrezentacie::Ano,
+        Some(_) => VysledokPrezentacie::Nie,
+        None => VysledokPrezentacie::NedaSaOverit,
+    }
+}
+
+/// TLI 40, bod 3 + TLI 44, bod 2: appka nevie priamo nazrieť do WebView2, či
+/// sa panel naozaj zobrazil — vie len to, čo je NAOZAJ na obrazovke. Odfotí
+/// ten istý obdĺžnik znova (`pred` je snímka spred zobrazenia overlayu,
+/// zachytená ešte pred prvým `ukaz_overlay_nad` v `spusti_analyzu`) a porovná.
+/// Beží už v pozadí (appka je v tomto bode mimo `beh` zámku), takže krátky
+/// `sleep` nezdrží ani tray, ani ďalší hotkey.
+///
+/// TLI 44: keď prvá kontrola povie NIE, appka to už neberie len na vedomie —
+/// skúsi presne tú istú poistku ako pri prvom zobrazení (`aktivuj_a_vrat_fokus`,
+/// TLI 40) ešte raz a po rovnakom oneskorení overí znova. Je to fallback pre
+/// prípad, že by WebView2 zaspalo aj NAPRIEK pulzu v `zobraz_vysledok` — appka
+/// vtedy neostane ticho stáť pri známom zlyhaní, skúsi sa prebrať sama.
+#[cfg(windows)]
+fn over_prezentaciu(app: &AppHandle, obdlznik: &OknoFyz, pred: &[u8], zdroj: &'static str) {
     std::thread::sleep(std::time::Duration::from_millis(OVERENIE_PREZENTACIE_ONESKORENIE_MS));
-    match snimka::zachyt(obdlznik) {
-        Ok(po) => match tli_overlay_core::obraz::percento_odlisnych_pixelov(
-            pred,
-            &po.rgb,
-            PREZENTACIA_ROZDIEL_PRAH,
-        ) {
-            Some(podiel) => denik::zapis(
+    let podiel = match zmena_oproti(obdlznik, pred) {
+        Ok(podiel) => podiel,
+        Err(e) => {
+            denik::zapis("zobraz", &format!("frame prezentovaný: odfotenie na overenie zlyhalo ({e})"));
+            return;
+        }
+    };
+    match vyhodnot_prezentaciu(podiel) {
+        VysledokPrezentacie::Ano => denik::zapis(
+            "zobraz",
+            &format!(
+                // `podiel` je vždy `Some` tu — `Ano` vzniká len z `Some(_)` v `vyhodnot_prezentaciu`.
+                "frame prezentovaný: ÁNO ({:.3} % obrazovky sa zmenilo, zdroj={zdroj})",
+                podiel.unwrap_or(0.0) * 100.0
+            ),
+        ),
+        VysledokPrezentacie::NedaSaOverit => denik::zapis(
+            "zobraz",
+            "frame prezentovaný: nedá sa overiť (zmenil sa rozmer okna hry medzitým)",
+        ),
+        VysledokPrezentacie::Nie => {
+            denik::zapis(
                 "zobraz",
                 &format!(
-                    "frame prezentovaný: {} ({:.3} % obrazovky sa zmenilo, zdroj={zdroj})",
-                    if podiel > PREZENTACIA_PODIEL_PRAH {
-                        "ÁNO"
-                    } else {
-                        "NIE — WebView2 asi stále neprezentuje (pozri TLI 40)"
-                    },
-                    podiel * 100.0
+                    "frame prezentovaný: NIE — WebView2 asi stále neprezentuje ({:.3} %, zdroj={zdroj}), \
+skúšam fallback aktiváciu",
+                    podiel.unwrap_or(0.0) * 100.0
                 ),
-            ),
-            None => denik::zapis(
-                "zobraz",
-                "frame prezentovaný: nedá sa overiť (zmenil sa rozmer okna hry medzitým)",
-            ),
-        },
-        Err(e) => denik::zapis(
-            "zobraz",
-            &format!("frame prezentovaný: odfotenie na overenie zlyhalo ({e})"),
-        ),
+            );
+            // TLI 44, bod 2: presne tá istá poistka ako pri prvom zobrazení
+            // (`aktivuj_a_vrat_fokus`, TLI 40), skúsená ešte raz — pre prípad,
+            // že by WebView2 zaspalo aj NAPRIEK pulzu v `zobraz_vysledok`.
+            if let Some(overlay) = app.get_webview_window(OVERLAY) {
+                aktivuj_a_vrat_fokus(&overlay);
+            }
+            std::thread::sleep(std::time::Duration::from_millis(OVERENIE_PREZENTACIE_ONESKORENIE_MS));
+            match zmena_oproti(obdlznik, pred) {
+                Ok(podiel2) => denik::zapis(
+                    "zobraz",
+                    &match vyhodnot_prezentaciu(podiel2) {
+                        VysledokPrezentacie::NedaSaOverit => {
+                            "frame prezentovaný po fallbacku: nedá sa overiť (zmenil sa rozmer okna hry medzitým)"
+                                .to_string()
+                        }
+                        v => format!(
+                            "frame prezentovaný po fallbacku: {} ({:.3} %, zdroj={zdroj})",
+                            if v == VysledokPrezentacie::Ano { "ÁNO" } else { "NIE" },
+                            podiel2.unwrap_or(0.0) * 100.0
+                        ),
+                    },
+                ),
+                Err(e) => denik::zapis(
+                    "zobraz",
+                    &format!("frame prezentovaný po fallbacku: odfotenie zlyhalo ({e})"),
+                ),
+            }
+        }
     }
 }
 
 #[cfg(not(windows))]
-fn over_prezentaciu(_obdlznik: &OknoFyz, _pred: &[u8], _zdroj: &'static str) {}
+fn over_prezentaciu(_app: &AppHandle, _obdlznik: &OknoFyz, _pred: &[u8], _zdroj: &'static str) {}
 
 /// Postaví overlay presne nad okno hry a ukáže ho. Pozícia aj veľkosť idú vo
 /// FYZICKÝCH pixeloch — logické by sa na monitore so 150 % DPI rozišli s hrou.
@@ -648,6 +733,29 @@ fn posli_polohu_panela(app: &AppHandle, obd: &OknoFyz, mierka: f64, panel_kluc: 
         "panel-poloha",
         json!({ "poloha": poloha, "priehladnost": priehladnost }),
     );
+}
+
+/// TLI 44 (`2026-10-18-2331-mcp.md`): JEDNA funkcia, ktorou ide KAŽDÝ typ
+/// výsledku Tartarusu (doska, výber nástroja/pokladu, objective, poradca) —
+/// predtým každá vetva v `spusti_analyzu` len poslala polohu panela a
+/// rovno emitovala `stav`, zatiaľ čo WebView2 sa „zobudilo" (`aktivuj_a_vrat_fokus`,
+/// TLI 40) LEN RAZ, na úplnom začiatku analýzy (prvý `ukaz_overlay_nad` s
+/// placeholderom „Snímam…"). Pri rýchlych typoch (doska, nástroj) to stíhalo —
+/// pri `poradca` (volá model DVA razy, pozri `ui/overlay.js` komentár o
+/// cieľovej latencii do 8 s) a `objective` (katalógová zhoda navyše) odpoveď
+/// prichádzala neskôr, než WebView2 v `WS_EX_NOACTIVATE` okne znova „zaspalo"
+/// (tá istá occlusion ako v TLI 40) — panel sa interne vykreslil (DOM aj CSS
+/// sedeli, `ui/overlay.js::logPanelVykreslene` to aj zalogovalo), ale sa
+/// NEPREZENTOVAL na obrazovku. Táto funkcia preto pulzne zobudí WebView2
+/// ZNOVA, tesne PRED odoslaním reálneho obsahu — nie na začiatku — takže
+/// funguje bez ohľadu na to, ako dlho server trval.
+fn zobraz_vysledok(app: &AppHandle, panel_kluc: &str, obd: &OknoFyz, mierka: f64, stav_json: serde_json::Value) {
+    posli_polohu_panela(app, obd, mierka, panel_kluc);
+    if let Some(overlay) = app.get_webview_window(OVERLAY) {
+        vynut_navrch(&overlay);
+        aktivuj_a_vrat_fokus(&overlay);
+    }
+    let _ = app.emit("stav", stav_json);
 }
 
 /// Uloží polohu a veľkosť hlavného okna do nastavení (TLI 25, bod 5). Zlyhanie
@@ -958,10 +1066,12 @@ V hre prepni Nastavenia → Zobrazenie → Režim okna na „Okno bez okrajov“
                         // Výber nástroja má vlastnú uloženú polohu panela
                         // (TLI 25) — že ide oň, sa vie až TERAZ, po odpovedi
                         // servera, takže sa poloha pošle druhý raz.
-                        posli_polohu_panela(&app, &obdlznik, mierka, PANEL_NASTROJ);
                         let (sirka_log, vyska_log) = suradnice::logicka_velkost(&obdlznik, mierka);
-                        let _ = app.emit(
-                            "stav",
+                        zobraz_vysledok(
+                            &app,
+                            PANEL_NASTROJ,
+                            &obdlznik,
+                            mierka,
                             json!({
                                 "faza": "hotovo_nastroj",
                                 "analyza": v.analyza,
@@ -1014,10 +1124,12 @@ V hre prepni Nastavenia → Zobrazenie → Režim okna na „Okno bez okrajov“
                                 })
                             })
                             .collect();
-                        posli_polohu_panela(&app, &obdlznik, mierka, PANEL_POKLAD);
                         let (sirka_log, vyska_log) = suradnice::logicka_velkost(&obdlznik, mierka);
-                        let _ = app.emit(
-                            "stav",
+                        zobraz_vysledok(
+                            &app,
+                            PANEL_POKLAD,
+                            &obdlznik,
+                            mierka,
                             json!({
                                 "faza": "hotovo_poklad",
                                 "analyza": v.analyza,
@@ -1075,10 +1187,12 @@ V hre prepni Nastavenia → Zobrazenie → Režim okna na „Okno bez okrajov“
                                 })
                             })
                             .collect();
-                        posli_polohu_panela(&app, &obdlznik, mierka, PANEL_OBJECTIVE);
                         let (sirka_log, vyska_log) = suradnice::logicka_velkost(&obdlznik, mierka);
-                        let _ = app.emit(
-                            "stav",
+                        zobraz_vysledok(
+                            &app,
+                            PANEL_OBJECTIVE,
+                            &obdlznik,
+                            mierka,
                             json!({
                                 "faza": "hotovo_objective",
                                 "analyza": v.analyza,
@@ -1136,10 +1250,12 @@ V hre prepni Nastavenia → Zobrazenie → Režim okna na „Okno bez okrajov“
                                 })
                             })
                             .collect();
-                        posli_polohu_panela(&app, &obdlznik, mierka, PANEL_PORADCA);
                         let (sirka_log, vyska_log) = suradnice::logicka_velkost(&obdlznik, mierka);
-                        let _ = app.emit(
-                            "stav",
+                        zobraz_vysledok(
+                            &app,
+                            PANEL_PORADCA,
+                            &obdlznik,
+                            mierka,
                             json!({
                                 "faza": "hotovo_poradca",
                                 "analyza": v.analyza,
@@ -1209,8 +1325,11 @@ V hre prepni Nastavenia → Zobrazenie → Režim okna na „Okno bez okrajov“
                             &format!("doska: {} polí, tlačidlo {}, emitujem stav=hotovo",
                                      obdlzniky.len(), if tlacidlo.is_some() { "nájdené" } else { "nenájdené" }),
                         );
-                        let _ = app.emit(
-                            "stav",
+                        zobraz_vysledok(
+                            &app,
+                            PANEL_TARTARUS,
+                            &obdlznik,
+                            mierka,
                             json!({
                                 "faza": "hotovo",
                                 "analyza": v.analyza,
@@ -1343,7 +1462,7 @@ V hre prepni Nastavenia → Zobrazenie → Režim okna na „Okno bez okrajov“
 
         let znacka = *app.state::<Stav>().zobrazene_od.lock().unwrap();
         if let Some(znacka) = znacka {
-            over_prezentaciu(&obdlznik, &snimok.rgb, zdroj);
+            over_prezentaciu(&app, &obdlznik, &snimok.rgb, zdroj);
             naplanuj_skrytie(app.clone(), znacka, nastavenia.autoskrytie_s);
         }
 
@@ -1953,6 +2072,12 @@ fn ukaz_pripomienku_toast(app: &AppHandle, text: &str, trieda: &str, sekund: u64
     let _ = okno.set_ignore_cursor_events(true);
     let _ = okno.show();
     vynut_navrch(&okno);
+    // TLI 44: `pripomienka` je `focus: false` rovnako ako `overlay` — ten istý
+    // WebView2-occlusion problém (TLI 40) sa ho teda vie týkať rovnako, keby
+    // appka niekedy posielala obsah toastu s odstupom po `show()`. Pulz je
+    // lacný a tu sa už obsah aj tak posiela PRED týmto `show()` (vyššie), nie
+    // po ňom — ide o rovnakú poistku, nie o opravu konkrétne nahláseného bugu.
+    aktivuj_a_vrat_fokus(&okno);
     denik::zapis("zobraz", &format!("pripomienka trieda={trieda}, text={text}"));
 
     let znacka = Instant::now();
@@ -2584,6 +2709,25 @@ fn main() {
                 return;
             }
 
+            // TLI 44, bod 3: `RegisterHotKey` na Windowse vie tú istú
+            // skratku doručiť viackrát za sebou (key-repeat), kým je
+            // kombinácia držaná — Richard 18.10.2026 videl v logu dve
+            // „Tartarus stlačené" v tej istej sekunde na jeden stlak.
+            // Druhé (a ďalšie) doručenie TEJ ISTEJ skratky do 500 ms od
+            // predošlej sa tu zahodí úplne potichu, pred akýmkoľvek ďalším
+            // rozhodovaním (vrátane Ctrl+F8/Esc/Enter nižšie) — nejde o
+            // druhé stlačenie, len o echo toho istého.
+            {
+                let stav = app.state::<Stav>();
+                let mut posledny = stav.posledny_hotkey.lock().unwrap();
+                let teraz = Instant::now();
+                if hotkey_debounovany(*posledny, skratka, teraz) {
+                    denik::zapis("hotkey", "ignorované — duplicitné doručenie (debounce 500 ms)");
+                    return;
+                }
+                *posledny = Some((*skratka, teraz));
+            }
+
             // Ctrl+F8 (TLI 21) je trvalo zaregistrovaná a funguje nezávisle od
             // toho, čo je práve viditeľné — vybavuje sa PRED všetkým ostatným.
             if skratka == &ctrl_f8() {
@@ -2650,6 +2794,7 @@ fn main() {
             rezim_upravy: Mutex::new(false),
             rezim_upravy_kontext: Mutex::new(None),
             hotkey_upozornenia: Mutex::new(Vec::new()),
+            posledny_hotkey: Mutex::new(None),
         })
         .manage(tracker::Tracker::default())
         // Sprievodca sa načíta z disku hneď pri štarte — záložka Guide
@@ -2969,5 +3114,63 @@ mod testy {
         assert!(t.contains("F8 Tartarus"));
         assert!(t.contains("(konflikt"));
         assert!(!t.contains("F8 Frozen Canvas"));
+    }
+
+    // ── hotkey_debounovany (TLI 44, bod 3) ─────────────────────────────────
+
+    fn ctrl_q() -> Shortcut {
+        Shortcut::new(Some(Modifiers::CONTROL), Code::KeyQ)
+    }
+
+    #[test]
+    fn prve_doruceny_nie_je_debounovane() {
+        assert!(!hotkey_debounovany(None, &ctrl_q(), Instant::now()));
+    }
+
+    /// Presne scenár z 18.10.2026: dve „Tartarus stlačené" na tú istú
+    /// skratku v tej istej sekunde — druhé je echo Windowsu, nie druhý stlak.
+    #[test]
+    fn echo_tej_istej_skratky_do_500ms_je_debounovane() {
+        let t0 = Instant::now();
+        let t1 = t0 + Duration::from_millis(50);
+        assert!(hotkey_debounovany(Some((ctrl_q(), t0)), &ctrl_q(), t1));
+    }
+
+    #[test]
+    fn ta_ista_skratka_po_500ms_uz_nie_je_debounovana() {
+        let t0 = Instant::now();
+        let t1 = t0 + Duration::from_millis(500);
+        assert!(!hotkey_debounovany(Some((ctrl_q(), t0)), &ctrl_q(), t1));
+    }
+
+    #[test]
+    fn ina_skratka_tesne_po_predoslej_nie_je_debounovana() {
+        let t0 = Instant::now();
+        let t1 = t0 + Duration::from_millis(10);
+        assert!(!hotkey_debounovany(Some((ctrl_q(), t0)), &ctrl_f8(), t1));
+    }
+
+    // ── vyhodnot_prezentaciu (TLI 44, bod 2) ───────────────────────────────
+
+    #[test]
+    fn podiel_nad_prahom_je_ano() {
+        assert_eq!(vyhodnot_prezentaciu(Some(PREZENTACIA_PODIEL_PRAH + 0.001)), VysledokPrezentacie::Ano);
+    }
+
+    #[test]
+    fn podiel_presne_na_prahu_je_nie() {
+        // Práh je prísne „väčší než", nie „aspoň" — nulová/hraničná zhoda sa
+        // nemá tváriť ako úspešné zobrazenie (TLI 40, bod 3).
+        assert_eq!(vyhodnot_prezentaciu(Some(PREZENTACIA_PODIEL_PRAH)), VysledokPrezentacie::Nie);
+    }
+
+    #[test]
+    fn nulovy_podiel_je_nie() {
+        assert_eq!(vyhodnot_prezentaciu(Some(0.0)), VysledokPrezentacie::Nie);
+    }
+
+    #[test]
+    fn ziadny_podiel_sa_neda_overit() {
+        assert_eq!(vyhodnot_prezentaciu(None), VysledokPrezentacie::NedaSaOverit);
     }
 }

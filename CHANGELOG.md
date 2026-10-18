@@ -2,6 +2,52 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.19.1 — 19.10.2026 (TLI 44 — Ctrl+Q rada sa pri objective/poradcovi nezobrazí)
+
+Úloha `2026-10-18-2331-mcp.md`. Richard 18.10. večer naživo zistil, že cez
+hotkey (appka má Tartarus naviazaný na Ctrl+Q) sa po obrazovkách „Objective"
+a univerzálny „poradca" nezobrazí NIČ, hoci log ukáže „analyza OK" aj
+„vykreslené panel… viditelny=true" — presne cez tray/hlavné okno („Odfotiť
+Tartarus teraz") to isté zafunguje. Doska a výber nástroja cez hotkey fungujú.
+
+**Príčina nadväzuje na TLI 40, ale je jemnejšia:** `aktivuj_a_vrat_fokus`
+(pulz `SetForegroundWindow`, ktorý WebView2 „zobudí" z occlusion spánku) sa
+volal LEN RAZ, na úplnom začiatku analýzy — pri placeholderi „Snímam…", ešte
+pred volaním servera. Doska a výber nástroja zvyknú dobehnúť rýchlo a stihnú
+sa vykresliť, kým je WebView2 ešte hore. `poradca` pri neznámej obrazovke
+volá model DVA razy (rozpoznanie + poradca, cieľová latencia appky je do 8 s)
+a `objective` priraďuje katalóg navyše — kým server odpovedal, WebView2 už
+znova zaspalo a panel sa „vykreslil" len v DOM-e/CSS (JS log to aj ukázal),
+nie na obrazovke.
+
+**Oprava, štyri časti:**
+1. **Jedna funkcia `zobraz_vysledok`** nahrádza samostatné volania
+   `posli_polohu_panela` + `app.emit("stav", …)` vo VŠETKÝCH vetvách
+   (doska, výber nástroja, výber pokladu, objective, poradca) — pošle
+   polohu panela, PULZNE zobudí WebView2 ešte RAZ tesne pred odoslaním
+   reálneho obsahu a až potom emituje `stav`. Druhý pulz prichádza tesne
+   pred obsahom, nie na začiatku, takže funguje bez ohľadu na to, ako dlho
+   server trval. Rovnaký pulz pridaný aj do toastu pripomienky (`pripomienka`
+   má `focus: false` ako `overlay` — rovnaké riziko, preventívne).
+2. **Automatický fallback v `over_prezentaciu`:** keď kontrola „frame
+   prezentovaný" zistí NIE, appka skúsi `aktivuj_a_vrat_fokus` ešte raz a po
+   rovnakom oneskorení overí znova (`frame prezentovaný po fallbacku`) —
+   namiesto toho, aby len ticho zapísala zlyhanie.
+3. **Debounce 500 ms** na globálne klávesové skratky
+   (`hotkey_debounovany`) — Richard v logu videl DVE „Tartarus stlačené"
+   v tej istej sekunde na jeden stlak (`RegisterHotKey` na Windowse posiela
+   `WM_HOTKEY` opakovane, kým je kombinácia držaná, podobne ako key-repeat).
+   Druhé doručenie tej istej skratky do 500 ms od predošlej sa teraz zahodí
+   potichu, pred akýmkoľvek ďalším rozhodovaním v handleri.
+4. **Testy:** `core` bez zmeny (`0.13.7`). `src-tauri` +8 (`hotkey_debounovany`
+   4, `vyhodnot_prezentaciu` 4, pridané do existujúcej sady `#[cfg(test)] mod
+   testy`) — obe funkcie sú čistá logika bez OS volania, bežia aj mimo
+   `#[cfg(windows)]`. `ui` jsdom 51/51 bez zmeny (klient je čisto na strane
+   Rustu). Samotný pulz a fallback nemajú ako sa overiť automatizovane mimo
+   živej hry na Windowse — Richard to overí naživo.
+
+Release `tli-v0.19.1`, CI aj verify-install zelené, oznam v `#torchlight`.
+
 ## 0.19.0 — 18.10.2026 (TLI 43 — ceny z titrack.ninja)
 
 Úloha `2026-10-18-2043-mcp.md`. Richard: žiadne návrhy správ autorom TITracku,
