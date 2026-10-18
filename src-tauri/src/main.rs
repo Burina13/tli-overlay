@@ -302,8 +302,19 @@ fn predvolena_poloha(panel: &str) -> Obdlznik01 {
             Obdlznik01 { x: 720.0 / 1920.0, y: 40.0 / 1080.0, w: 480.0 / 1920.0, h: 110.0 / 1080.0 }
         }
         // Hlavný panel aj všetky jeho modulové varianty (TLI 25) štartujú
-        // z toho istého rohu — líšiť sa začnú až tým, kam ich hráč posunie.
-        _ => Obdlznik01 { x: 24.0 / 1920.0, y: 24.0 / 1080.0, w: 460.0 / 1920.0, h: 260.0 / 1080.0 },
+        // z toho istého miesta — líšiť sa začnú až tým, kam ich hráč posunie.
+        // TLI 34: vpravo (predtým ľavý horný roh 24/24, kde je herný text
+        // „Objective / Trigger"), a POD predvolenou polohou mini-panela
+        // (PANEL_MINI vyššie: y 20..216 v 1080 logických px), nie cez ňu —
+        // musí sedieť s CSS defaultom `#panel` v ui/overlay.css (top 240px,
+        // right 24px), inak by editačný režim štartoval inde než bežné
+        // zobrazenie (nahlásil Richard, F8 screenshot 18.10. ~13:40).
+        _ => Obdlznik01 {
+            x: (1920.0 - 24.0 - 460.0) / 1920.0,
+            y: 240.0 / 1080.0,
+            w: 460.0 / 1920.0,
+            h: 260.0 / 1080.0,
+        },
     }
 }
 

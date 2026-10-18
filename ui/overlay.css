@@ -63,12 +63,21 @@ html, body {
 
 /* --- Hlavný informačný panel ---
    Poloha/veľkosť/priehľadnosť idú cez CSS premenné (TLI 21, „Upraviť
-   rozloženie“) — bez uloženej hodnoty platia pôvodné pevné hodnoty (24px od
-   rohu, max-width 460px, auto výška) presne ako pred TLI 21. */
+   rozloženie“) — bez uloženej hodnoty platia pevné predvolené hodnoty
+   (max-width 460px, auto výška) a od TLI 34 PRAVÁ strana, pod predvolenou
+   polohou mini-panela (predtým ľavý horný roh) — vľavo hore je herný text
+   „Objective / Trigger" a mini-panel trackera má SVOJU predvolenú polohu
+   tiež vpravo hore (`PANEL_MINI` v `src-tauri/src/main.rs:predvolena_poloha`,
+   x 1620/1920, y 20/1080, h 196/1080), takže panel rady sa tam predtým
+   prekrýval s oboma naraz (nahlásil Richard, F8 screenshot 18.10. ~13:40).
+   240px (text top:24 vrátane) necháva pod mini-panelom medzeru. Hráč so
+   starším uloženým umiestnením nie je dotknutý — toto je len predvoľba pre
+   nikdy neuloženú/obnovenú polohu, musí sedieť s Rust defaultom vyššie, nech
+   editačný režim a bežné zobrazenie štartujú na tom istom mieste. */
 #panel {
     position: absolute;
-    top: var(--panel-top, 24px);
-    left: var(--panel-left, 24px);
+    top: var(--panel-top, 240px);
+    right: var(--panel-right, 24px);
     width: var(--panel-width, auto);
     max-width: var(--panel-maxwidth, 460px);
     height: var(--panel-height, auto);
@@ -188,20 +197,28 @@ body.rezim-upravy #panel-uchyt-velkost {
     height: 100%;
 }
 
+/* TLI 34: BEZ rámika predvolene — pri ploných 16 celách naraz (bežná
+   Tartarus doska) kreslil pôvodný `.pole` oranžový rámik na KAŽDÚ z nich, aj
+   keď sa odporúčanie týkalo len jednej (alebo žiadnej, keď ukazuje na
+   tlačidlo spodnej lišty namiesto cely — TLI 32) — šum namiesto informácie
+   (nahlásil Richard, F8 screenshot 18.10. ~13:40). Rámik teraz kreslí LEN
+   `.pole.ciel` (cieľová cela odporúčania) a `.pole.neiste` (cela, ktorej
+   čítanie appka sama označila za neisté) — nenápadné `.pole` bez týchto
+   tried slúži už len ako neviditeľný layout box pre Frozen Canvas kroky
+   (`.krok-box`, nižšie), tie majú svoj vlastný plný rámik. */
 .pole {
     position: absolute;
     box-sizing: border-box;
-    border: 3px solid #ff962c;
-    box-shadow: inset 0 0 12px rgba(255, 150, 44, 0.4);
     border-radius: 8px;
 }
 
 .pole.neiste {
     border: 3px dashed #ffd84d;
-    box-shadow: none;
 }
 
 .pole.ciel {
+    border: 3px solid #ff962c;
+    box-shadow: inset 0 0 12px rgba(255, 150, 44, 0.4);
     animation: pulzovanie 2s infinite;
 }
 
@@ -241,9 +258,11 @@ body.rezim-upravy #panel-uchyt-velkost {
     border-radius: 6px;
 }
 
-/* --- Frozen Canvas (TLI 4b): krok ČO→KAM --- */
+/* --- Frozen Canvas (TLI 4b): krok ČO→KAM ---
+   Vlastný plný rámik (TLI 34: `.pole` už nemá predvolený rámik, z ktorého by
+   si mohol len prebrať farbu). */
 .krok-box {
-    border-color: #36e05f;
+    border: 3px solid #36e05f;
     box-shadow: inset 0 0 12px rgba(54, 224, 95, 0.4);
 }
 
@@ -342,10 +361,15 @@ body.rezim-upravy #panel-uchyt-velkost {
     line-height: 1;
 }
 
-/* ── Výber „Torture Instrument" (TLI 25) ───────────────────────────────── */
+/* ── Výber „Torture Instrument" (TLI 25) ─────────────────────────────────
+   Vlastná `border-color` (TLI 34: `.pole` už nemá predvolený rámik, z
+   ktorého by si mohla len prebrať farbu — tu sa na rozdiel od Tartarus ciel
+   má zobraziť VŽDY, všetky kartičky na obrazovke sú legitímne porovnávané
+   možnosti, nie šum). */
 .karticka {
     border-width: 3px;
     border-style: solid;
+    border-color: #ff962c;
     border-radius: 8px;
 }
 .karticka-odporucana { border-width: 5px; }

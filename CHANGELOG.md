@@ -2,6 +2,41 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.18.9 — 18.10.2026 (TLI 34 — doladenie rady Tartarus: šum z rámikov, nepoužiteľná istota, prekrývajúce sa panely)
+
+Úloha `2026-10-18-1319-mcp.md`. Richardov F8 screenshot z fázy „Make Your
+Decision" (18.10. ~13:40) ukázal tri problémy naraz, všetky opravené:
+
+- **Všetkých 16 ciel kreslilo oranžový rámik vždy, aj keď sa odporúčanie
+  netýkalo cely vôbec** (napr. odporúčanie mierilo na tlačidlo spodnej lišty,
+  TLI 32) — šum namiesto informácie. `.pole` (`ui/overlay.css`) už nemá
+  predvolený rámik; kreslí ho len `.pole.ciel` (cieľová cela odporúčania) a
+  `.pole.neiste` (cela s neistým čítaním). Tool-select kartičky (`.karticka`)
+  a Frozen Canvas kroky (`.krok-box`) dostali vlastnú `border-color`/`border`,
+  nech sa nezmenia (zdieľali predtým farbu cez `.pole`).
+- **Istota ťahu bola nepoužiteľných 6 %, hoci odporúčanie bolo rozumné** —
+  skutočná príčina bola v serveri (`tli-web`/`engine/solver.py`, samostatný
+  projekt, nie tento repo): `istota` meralo len to, ako predvídateľný je
+  výsledok JEDNEJ možnosti (podiel Monte Carlo rolloutov nad jej vlastným
+  priemerom), nie či je táto možnosť lepšia než alternatívy. Pri šikmom
+  rozdelení skóre to vychádzalo jednociferne aj pri jasnej voľbe. Opravené:
+  nová istota porovnáva najlepšiu možnosť s druhou najlepšou (rovnaký princíp
+  ako výber nástroja, TLI 25); „End Day" je odteraz tiež reálna vyhodnocovaná
+  alternatíva (predtým len núdzová záchrana, keď nebolo čo iné urobiť), takže
+  appka má konečne s čím porovnávať a `alternativy` prestávajú byť prázdne
+  zakaždým, keď bol dostupný devour/swap. Klient (tento repo) sa nemenil —
+  kontrakt `Analyza.istota`/`Alternativa` ostáva rovnaký, len číslo, ktoré
+  doň príde, je teraz zmysluplné.
+- **Panel rady sa predvolene prekrýval s herným textom „Objective / Trigger"
+  (vľavo hore) aj s mini-panelom trackera** (ten má vlastnú predvolenú polohu
+  tiež vpravo hore) — predvolená poloha `#panel` (CSS) aj editačného režimu
+  (`predvolena_poloha` v `src-tauri/src/main.rs`) presunutá vpravo, pod
+  mini-panel. Hráč s už uloženou polohou (ťahaním v „Upraviť rozloženie")
+  nie je dotknutý — mení sa len predvoľba pre nikdy neuloženú/obnovenú polohu.
+- **„Select a Destination" („Go to Cell N")** — overené, že appka ju už
+  rozpoznáva (TLI 32, `akcie_dole` + `_najdi_tlacidlo` na serveri), žiadna
+  zmena tu nebola potrebná.
+
 ## 0.18.8 — 18.10.2026 (TLI 33 — F8 rada sa nezobrazí, hoci server odpovie)
 
 Úloha `2026-10-18-1318-mcp.md`. Richard na 0.18.7 dostal po F8 trikrát (13:15:16,
