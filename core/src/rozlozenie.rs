@@ -34,12 +34,17 @@ pub const PANEL_TARTARUS: &str = "panel:tartarus";
 pub const PANEL_NASTROJ: &str = "panel:nastroj";
 pub const PANEL_CANVAS: &str = "panel:canvas";
 pub const PANEL_ARTISTRY: &str = "panel:artistry";
+/// TLI 35 — výber „Warden's Treasure" má vlastnú uloženú polohu rovnako ako
+/// výber nástroja (TLI 25 bod 5): iná obrazovka, iný typický počet kartičiek
+/// (4, nie 3), hráč ju chce vedieť posunúť nezávisle od ostatných.
+pub const PANEL_POKLAD: &str = "panel:poklad";
 
 /// Moduly v poradí, v akom ich ponúka prepínač v režime úpravy
 /// (`kľúč`, `čo to je pre hráča`).
-pub const MODULOVE_PANELY: [(&str, &str); 4] = [
+pub const MODULOVE_PANELY: [(&str, &str); 5] = [
     (PANEL_TARTARUS, "F8 — doska"),
     (PANEL_NASTROJ, "F8 — výber nástroja"),
+    (PANEL_POKLAD, "F8 — výber pokladu"),
     (PANEL_CANVAS, "F9 — Frozen Canvas"),
     (PANEL_ARTISTRY, "Artistry"),
 ];

@@ -195,3 +195,54 @@ test("režim úpravy ponúka prepínač modulov a prepnutie nahlási Rustu", () 
         window.close();
     }
 });
+
+// ── TLI 35: výber „Warden's Treasure" — rovnaké vykreslenie ako nástroj
+// vyššie (`vykresliHotovoNastroj` v `overlay.js` je generická na
+// `analyza.nastroje`/`analyza.poklady`), len iná fáza a iné slovíčko v texte.
+
+const KARTICKY_POKLADU = [
+    { index: 0, poradie: 1, id: "horn", nazov: "Mosadzný roh sváru",
+      anglicky: "Brass Horn of Strife", tier: "C",
+      dovod: "Hneď spustí požretie u 7 väzňov, čo práve majú platný cieľ.",
+      skore: 0.895, odporucany: true, neznamy: false, malo_dat: false, sporne: false,
+      x: 300, y: 250, w: 280, h: 420 },
+    { index: 1, poradie: 2, id: "wine", nazov: "Karmínový ročník",
+      anglicky: "Crimson Vintage", tier: "S",
+      dovod: "Zdvihne raritu 0 väzňom pod Legendary o stupeň naraz.",
+      skore: 1.261, odporucany: false, neznamy: false, malo_dat: false, sporne: false,
+      x: 900, y: 250, w: 280, h: 420 },
+];
+
+test("F8 na výbere pokladu orámuje kartičky a odporúčanú zvýrazní — aj keď je to iné poradie než katalóg", () => {
+    const { window, document } = postavOverlay();
+    try {
+        posliUdalost(window, "stav", {
+            faza: "hotovo_poklad",
+            karticky: KARTICKY_POKLADU,
+            analyza: { obrazovka: "vyber_pokladu", istota: 0.77, skontroluj: [],
+                      poklady: KARTICKY_POKLADU, kontext_dosky: true },
+        });
+
+        const ramiky = document.querySelectorAll("#vrstva .karticka");
+        assert.equal(ramiky.length, 2);
+        const odporucane = document.querySelectorAll("#vrstva .karticka-odporucana");
+        assert.equal(odporucane.length, 1, "odporúčaná smie byť práve jedna");
+        assert.equal(odporucane[0].style.left, "300px");
+
+        // Odporúčaný je Roh (tier C, kontext dosky), nie katalógovo lepšie
+        // Víno (tier S) — appka má ukázať ODPORÚČANIE, nie opraviť ho na
+        // „logickejšie" podľa tieru.
+        const stitky = [...document.querySelectorAll(".karticka-stitok")]
+            .map((s) => s.textContent);
+        assert.ok(stitky.some((t) => t.includes("C") && t.includes("ber túto")));
+
+        assert.equal(document.getElementById("panel-nadpis").textContent,
+                     "Ber: Mosadzný roh sváru");
+        assert.match(document.getElementById("panel-istota").textContent, /77 %/);
+        const vPaneli = [...document.querySelectorAll("#panel-alternativy .alt-nazov")]
+            .map((e) => e.textContent);
+        assert.deepEqual(vPaneli, ["Mosadzný roh sváru", "Karmínový ročník"]);
+    } finally {
+        window.close();
+    }
+});

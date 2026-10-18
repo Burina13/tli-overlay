@@ -2,6 +2,23 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.18.10 — 18.10.2026 (TLI 35 — nová obrazovka Tartarus „Warden's Treasure")
+
+Úloha `2026-10-18-1321-mcp.md`. F8 teraz rozpoznáva aj tretiu obrazovku
+mechaniky Tartarus — „Select a Warden's Treasure" (výber 1 zo 4 darov po
+dosiahnutí Chromatic: Ring/Horn/Wine/Brand), rovnako ako doteraz doska
+(TLI 1–24) a výber nástroja (TLI 25). `Analyza` dostala pole `poklady`
+(`#[serde(default)]`, rovnaký tvar položky ako `nastroje` — starší server bez
+neho sa ďalej číta ako predtým). Appka ju kreslí tou istou cestou ako výber
+nástroja (rámik s tierom a poradím nad každou kartičkou, odporúčanú zvýrazní
+zlato, panel s poradím a dôvodom) — nová fáza `hotovo_poklad` len volá
+rovnaký vykresľovač, lebo tvar dát je zhodný. Výber pokladu má vlastnú
+uloženú polohu panela (`panel:poklad`), rovnako ako výber nástroja — pribudol
+do prepínača modulov v režime „Upraviť rozloženie". Server (`tli-web`, iný
+repo) pri tomto type obrazovky — na rozdiel od výberu nástroja — prepočíta
+odporúčanie Monte Carlom priamo nad poslednou známou doskou toho istého
+hráča, keď je po ruke; appka to nerieši, len zobrazí, čo príde.
+
 ## 0.18.9 — 18.10.2026 (TLI 34 — doladenie rady Tartarus: šum z rámikov, nepoužiteľná istota, prekrývajúce sa panely)
 
 Úloha `2026-10-18-1319-mcp.md`. Richardov F8 screenshot z fázy „Make Your

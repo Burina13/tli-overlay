@@ -84,6 +84,12 @@ listen("stav", (event) => {
     else if (payload.faza === "hotovo_nastroj") {
         vykresliHotovoNastroj(payload);
     }
+    else if (payload.faza === "hotovo_poklad") {
+        // TLI 35 — rovnaké vykreslenie ako výber nástroja (`vykresliHotovoNastroj`
+        // je generické na `analyza.nastroje`/`analyza.poklady`, viď nižšie),
+        // len iná obrazovka a iný panel pod ňou.
+        vykresliHotovoNastroj(payload);
+    }
     else if (payload.faza === "skry") {
         // Všetko už schoval `skryVsetko()` vyššie — appka len povedala, že
         // nad touto obrazovkou nemá čo kresliť (TLI 25, neznámy typ).
@@ -507,16 +513,21 @@ function vykresliHotovoNastroj(data) {
     const karticky = data.karticky || [];
     const analyza = data.analyza || {};
 
+    // TLI 35: rovnaké vykreslenie pre výber nástroja aj daru — rozlišuje sa
+    // len slovíčkom v texte, polia kartičiek majú rovnaký tvar.
+    const jePoklad = analyza.obrazovka === "vyber_pokladu";
     if (karticky.length === 0) {
-        pNadpis.textContent = "Výber nástroja — kartičky sa nepodarilo umiestniť";
+        pNadpis.textContent = jePoklad
+            ? "Výber pokladu — kartičky sa nepodarilo umiestniť"
+            : "Výber nástroja — kartičky sa nepodarilo umiestniť";
         pDovod.textContent = "Server kartičky prečítal, ale nevrátil ich polohu na obrazovke, "
             + "takže ich neviem orámovať. Poradie je v paneli nižšie.";
         pIstota.textContent = "";
         pIkony.classList.add("skryte");
         pSkontroluj.classList.add("skryte");
-        vypisKartickyDoPanela(analyza.nastroje || []);
+        vypisKartickyDoPanela(analyza.nastroje || analyza.poklady || []);
         elPanel.classList.remove("skryte");
-        logPanelVykreslene("nastroj-bez-polohy");
+        logPanelVykreslene(jePoklad ? "poklad-bez-polohy" : "nastroj-bez-polohy");
         return;
     }
 
@@ -572,7 +583,9 @@ function vykresliHotovoNastroj(data) {
 
     pDovod.textContent = najlepsia
         ? najlepsia.dovod
-        : "Tieto nástroje nemám v katalógu — rozhodni sa sám a pošli screenshot do #torchlight.";
+        : (jePoklad
+            ? "Tieto dary nemám v katalógu — rozhodni sa sám a pošli screenshot do #torchlight."
+            : "Tieto nástroje nemám v katalógu — rozhodni sa sám a pošli screenshot do #torchlight.");
     pIkony.classList.add("skryte");
 
     vypisKartickyDoPanela(karticky);
@@ -584,7 +597,7 @@ function vykresliHotovoNastroj(data) {
         pSkontroluj.classList.add("skryte");
     }
     elPanel.classList.remove("skryte");
-    logPanelVykreslene("nastroj");
+    logPanelVykreslene(jePoklad ? "poklad" : "nastroj");
 }
 
 // Zoznam pod hlavným textom panela — používa sa aj vtedy, keď sa rámiky

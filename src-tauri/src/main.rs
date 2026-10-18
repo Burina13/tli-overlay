@@ -24,7 +24,7 @@ use tli_overlay_core::nastavenia::Nastavenia;
 use tli_overlay_core::nastavenia::PolohaOkna;
 use tli_overlay_core::rozlozenie::{
     Obdlznik01, MODULOVE_PANELY, PANEL_CANVAS, PANEL_HLAVNY, PANEL_MINI, PANEL_NASTROJ,
-    PANEL_PRIPOMIENKA, PANEL_TARTARUS,
+    PANEL_POKLAD, PANEL_PRIPOMIENKA, PANEL_TARTARUS,
 };
 use tli_overlay_core::suradnice::OknoFyz;
 use tli_overlay_core::{api, suradnice, zmensenie};
@@ -729,6 +729,62 @@ V hre prepni Nastavenia → Zobrazenie → Režim okna na „Okno bez okrajov“
                             "stav",
                             json!({
                                 "faza": "hotovo_nastroj",
+                                "analyza": v.analyza,
+                                "karticky": karticky,
+                                "mierka": mierka,
+                                "sirka": sirka_log,
+                                "vyska": vyska_log,
+                                "trvanie_ms": v.trvanie_ms,
+                            }),
+                        );
+                    }
+                    // TLI 35: obrazovka „Select a Warden's Treasure" — rovnaký
+                    // princíp ako výber nástroja vyššie, len vlastná uložená
+                    // poloha panela a vlastné pole v odpovedi (`poklady`, nie
+                    // `nastroje`) — appka síce kreslí oboje rovnako (JS si
+                    // zoberie, ktoré z dvoch polí príde), ale server ich drží
+                    // oddelené, lebo výber daru sa počíta inak (Monte Carlo nad
+                    // AKTUÁLNOU doskou, keď je po ruke, nie bayesovský katalóg).
+                    Ok(v) if v.analyza.obrazovka == "vyber_pokladu" => {
+                        denik::zapis(
+                            "poklad",
+                            &format!(
+                                "výber pokladu: {} kartičiek, odporúčam {}",
+                                v.analyza.poklady.len(),
+                                v.analyza
+                                    .odporucanie
+                                    .as_ref()
+                                    .map(|o| o.nazov.clone())
+                                    .unwrap_or_else(|| "nič (nepoznám ani jednu)".to_string())
+                            ),
+                        );
+                        let karticky: Vec<_> = api::pouzitelne_karticky_pokladu(&v.analyza)
+                            .into_iter()
+                            .map(|k| {
+                                let b = k.box_.expect("filtrované pouzitelne_karticky_pokladu");
+                                let css = suradnice::box01_na_css(b.x, b.y, b.w, b.h, &obdlznik, mierka);
+                                json!({
+                                    "index": k.index,
+                                    "poradie": k.poradie,
+                                    "nazov": k.nazov.clone(),
+                                    "anglicky": k.anglicky.clone(),
+                                    "tier": k.tier.clone(),
+                                    "dovod": k.dovod.clone(),
+                                    "skore": k.skore,
+                                    "odporucany": k.odporucany,
+                                    "neznamy": k.neznamy,
+                                    "malo_dat": k.malo_dat,
+                                    "sporne": k.sporne,
+                                    "x": css.x, "y": css.y, "w": css.w, "h": css.h,
+                                })
+                            })
+                            .collect();
+                        posli_polohu_panela(&app, &obdlznik, mierka, PANEL_POKLAD);
+                        let (sirka_log, vyska_log) = suradnice::logicka_velkost(&obdlznik, mierka);
+                        let _ = app.emit(
+                            "stav",
+                            json!({
+                                "faza": "hotovo_poklad",
                                 "analyza": v.analyza,
                                 "karticky": karticky,
                                 "mierka": mierka,

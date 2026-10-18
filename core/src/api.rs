@@ -135,6 +135,12 @@ pub struct Analyza {
     /// aby nová appka proti starému serveru fungovala ako doteraz.
     pub obrazovka: String,
     pub nastroje: Vec<KartickaNastroja>,
+    /// TLI 35 — "Select a Warden's Treasure" (`obrazovka == "vyber_pokladu"`).
+    /// Rovnaký tvar položky ako `nastroje` (server ich preto drží v tej istej
+    /// `KartickaNastroja`, len v inom poli), ale iný výpočet: keď je po ruke
+    /// posledná doska toho istého hráča, server poradie prepočíta Monte Carlom
+    /// priamo nad ňou namiesto katalógového priemeru.
+    pub poklady: Vec<KartickaNastroja>,
     /// Id riadku učenia na serveri — appka ho nikam neposiela sama, je to
     /// len stopa do logu, aby sa dala snímka spätne nájsť.
     pub vyber_id: Option<i64>,
@@ -156,6 +162,7 @@ impl Default for Analyza {
             trvanie_ms: None,
             obrazovka: "doska".to_string(),
             nastroje: vec![],
+            poklady: vec![],
             vyber_id: None,
             popis: "".to_string(),
         }
@@ -167,6 +174,17 @@ impl Default for Analyza {
 pub fn pouzitelne_karticky(a: &Analyza) -> Vec<&KartickaNastroja> {
     let mut v: Vec<&KartickaNastroja> = a
         .nastroje
+        .iter()
+        .filter(|k| k.box_.map(|b| b.w > 0.0 && b.h > 0.0).unwrap_or(false))
+        .collect();
+    v.sort_by_key(|k| k.poradie);
+    v
+}
+
+/// To isté ako `pouzitelne_karticky`, len nad `poklady` (TLI 35).
+pub fn pouzitelne_karticky_pokladu(a: &Analyza) -> Vec<&KartickaNastroja> {
+    let mut v: Vec<&KartickaNastroja> = a
+        .poklady
         .iter()
         .filter(|k| k.box_.map(|b| b.w > 0.0 && b.h > 0.0).unwrap_or(false))
         .collect();
@@ -522,6 +540,44 @@ mod testy {
         }
         let v = pouzitelne_karticky(&a);
         assert_eq!(v.iter().map(|k| k.index).collect::<Vec<_>>(), vec![1, 2, 0]);
+    }
+
+    #[test]
+    fn parsovanie_vyberu_pokladu() {
+        // TLI 35 — presne 4 kartičky z Richardovho F8 screenshotu 18.10.2026
+        // 13:21, kontext_dosky znamená, že server odporúčanie prepočítal
+        // Monte Carlom nad jeho poslednou doskou, nie len katalógovým priemerom.
+        let json = r#"{
+            "ok": true, "modul": "tartarus-poklad", "obrazovka": "vyber_pokladu",
+            "kontext_dosky": true, "istota": 0.77,
+            "odporucanie": {"nazov": "Mosadzný roh sváru", "dovod": "Lebo."},
+            "poklady": [
+              {"index": 0, "id": "horn", "nazov": "Mosadzný roh sváru",
+               "anglicky": "Brass Horn of Strife", "tier": "C", "poradie": 1,
+               "dovod": "Hneď spustí požretie u 7 väzňov.", "skore": 0.895,
+               "odporucany": true, "neznamy": false, "malo_dat": false,
+               "sporne": false, "box": {"x": 0.35, "y": 0.30, "w": 0.17, "h": 0.40}},
+              {"index": 1, "id": "wine", "nazov": "Karmínový ročník",
+               "anglicky": "Crimson Vintage", "tier": "S", "poradie": 2,
+               "dovod": "Zdvihne raritu 0 väzňom.", "skore": 1.261,
+               "odporucany": false, "neznamy": false, "malo_dat": false,
+               "sporne": false, "box": {"x": 0.55, "y": 0.30, "w": 0.17, "h": 0.40}}
+            ]
+        }"#;
+        let a: Analyza = serde_json::from_str(json).unwrap();
+        assert_eq!(a.obrazovka, "vyber_pokladu");
+        assert_eq!(a.poklady.len(), 2);
+        // Výber pokladu nemá `vyber_id` (TLI 35 nemá vlastnú tabuľku učenia
+        // ako nástroje — poslednú dosku si pamätá `analyzy`, nie nový riadok).
+        assert_eq!(a.vyber_id, None);
+        assert!(a.poklady[0].odporucany && a.poklady[0].id.as_deref() == Some("horn"));
+        // Katalógovo je Víno najlepšie (tier S), ale kontext dosky (TLI 35)
+        // odporučí Roh — presne to appka má ukázať, nie opraviť na „logickejšie".
+        assert_eq!(a.poklady[1].tier, "S");
+        assert!(!a.poklady[1].odporucany);
+        let kreslitelne = pouzitelne_karticky_pokladu(&a);
+        assert_eq!(kreslitelne.len(), 2);
+        assert_eq!(kreslitelne[0].id.as_deref(), Some("horn"));
     }
 
     #[test]
