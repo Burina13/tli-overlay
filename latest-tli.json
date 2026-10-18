@@ -1,6 +1,6 @@
 {
-  "version": "0.18.11",
-  "notes": "TLI 36: F8 ti poradí pri KAŽDOM výbere v Tartaruse, nie len na obrazovkách, ktoré appka pozná. Keď narazí na obrazovku bez vlastného modulu (lobby, výber cieľa, modál „Make Your Decision“…), nenapíše už „zatiaľ neviem prečítať“ — orámuje možnosti priamo nad hrou, odporúčanú zlato, a v paneli povie prečo. Opravené aj to, že pri paneli Consume/Replace/End appka zvýrazňovala celu, na ktorú sa v tom modále kliknúť nedalo. Pri neznámej obrazovke sa odpoveď počíta dlhšie (dve volania modelu) — indikátor sa po 8 sekundách prepne na „Pracujem…“.",
-  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.18.11/Tvoj-Tatko-TLI-Overlay_0.18.11_x64_en-US.msi",
-  "msiSha256": "837f046de7ab96d174712b1ec22041e14f408d276b1e40f09153365ddceb8c52"
+  "version": "0.18.12",
+  "notes": "TLI 37: na začiatku behu stlač F8 na obrazovke „Objective“ — appka si cieľ zapamätá na celý beh, povie ti po slovensky, čo z neho vyplýva, a od tej chvíle ho berie do úvahy pri každej rade (Consume/Replace/End, kam ísť patrolou, ktorý Torture Instrument aj Warden's Treasure) a v dôvode to aj napíše. V paneli vidíš priebeh, napr. „Požretie (Consume) 2/4“ — je to odhad z tvojich F8 snímok, lebo hra priebeh nikde neukazuje, a appka to hovorí rovno. Opravené aj dve veci: dropy sa už nevolajú holým „#115“ a prázdny rám pripomienky uprostred hore sa nekreslí.",
+  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.18.12/Tvoj-Tatko-TLI-Overlay_0.18.12_x64_en-US.msi",
+  "msiSha256": "383de4236cf1f336ae54682be38f0fc15718e7e2688d07755fc68612c0df7994"
 }
