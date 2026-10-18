@@ -2,6 +2,51 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.18.14 — 18.10.2026 (TLI 40 — F8 rada sa nevykreslí, hotfix)
+
+Úloha `2026-10-18-1622-mcp.md`. TLI 39 opravil, že F8 vôbec spustí analýzu
+(zlá klávesová skratka) — toto je ĎALŠÍ, hlbší problém, ktorý Richard našiel
+hneď po nej: F8 analýzu spustí, log ukáže „analyza OK" aj „vykreslený panel…
+viditelny=true", ale nad hrou sa NIČ nezobrazí. Ručné spustenie (tray/tlačidlo
+„Odfotiť Tartarus teraz") rovnakú analýzu ukáže bez problémov.
+
+**Príčina:** F8 aj ručné spustenie volajú v Ruste úplne rovnakú funkciu
+(`spusti_analyzu` → `ukaz_overlay_nad` → `overlay.show()`) a rovnaký
+`requestAnimationFrame` v `overlay.js` — kód sa nelíši. Rozdiel je vo
+WebView2 samotnom: overlay je `WS_EX_NOACTIVATE` okno, ktoré hráč nikdy
+neaktivoval, a Chromium v takom okne vie DOM „vykresliť" interne a napriek
+tomu ho NIKDY neprezentovať na obrazovku (správanie okolo occlusion
+detekcie). Klik na tray/tlačidlo okno nášho procesu krátko aktivuje (a tým
+WebView2 „zobudí"), globálna klávesová skratka (`RegisterHotKey`) také okno
+nikdy nemá.
+
+**Oprava (tri časti):**
+1. Nové `additionalBrowserArgs` pre overlay okno v `tauri.conf.json`
+   (`--disable-features=…,CalculateNativeWinOcclusion
+   --disable-backgrounding-occluded-windows --disable-renderer-backgrounding`)
+   — rovnaká hodnota, ktorú appka predtým skúšala presadiť cez premennú
+   prostredia `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` bez úspechu (Tauri ju
+   ignoruje, nastavuje si vlastné argumenty); teraz ide správnou cestou.
+2. Appka po `overlay.show()` sama zavolá `SetForegroundWindow` na overlay
+   (dokumentovaný spôsob, ako aktivovať aj `WS_EX_NOACTIVATE` okno) a HNEĎ
+   nato vráti popredie späť na to, čo bolo aktívne predtým (typicky hra) —
+   žiadny vstup sa nesimuluje, hráč stratu klávesnice nezbadá.
+3. Diagnostika: log teraz zapisuje ZDROJ popudu (`zdroj=hotkey/rucne/auto`),
+   nielen to, že sa niečo stlačilo — predtým sa z logu nedalo odlíšiť, ktorou
+   cestou analýza prišla. Appka navyše 400 ms po zobrazení panela SAMA odfotí
+   ten istý obdĺžnik znova a porovná ho so snímkou spred overlayu
+   (`core::obraz::percento_odlisnych_pixelov`) — zapíše „frame prezentovaný:
+   ÁNO/NIE" podľa toho, či sa na obrazovke NAOZAJ niečo zmenilo. Je to prvá
+   automatická kontrola „viditeľné naozaj", nezávislá od toho, čo si appka
+   sama o sebe myslí.
+
+Testy: `core` 26 testov (+5, `percento_odlisnych_pixelov`), `cargo check` aj
+`cargo check --tests` v `src-tauri` zelené, `ui` jsdom 50/50 (bez zmeny,
+JS sa nedotýkalo). Oprava sama (časti 1 a 2) nemá ako sa overiť automatizovane
+mimo živej hry na Windowse — Richard to overí naživo, časť 3 (diagnostika)
+je navrhnutá presne na to, aby pri ďalšom podobnom probléme dala odpoveď bez
+nutnosti sedieť pri hre s Richardom.
+
 ## 0.18.13 — 18.10.2026 (TLI 39 — skutočná príčina „F8 nefunguje", klávesové skratky)
 
 Úloha `2026-10-18-1613-mcp.md`. Skutočná príčina incidentu z 18.10. popoludní:

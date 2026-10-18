@@ -470,6 +470,101 @@ fn vynut_navrch(okno: &tauri::WebviewWindow) {
     let _ = okno.set_always_on_top(true);
 }
 
+/// TLI 40 (`2026-10-18-1622-mcp.md`): koreň „F8 rada sa nevykreslí, ručné
+/// spustenie áno". Rust aj JS stranu robia OBE cesty identicky (rovnaká
+/// `spusti_analyzu` → `ukaz_overlay_nad` → `overlay.show()`, rovnaký
+/// `requestAnimationFrame` v `overlay.js`) — rozdiel je v samotnom WebView2:
+/// Chromium v topmost/`WS_EX_NOACTIVATE` okne, ktoré hráč nikdy neaktivoval,
+/// vie DOM „vykresliť" interne a napriek tomu ho nikdy neprezentovať na
+/// obrazovku (známe správanie okolo occlusion detekcie). Ručná cesta (klik na
+/// tray/tlačidlo) funguje, lebo samotné kliknutie myšou cestou cez okno
+/// nášho procesu ho krátko aktivuje a WebView2 sa „zobudí" — F8 ako globálna
+/// skratka (`RegisterHotKey`) také okno nikdy nemá.
+///
+/// Oprava: urobíme to isté SAMI. `SetForegroundWindow` je dokumentovaný
+/// spôsob, ako aktivovať aj `WS_EX_NOACTIVATE` okno („To activate the window,
+/// use the SetActiveWindow or SetForegroundWindow function" — MSDN k danému
+/// štýlu), a keďže ide o reakciu na práve stlačenú klávesu, Windows appke
+/// právo na zmenu popredia priznáva (rovnaký dôvod, prečo to isté API bez
+/// problémov používajú iné hotkey-spúšťané nástroje). Hneď potom sa popredie
+/// vráti späť na to, čo bolo aktívne predtým (typicky hra) — žiadny vstup sa
+/// nesimuluje a hráč stratu klávesnice nezbadá, trvá to mikrosekundy.
+#[cfg(windows)]
+fn aktivuj_a_vrat_fokus(overlay: &tauri::WebviewWindow) {
+    use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, SetForegroundWindow};
+    let Ok(hwnd_overlay) = overlay.hwnd() else { return };
+    // BEZPECNOST: len prepnutie, ktore okno je aktivne — ziadna cudzia pamat,
+    // ziadny simulovany vstup.
+    unsafe {
+        let hwnd_povodne = GetForegroundWindow();
+        let _ = SetForegroundWindow(hwnd_overlay);
+        if !hwnd_povodne.is_invalid() && hwnd_povodne != hwnd_overlay {
+            let _ = SetForegroundWindow(hwnd_povodne);
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn aktivuj_a_vrat_fokus(_overlay: &tauri::WebviewWindow) {}
+
+/// Oneskorenie pred kontrolou skutočnej prezentácie (TLI 40, bod 3) — nech
+/// WebView2/DWM stihnú doručiť frame na obrazovku skôr, než appka odfotí
+/// druhý raz. Rádovo menej než `autoskrytie_s` (sekundy), takže na celkovú
+/// dobu zobrazenia panela nemá prakticky žiadny vplyv.
+const OVERENIE_PREZENTACIE_ONESKORENIE_MS: u64 = 400;
+/// Nad touto hranicou podielu odlišných pixelov appka usúdi, že sa panel na
+/// obrazovke NAOZAJ objavil. Hra sama osebe (bez overlayu) sa za 400 ms zvykne
+/// zmeniť len nepatrne (kurzor, drobná animácia na pozadí) — samotný panel
+/// rady prekrýva stovky až tisíce pixelov, takže práh je nastavený nízko, ale
+/// nie na nulu (nulová zmena by vedela nastať aj pri úplne statickej hre).
+const PREZENTACIA_PODIEL_PRAH: f64 = 0.0005;
+/// Rozdiel na kanál, od ktorého sa pixel počíta ako „zmenený" — šum snímania
+/// obrazovky (dithering, kompresia farieb pri HDR/ICC profiloch) vie bežne
+/// hodiť ±5-10, bez prahu by appka hlásila zmenu aj nad úplne pokojnou hrou.
+const PREZENTACIA_ROZDIEL_PRAH: u8 = 20;
+
+/// TLI 40, bod 3: appka nevie priamo nazrieť do WebView2, či sa panel naozaj
+/// zobrazil — vie len to, čo je NAOZAJ na obrazovke. Odfotí ten istý obdĺžnik
+/// znova (`pred` je snímka spred zobrazenia overlayu, zachytená ešte pred
+/// prvým `ukaz_overlay_nad` v `spusti_analyzu`) a porovná. Beží už v pozadí
+/// (appka je v tomto bode mimo `beh` zámku), takže krátky `sleep` nezdrží ani
+/// tray, ani ďalší hotkey.
+#[cfg(windows)]
+fn over_prezentaciu(obdlznik: &OknoFyz, pred: &[u8], zdroj: &'static str) {
+    std::thread::sleep(std::time::Duration::from_millis(OVERENIE_PREZENTACIE_ONESKORENIE_MS));
+    match snimka::zachyt(obdlznik) {
+        Ok(po) => match tli_overlay_core::obraz::percento_odlisnych_pixelov(
+            pred,
+            &po.rgb,
+            PREZENTACIA_ROZDIEL_PRAH,
+        ) {
+            Some(podiel) => denik::zapis(
+                "zobraz",
+                &format!(
+                    "frame prezentovaný: {} ({:.3} % obrazovky sa zmenilo, zdroj={zdroj})",
+                    if podiel > PREZENTACIA_PODIEL_PRAH {
+                        "ÁNO"
+                    } else {
+                        "NIE — WebView2 asi stále neprezentuje (pozri TLI 40)"
+                    },
+                    podiel * 100.0
+                ),
+            ),
+            None => denik::zapis(
+                "zobraz",
+                "frame prezentovaný: nedá sa overiť (zmenil sa rozmer okna hry medzitým)",
+            ),
+        },
+        Err(e) => denik::zapis(
+            "zobraz",
+            &format!("frame prezentovaný: odfotenie na overenie zlyhalo ({e})"),
+        ),
+    }
+}
+
+#[cfg(not(windows))]
+fn over_prezentaciu(_obdlznik: &OknoFyz, _pred: &[u8], _zdroj: &'static str) {}
+
 /// Postaví overlay presne nad okno hry a ukáže ho. Pozícia aj veľkosť idú vo
 /// FYZICKÝCH pixeloch — logické by sa na monitore so 150 % DPI rozišli s hrou.
 ///
@@ -484,6 +579,7 @@ fn ukaz_overlay_nad(app: &AppHandle, obd: &OknoFyz, s_rozlozenim: bool, panel_kl
         let _ = overlay.set_ignore_cursor_events(true);
         let show_chyba = overlay.show().err();
         vynut_navrch(&overlay);
+        aktivuj_a_vrat_fokus(&overlay);
         let _ = app.global_shortcut().register(esc());
         *app.state::<Stav>().zobrazene_od.lock().unwrap() = Some(Instant::now());
 
@@ -653,14 +749,19 @@ pub enum Modul {
     Ceny,
 }
 
+/// Odkiaľ prišiel popud na analýzu — TLI 40 (`2026-10-18-1622-mcp.md`, bod 3):
+/// predtým appka logovala rovnaké „Tartarus stlačené" pre hotkey AJ pre ručné
+/// spustenie z tray/tlačidla, takže sa z logu nedalo zistiť, ktorou cestou
+/// analýza prišla — presne to bolo treba odlíšiť pri hľadaní, prečo F8 funguje
+/// inak než ručné tlačidlo.
 #[cfg(windows)]
-pub(crate) fn spusti_analyzu(app: AppHandle, modul: Modul) {
+pub(crate) fn spusti_analyzu(app: AppHandle, modul: Modul, zdroj: &'static str) {
     // Zapísané VŽDY, ako prvé — nezávisle od všetkých early-returnov nižšie.
     // Predtým appka nemala žiadnu stopu po tom, že hotkey vôbec dorazil do
     // Rustu (TLI 24, `2026-10-17-1238-mcp.md` bod 1/4): keď appka „nič
     // nespraví", nedalo sa ani odlíšiť „hotkey nedorazil" od „appka ho
     // dostala a niečo potichu zlyhalo".
-    denik::zapis("hotkey", &format!("{modul:?} stlačené"));
+    denik::zapis("hotkey", &format!("{modul:?} stlačené (zdroj={zdroj})"));
 
     // Kým hráč posúva/zväčšuje panely (TLI 21), F8/F9 nemajú spustiť analýzu
     // nad práve upravovaným rozložením — zmazalo by to náhľad aj vrátilo
@@ -1221,6 +1322,7 @@ V hre prepni Nastavenia → Zobrazenie → Režim okna na „Okno bez okrajov“
 
         let znacka = *app.state::<Stav>().zobrazene_od.lock().unwrap();
         if let Some(znacka) = znacka {
+            over_prezentaciu(&obdlznik, &snimok.rgb, zdroj);
             naplanuj_skrytie(app.clone(), znacka, nastavenia.autoskrytie_s);
         }
     });
@@ -1229,7 +1331,7 @@ V hre prepni Nastavenia → Zobrazenie → Režim okna na „Okno bez okrajov“
 /// Mimo Windowsu appka nevie odfotiť okno hry — kompiluje sa len preto, aby sa
 /// dali spúšťať testy a `cargo check` na Linuxe v CI.
 #[cfg(not(windows))]
-pub(crate) fn spusti_analyzu(app: AppHandle, _modul: Modul) {
+pub(crate) fn spusti_analyzu(app: AppHandle, _modul: Modul, _zdroj: &'static str) {
     ukaz_chybu(&app, None, "Appka funguje len na Windowse.");
 }
 
@@ -1245,7 +1347,7 @@ const ODFOTENIE_TERAZ_ONESKORENIE_S: u64 = 2;
 fn naplanuj_odfotenie(app: AppHandle, modul: Modul) {
     std::thread::spawn(move || {
         std::thread::sleep(std::time::Duration::from_secs(ODFOTENIE_TERAZ_ONESKORENIE_S));
-        spusti_analyzu(app, modul);
+        spusti_analyzu(app, modul, "rucne");
     });
 }
 
@@ -2493,7 +2595,7 @@ fn main() {
                 } else {
                     Modul::Tartarus
                 };
-                spusti_analyzu(app.clone(), modul);
+                spusti_analyzu(app.clone(), modul, "hotkey");
             }
         })
         .build();

@@ -1167,7 +1167,7 @@ pub fn spusti_vlakno(app: AppHandle) {
                     // zámok `beh` proti súbehu s F8/F9 aj proti dvom rýchlo za sebou
                     // idúcim otvoreniam.
                     if trh_otvoreny && ceny_obrazovka_zapnute {
-                        crate::spusti_analyzu(app.clone(), crate::Modul::Ceny);
+                        crate::spusti_analyzu(app.clone(), crate::Modul::Ceny, "auto");
                     }
                 }
             }

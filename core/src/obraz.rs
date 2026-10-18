@@ -50,9 +50,64 @@ pub fn bgra_na_rgb(bgra: &[u8], sirka: u32, vyska: u32, prevratit: bool) -> Vec<
     rgb
 }
 
+/// Podiel pixelov, ktoré sa medzi dvoma RGB snímkami ROVNAKÉHO rozmeru líšia
+/// o viac než `prah` na aspoň jednom kanáli. Vracia `None`, keď sa snímky
+/// nedajú porovnať (iná dĺžka — napr. hráč medzitým zmenil veľkosť okna).
+/// DOVOD (TLI 40, `2026-10-18-1622-mcp.md`): appka nevie priamo zistiť, či
+/// WebView2 v overlay okne SKUTOČNE odprezentoval snímku na obrazovku — DOM sa
+/// vie „vykresliť" interne (appka to aj logovala) a napriek tomu sa nič
+/// neukáže na skutočnej obrazovke. Odpoveď sa preto nehľadá v okne samom, ale
+/// v tom, čo je NAOZAJ vidno: odfotí sa ten istý obdĺžnik predtým (bez
+/// overlayu) a potom (keď by mal byť nad hrou vidieť panel s radou) a snímky
+/// sa porovnajú — ak sa takmer nič nezmenilo, panel sa neprezentoval.
+pub fn percento_odlisnych_pixelov(pred: &[u8], po: &[u8], prah: u8) -> Option<f64> {
+    if pred.is_empty() || pred.len() != po.len() {
+        return None;
+    }
+    let pocet_odlisnych = pred
+        .iter()
+        .zip(po.iter())
+        .filter(|&(a, b)| a.abs_diff(*b) > prah)
+        .count();
+    Some(pocet_odlisnych as f64 / pred.len() as f64)
+}
+
 #[cfg(test)]
 mod testy {
     use super::*;
+
+    #[test]
+    fn test_percento_odlisnych_pixelov_identicke_su_nulove() {
+        let data = vec![10, 20, 30, 40, 50, 60];
+        assert_eq!(percento_odlisnych_pixelov(&data, &data, 8), Some(0.0));
+    }
+
+    #[test]
+    fn test_percento_odlisnych_pixelov_rozdielna_dlzka_vracia_none() {
+        assert_eq!(percento_odlisnych_pixelov(&[1, 2, 3], &[1, 2], 8), None);
+    }
+
+    #[test]
+    fn test_percento_odlisnych_pixelov_prazdne_vracia_none() {
+        assert_eq!(percento_odlisnych_pixelov(&[], &[], 8), None);
+    }
+
+    #[test]
+    fn test_percento_odlisnych_pixelov_pod_prahom_sa_nepocita() {
+        // Rozdiel presne 8 nie je VIAC než prah 8 — nesmie sa počítať (šum
+        // snímania obrazovky, nie skutočná zmena).
+        assert_eq!(percento_odlisnych_pixelov(&[100], &[108], 8), Some(0.0));
+    }
+
+    #[test]
+    fn test_percento_odlisnych_pixelov_spocita_presny_podiel() {
+        // 10 bajtov, 2 sa zmenili o viac než prah → 0.2.
+        let pred = vec![0u8; 10];
+        let mut po = vec![0u8; 10];
+        po[0] = 255;
+        po[5] = 200;
+        assert_eq!(percento_odlisnych_pixelov(&pred, &po, 8), Some(0.2));
+    }
 
     #[test]
     fn test_je_takmer_cierny_uplne_cierna() {
