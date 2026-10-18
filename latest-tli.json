@@ -1,6 +1,6 @@
 {
-  "version": "0.18.14",
-  "notes": "TLI 40 (hotfix): opravené „F8 spustí analýzu, ale rada sa nad hrou nikdy nezobrazí“ — ručné spustenie z tray/tlačidla to isté ukázalo bez problémov, lebo klik naše okno krátko aktivuje a F8 ako globálna klávesová skratka to nikdy neurobí (WebView2 v neaktivovanom okne vie obsah vykresliť interne a napriek tomu ho neukázať na obrazovke). Appka teraz po F8 sama krátko aktivuje overlay a hneď vráti popredie späť hre (žiadny vstup sa nesimuluje), a log aj navyše automaticky over, že sa panel naozaj objavil na obrazovke.",
-  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.18.14/Tvoj-Tatko-TLI-Overlay_0.18.14_x64_en-US.msi",
-  "msiSha256": "2e4e707065d7dc19ddb1f555a7d300a8a694256dbd8995a5d29e97e6fa9f9137"
+  "version": "0.18.15",
+  "notes": "TLI 41 (1/2): opakované Ctrl+Q počas prebiehajúcej analýzy už nehlási chybu — appka si zapamätá len POSLEDNÚ takú požiadavku a spustí ju hneď po dobehnutí predošlej (vždy vyhráva posledná snímka). Server-side opravy kvality rady (poradca pri známych tlačidlách, preklad „skontroluj“ do slovenčiny) sú nasadené na tli-web, bez zmeny tohto klienta.",
+  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.18.15/Tvoj-Tatko-TLI-Overlay_0.18.15_x64_en-US.msi",
+  "msiSha256": "a3f0e565dff48a771bb0aaeeba13d87ebdc11d3dcac7666c8878342eeb024e32"
 }
