@@ -1,6 +1,6 @@
 {
-  "version": "0.18.7",
-  "notes": "TLI 32: overlay dnes ukazoval šípku na konkrétnu celu dosky, ale ťah sa v hre robí stlačením tlačidla v spodnej lište („Select a Destination“/„Make Your Decision“). Appka teraz zvýrazní PRIAMO to tlačidlo (žiara + krátky popis + istota) podľa toho, čo server rozpoznal na obrázku — a celu nezvýrazní vôbec. Keď sa tlačidlo nedá jednoznačne určiť, appka sa správa ako predtým (zvýrazní celu a nakreslí šípku).",
-  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.18.7/Tvoj-Tatko-TLI-Overlay_0.18.7_x64_en-US.msi",
-  "msiSha256": "9f6b6bae72e9786e0e19511b92464d16742ddc2d0cda53af506c54f7a3bd20db"
+  "version": "0.18.8",
+  "notes": "TLI 33: mini-panel sa pri štarte appky (keď bol zapnutý už z minula) kreslil na defaultnej pozícii OS, nie na uloženej polohe nad hrou — opravené. Pri hlavnom F8/F9 paneli sa reálna príčina „nič sa nezobrazí“ nedala jednoznačne izolovať bez Windows diagnostiky — pribudlo podrobné logovanie zo strany JS (prijatý event aj skutočne vykreslené rozmery panela) a tray položka „Test overlaya“, ktorá ukáže vzorovú radu bez servera a bez bežiacej hry — keď ani Test overlaya nič neukáže, nahlás to spolu s logom.",
+  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.18.8/Tvoj-Tatko-TLI-Overlay_0.18.8_x64_en-US.msi",
+  "msiSha256": "f8229c2f98f48776534ba236cfe220f69cab155326cd22a05292bdbdfbf28471"
 }
