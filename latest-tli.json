@@ -1,6 +1,6 @@
 {
-  "version": "0.21.2",
-  "notes": "TLI 57: Frozen Canvas — zber dát už neblokuje radu (uloží sa A ZÁROVEŇ sa ukáže ťah), nerozpoznané plátno hovorí jasne namiesto ticha, a toast „Sortni inventár“ sa už neopakuje donekonečna (10 min interval, zmizne hneď po Sorte). Pozri CHANGELOG.",
-  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.21.2/Tvoj-Tatko-TLI-Overlay_0.21.2_x64_en-US.msi",
-  "msiSha256": "b31e5de0745d0e1d70e512b5316d64a1585fccac65d13232656f736ac3c5eac6"
+  "version": "0.21.3",
+  "notes": "TLI 58: Rada po stlačení solvera (F8/F9) už nezhasína po čase, ale až keď niekde klikneš ľavým alebo pravým tlačidlom myši — klik ide do hry normálne ďalej. Poistka: zhasne aj po 120 s bez kliku a vždy pri Esc. V Nastaveniach sa dá prepnúť späť na „po čase“. Pozri CHANGELOG.",
+  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.21.3/Tvoj-Tatko-TLI-Overlay_0.21.3_x64_en-US.msi",
+  "msiSha256": "4f4599b8416a9708a57056c505c4992b0b63c93d9745d0f568b7c7475e8db57a"
 }
