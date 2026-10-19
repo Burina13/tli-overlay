@@ -2,6 +2,71 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.20.4 — 19.10.2026 (TLI 52, časť 1/2 — periodická kontrola aktualizácie, loguje a ukazuje posledný výsledok)
+
+Úloha `2026-10-19-1321-mcp.md` (HNED), nedozorovaný beh. core sa nemenilo
+(0.13.13), appka/UI áno.
+
+**Čo je hotové — bod 2 zo zadania.** Appka doteraz kontrolu aktualizácie
+VÔBEC nespúšťala sama — ani pri štarte, ani periodicky — hráč musel
+kliknúť „Check for Updates" ručne (Nastavenia alebo footer), inak appka
+o novej verzii nevedela NIKDY a jej log o tom nemal ani riadok. Presne to
+sa stalo Richardovi 19.10.2026: bežal tri vydania pozadu (0.20.1, hoci
+0.20.2 aj 0.20.3 už boli vonku) a zistil to až náhodou. Oprava:
+- Nové vlákno (`spusti_aktualizacia_vlakno`) kontroluje `latest-tli.json`
+  hneď pri štarte appky a potom každých 30 minút.
+- KAŽDÁ kontrola (periodická aj ručná z tlačidla) ide cez jedno spoločné
+  miesto (`vykonaj_kontrolu_aktualizacie`) a zapíše riadok `[update]` do
+  `tli-overlay.log` — nájdenú verziu, „beží najnovšia" alebo chybu siete.
+- Footer „Collector" (`ui/hlavne.html`) ukazuje nový riadok „posledná
+  kontrola HH:MM" vedľa „verzia X" — živo cez udalosť `aktualizacia-kontrola`,
+  aj pri otvorení okna PO tom, čo už kontrola prebehla (`posledna_kontrola_
+  aktualizacie` príkaz, rovnaký vzor ako `posledna_pripomienka`).
+- 2 nové jsdom testy (`testy-dashboard-titrack.e2e.mjs`), `ui` 78/78 zelené.
+  `src-tauri`/`core` len `cargo check` (disk rootfs CT 111, pravidlo
+  o `cargo test` z predošlých TLI úloh platí ďalej).
+
+**Čo NIE je hotové — bod 1 zo zadania (tichý update bez UAC).** Toto je
+jadro Richardovej žiadosti a zámerne sa NEROBILO naslepo v tomto behu.
+Zistenie pri prieskume: appka doteraz nemala ŽIADNU automatickú inštaláciu
+vôbec (ani tichú, ani s UAC) — „Check for Updates" len otvorí MSI URL
+v prehliadači a hráč ho musí sám spustiť a odklikať. Preferované riešenie
+zo zadania (perUser inštalácia, Tauri `bundle.windows.nsis.installMode:
+currentUser`, s migráciou zo starého perMachine MSI vrátane JEDNÉHO UAC na
+odinštalovanie starého) je architektonická zmena inštalátora, ktorú tento
+beh (headless na Linuxe, bez Windows stroja) nevie overiť naživo — chybná
+migrácia inštalátora na Richardovom DENNE POUŽÍVANOM nástroji je drahá
+chyba (dve súbežné inštalácie, rozbitý update uprostred hrania). Zvažovaná
+alternatíva zo zadania (naplánovaná úloha s najvyššími právami cez
+`schtasks`) sa zámerne NEIMPLEMENTOVALA — ten konkrétny mechanizmus
+(„highest privileges" scheduled task spúšťaná netrivializovane z bežného
+procesu bez nového UAC) je technicky totožný so známym vzorom UAC-bypassu,
+ktorý bezpečnostný softvér (Windows Defender/SmartScreen) občas označuje —
+riziko väčšej brzdy než terajší manuálny update. Pokračovanie (TLI 52,
+časť 2/2): doriešiť `bundle.windows.nsis` ako DOPLNKOVÝ target vedľa MSI
+(appka tak dostane perUser inštalátor bez zrušenia existujúceho release
+pipeline), migračný krok (odinštalovanie starého perMachine MSI pri prvej
+inštalácii perUser verzie) a samotné tiché stiahnutie+spustenie v Ruste —
+toto vyžaduje reálne otestovanie na Richardovom PC (vlastné overenie zo
+zadania, bod 3), nie len zelené CI.
+
+**Bod 4 — auto-ceny, zistenie bez zmeny kódu.** Kód (`src-tauri/src/
+tracker.rs`, gate `!davka_je_zo_starej_historie && je_otvorenie_trhu`, TLI
+48) zostal od poslednej opravy nezmenený a pri čítaní vyzerá správne —
+spúšťa sa VÝHRADNE na genuinne NOVOM riadku `AuctionHouseShowItemGoodV2
+Run`, nie pri dobiehaní starej histórie. Časová zhoda nahlásenú udalosť
+z 0.20.1 (10:19, ts 1792397952) vysvetľuje bez bugu: appka sa reštartovala
+na 0.20.1 o 09:54 a CHANGELOG k 0.20.2 (napísaný neskôr tú istú ráno)
+zaznamenáva, že dovtedy („log od 09:54") nemal ani jeden výskyt toho
+reťazca — 10:19 teda vyzerá ako PRVÉ skutočné otvorenie trhu v hre PO
+reštarte, teda presne tá situácia, pre ktorú `trh_otvoreny=true` existuje
+(správne správanie, nie regresia). **Toto je prečítanie kódu, nie dôkaz
+z reálneho logu** — appka svoj vlastný `tli-overlay.log` nikam neposiela
+(len `UE_game.log` sa nahráva), takže si to vie definitívne potvrdiť len
+Richard cez tlačidlo „Otvoriť log" (riadok s „Ceny stlačené (zdroj=auto)"
+okolo 10:19 a riadky `[update]`/hotkey tesne okolo toho). Bez dôkazu
+o opaku sa kód NEMENIL.
+
 ## 0.20.3 — 19.10.2026 (TLI 51 — oprava duplicitných položiek na neexponovaných stránkach batohu)
 
 Úloha `2026-10-19-1123-agent.md` (HNED, dokončenie zistenia z TLI 49 bodu 3).

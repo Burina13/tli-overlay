@@ -449,6 +449,12 @@
         <span class="pita-bod pita-bod-bezi"></span>
         <span>Collector: Beží</span>
         <span id="pita-verzia"></span>
+        <!-- „posledná kontrola HH:MM" (TLI 52 bod 2) — appka doteraz kontrolu
+             aktualizácie nerobila sama vôbec (ani pri štarte); teraz beží
+             hneď pri štarte a potom á 30 min (`spusti_aktualizacia_vlakno`
+             v Ruste) a výsledok sa ukazuje tu, nezávisle od ručného tlačidla
+             „Check for Updates" nižšie. -->
+        <span id="pita-posledna-kontrola"></span>
         <span id="pita-auto-refresh">Auto-refresh: každé 3 s</span>
         <!-- Posledný upload logu (TLI 47, zadanie `2026-10-19-0731-mcp.md` bod A) —
              rovnaké dáta ako `#stav-upload` v Nastaveniach trackera, len aj tu,

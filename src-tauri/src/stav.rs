@@ -63,6 +63,24 @@ pub struct Stav {
     /// Drží sa len POSLEDNÁ dvojica (skratka, čas) — nie front — presne tak,
     /// ako `cakajuci_dalsi` vyššie drží len poslednú zdržanú požiadavku.
     pub posledny_hotkey: Mutex<Option<(Shortcut, Instant)>>,
+    /// Výsledok POSLEDNEJ kontroly aktualizácie (TLI 52, bod 2) — periodickej
+    /// aj ručnej z tlačidla „Check for Updates", obe idú cez to isté miesto.
+    /// `None`, kým appka ešte ani raz neskontrolovala. Len v pamäti (rovnaký
+    /// vzor ako `posledna_synchronizacia_cien` v trackeri) — po reštarte sa
+    /// kontrola spustí hneď znova, netreba to prenášať cez reštart appky.
+    pub posledna_kontrola_aktualizacie: Mutex<Option<KontrolaAktualizacie>>,
+}
+
+/// Pozri `Stav::posledna_kontrola_aktualizacie`. `cas` je unixový čas
+/// v sekundách — appka časové pásmo nikde inde neprevádza, rovnaký vzor ako
+/// `ceny_synchronizovane_o` v `tracker.rs`; footer si z neho sám urobí
+/// lokálny čas hráča.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct KontrolaAktualizacie {
+    pub cas: u64,
+    pub najdena_verzia: Option<String>,
+    pub msi_url: Option<String>,
+    pub chyba: Option<String>,
 }
 
 /// Kontext jedného behu režimu úpravy rozloženia (TLI 21) — pozri

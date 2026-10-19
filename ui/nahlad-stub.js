@@ -154,6 +154,10 @@ const CESTA_LOGU_UKAZKA =
 
 const ODPOVEDE = {
   verzia: "0.15.0",
+  // Footer „posledná kontrola HH:MM" (TLI 52 bod 2) — náhľad ukazuje stav
+  // „beží najnovšia verzia", nech je na screenshote z CI vidieť bežný
+  // (neporuchový) stav footera.
+  posledna_kontrola_aktualizacie: { cas: 1760867400, najdena_verzia: null, msi_url: null, chyba: null },
   nacitaj_nastavenia: { hotkey: "F8", hotkey_canvas: "F9", hotkey_trh: "F10", tema: "svetla",
                         mini_overlay: true, tracker_sync: false,
                         ceny_sync: true, upload_logov: true, ceny_obrazovka_zapnute: true,

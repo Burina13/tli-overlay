@@ -450,6 +450,43 @@ test("Pätička aj Economy ukazujú „ceny aktualizované“ z ceny_synchronizo
     }
 });
 
+// ─── „posledná kontrola HH:MM" v pätičke (TLI 52 bod 2) ────────────────────
+
+function posliUdalost(window, meno, payload) {
+    const poslucháč = window.__nahlad_poslucháči && window.__nahlad_poslucháči[meno];
+    assert.ok(poslucháč, `appka sa neprihlásila na udalosť "${meno}"`);
+    poslucháč({ payload });
+}
+
+test("pätička po načítaní ukáže posledný výsledok kontroly z invoke (appka sa neotvorila ako prvá)", async () => {
+    const { window, document } = postavApp();
+    try {
+        await pockajNaPrvePrekreslenie(window);
+        // Z `nahlad-stub.js`: `posledna_kontrola_aktualizacie` vráti hotový
+        // výsledok bez čakania na udalosť — presne prípad, keď vlákno na
+        // pozadí skontrolovalo PRED tým, než hráč okno `hlavne` vôbec otvoril.
+        assert.match(document.getElementById("pita-posledna-kontrola").textContent, /^posledná kontrola \d{1,2}:\d{2}/);
+    } finally {
+        window.close();
+    }
+});
+
+test("udalosť aktualizacia-kontrola prekreslí pätičku živo — nájdená verzia aj chyba", async () => {
+    const { window, document } = postavApp();
+    try {
+        await pockajNaPrvePrekreslenie(window);
+        const el = document.getElementById("pita-posledna-kontrola");
+
+        posliUdalost(window, "aktualizacia-kontrola", { cas: 1760869200, najdena_verzia: "0.20.4", msi_url: "https://x", chyba: null });
+        assert.match(el.textContent, /^posledná kontrola \d{1,2}:\d{2}.* — je vonku verzia 0\.20\.4$/);
+
+        posliUdalost(window, "aktualizacia-kontrola", { cas: 1760869200, najdena_verzia: null, msi_url: null, chyba: "sieťová chyba" });
+        assert.match(el.textContent, /^posledná kontrola \d{1,2}:\d{2}.* \(zlyhala\)$/);
+    } finally {
+        window.close();
+    }
+});
+
 // ─── Vek ceny v CURRENT INVENTORY (TLI 49 bod 2) ───────────────────────────
 
 test("Current Inventory ukazuje vek ceny vedľa Cena/ks, keď ho appka pozná", async () => {

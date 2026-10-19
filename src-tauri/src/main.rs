@@ -14,7 +14,7 @@ mod stav;
 mod tracker;
 
 use serde_json::json;
-use stav::{RezimUpravyKontext, Stav};
+use stav::{KontrolaAktualizacie, RezimUpravyKontext, Stav};
 use std::str::FromStr;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -2831,12 +2831,87 @@ fn verzia() -> String {
 
 /// Vráti adresu nového MSI, keď je vonku novšia verzia. Ťahá sa VÝHRADNE náš
 /// `latest-tli.json` — iný endpoint `klient::stiahni_manifest` ani nepustí.
+/// Volá ju aj tlačidlo „Check for Updates" (Nastavenia aj footer „Collector"),
+/// aj periodické vlákno nižšie — obe idú cez `vykonaj_kontrolu_aktualizacie`,
+/// nech sa loguje a do footera zapisuje úplne rovnako bez ohľadu na to, kto
+/// kontrolu spustil (TLI 52, bod 2).
 #[tauri::command]
-fn skontroluj_aktualizaciu() -> Result<Option<String>, String> {
-    let json = klient::stiahni_manifest()?;
-    let manifest =
-        tli_overlay_core::aktualizacia::skontroluj_manifest(&json, env!("CARGO_PKG_VERSION"))?;
-    Ok(manifest.map(|m| m.msi_url))
+fn skontroluj_aktualizaciu(app: AppHandle) -> Result<Option<String>, String> {
+    let kontrola = vykonaj_kontrolu_aktualizacie(&app);
+    match kontrola.chyba {
+        Some(chyba) => Err(chyba),
+        None => Ok(kontrola.msi_url),
+    }
+}
+
+/// Appka doteraz kontrolu aktualizácie VÔBEC nespúšťala sama — ani pri
+/// štarte, ani periodicky — hráč musel kliknúť „Check for Updates" ručne,
+/// inak appka o novej verzii nevedela NIKDY a jej log o tom nemal ani
+/// riadok. Presne to sa stalo Richardovi 19.10.2026: bežal tri vydania
+/// pozadu (0.20.1) a prišiel na to až náhodou. `spusti_aktualizacia_vlakno`
+/// to opravuje kontrolou hneď pri štarte a potom á 30 minút.
+const AKTUALIZACIA_INTERVAL_S: u64 = 30 * 60;
+
+fn spusti_aktualizacia_vlakno(app: AppHandle) {
+    std::thread::spawn(move || loop {
+        vykonaj_kontrolu_aktualizacie(&app);
+        std::thread::sleep(Duration::from_secs(AKTUALIZACIA_INTERVAL_S));
+    });
+}
+
+/// Jedno miesto, kadiaľ prechádza KAŽDÁ kontrola aktualizácie (periodická aj
+/// ručná) — zapíše riadok `[update]` do `tli-overlay.log` s nájdenou verziou
+/// alebo chybou, uloží výsledok do `Stav` (aby ho footer okna `hlavne` vedel
+/// zobraziť, aj keď sa okno otvorí až PO kontrole) a pošle udalosť
+/// `aktualizacia-kontrola` pre okná, ktoré sú práve otvorené.
+fn vykonaj_kontrolu_aktualizacie(app: &AppHandle) -> KontrolaAktualizacie {
+    let cas = crate::tracker::unixovy_cas();
+
+    let vysledok = klient::stiahni_manifest().and_then(|json| {
+        tli_overlay_core::aktualizacia::skontroluj_manifest(&json, env!("CARGO_PKG_VERSION"))
+    });
+
+    let kontrola = match vysledok {
+        Ok(Some(manifest)) => {
+            denik::zapis(
+                "update",
+                &format!(
+                    "kontrola: nájdená verzia {} (aktuálna {})",
+                    manifest.version,
+                    env!("CARGO_PKG_VERSION")
+                ),
+            );
+            KontrolaAktualizacie {
+                cas,
+                najdena_verzia: Some(manifest.version),
+                msi_url: Some(manifest.msi_url),
+                chyba: None,
+            }
+        }
+        Ok(None) => {
+            denik::zapis(
+                "update",
+                &format!("kontrola: beží najnovšia verzia ({})", env!("CARGO_PKG_VERSION")),
+            );
+            KontrolaAktualizacie { cas, najdena_verzia: None, msi_url: None, chyba: None }
+        }
+        Err(chyba) => {
+            denik::zapis("update", &format!("kontrola zlyhala: {chyba}"));
+            KontrolaAktualizacie { cas, najdena_verzia: None, msi_url: None, chyba: Some(chyba) }
+        }
+    };
+
+    *app.state::<Stav>().posledna_kontrola_aktualizacie.lock().unwrap() = Some(kontrola.clone());
+    let _ = app.emit("aktualizacia-kontrola", &kontrola);
+    kontrola
+}
+
+/// Footer okna `hlavne` si toto vypýta po načítaní (rovnaký vzor ako
+/// `posledna_pripomienka`), nech vidí posledný výsledok aj vtedy, keď sa
+/// okno otvorilo až po tom, čo periodické vlákno už raz skontrolovalo.
+#[tauri::command]
+fn posledna_kontrola_aktualizacie(app: AppHandle) -> Option<KontrolaAktualizacie> {
+    app.state::<Stav>().posledna_kontrola_aktualizacie.lock().unwrap().clone()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2947,6 +3022,7 @@ fn main() {
             rezim_upravy_kontext: Mutex::new(None),
             hotkey_upozornenia: Mutex::new(Vec::new()),
             posledny_hotkey: Mutex::new(None),
+            posledna_kontrola_aktualizacie: Mutex::new(None),
         })
         .manage(tracker::Tracker::default())
         // Sprievodca sa načíta z disku hneď pri štarte — záložka Guide
@@ -2961,6 +3037,7 @@ fn main() {
             otvor_nastavenia,
             verzia,
             skontroluj_aktualizaciu,
+            posledna_kontrola_aktualizacie,
             tracker_prehlad,
             tracker_economy,
             tracker_csv,
@@ -3062,6 +3139,10 @@ fn main() {
             // režimu úpravy — vlákno nižšie je na to potrebné (bod 2 nižšie
             // pri definícii funkcie vysvetľuje prečo).
             spusti_mini_presun_vlakno(handle.clone());
+
+            // TLI 52 bod 2: kontrola aktualizácie hneď pri štarte a potom
+            // á 30 min — appka predtým kontrolu nespúšťala sama vôbec.
+            spusti_aktualizacia_vlakno(handle.clone());
 
             if let Some(overlay) = app.get_webview_window(OVERLAY) {
                 let _ = overlay.set_ignore_cursor_events(true);

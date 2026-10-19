@@ -1323,7 +1323,30 @@ document.getElementById("btn-pita-aktualizacia").addEventListener("click", async
     } catch (e) {
         el.textContent = "Chyba pri kontrole: " + e;
     }
+    // Ručné tlačidlo ide cez to isté miesto v Ruste ako periodická kontrola
+    // (TLI 52 bod 2), takže výsledok sa prejaví aj v `#pita-posledna-kontrola`
+    // — vypýtať si ho rovno netreba, prišla/príde aj udalosť `aktualizacia-kontrola`.
 });
+
+/// „posledná kontrola HH:MM" (TLI 52 bod 2) — `k.cas` je unixový čas
+/// v sekundách, rovnaký vzor ako `vykresliPatickaCien` vyššie. `k` je `null`,
+/// kým appka ešte ani raz neskontrolovala (napr. offline štart bez pripojenia
+/// predtým, než prvá kontrola stihla dobehnúť).
+function vykresliPatickaAktualizacie(k) {
+    const el = document.getElementById("pita-posledna-kontrola");
+    if (!k) {
+        el.textContent = "";
+        return;
+    }
+    const hhmm = new Date(k.cas * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    if (k.chyba) {
+        el.textContent = `posledná kontrola ${hhmm} (zlyhala)`;
+    } else if (k.najdena_verzia) {
+        el.textContent = `posledná kontrola ${hhmm} — je vonku verzia ${k.najdena_verzia}`;
+    } else {
+        el.textContent = `posledná kontrola ${hhmm}`;
+    }
+}
 
 // ─── Štart ──────────────────────────────────────────────────────────────────
 document.getElementById("btn-otvor-nastavenia").addEventListener("click", async () => {
@@ -1341,6 +1364,17 @@ document.addEventListener("DOMContentLoaded", async () => {
         document.getElementById("pita-verzia").textContent = `verzia ${v}`;
     } catch (e) {
         console.error(e);
+    }
+
+    // TLI 52 bod 2: posledný výsledok periodickej kontroly — okno `hlavne`
+    // sa mohlo otvoriť AŽ PO tom, čo vlákno na pozadí už raz skontrolovalo.
+    try {
+        vykresliPatickaAktualizacie(await invoke("posledna_kontrola_aktualizacie"));
+    } catch (e) {
+        console.error(e);
+    }
+    if (window.__TAURI__.event) {
+        window.__TAURI__.event.listen("aktualizacia-kontrola", (udalost) => vykresliPatickaAktualizacie(udalost.payload));
     }
 
     try {
