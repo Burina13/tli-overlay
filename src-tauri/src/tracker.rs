@@ -29,7 +29,7 @@ use tli_overlay_core::tracker::chvost::StavChvosta;
 use tli_overlay_core::nastavenia::Nastavenia;
 use tli_overlay_core::tracker::db::{self, OceneneHodnoty, ZaznamCeny};
 use tli_overlay_core::tracker::pripomienka::{klasifikuj, SledovacPripomienky};
-use tli_overlay_core::tracker::stav::{Beh, Sledovac, STRANKA_BATOHU_OSTATNE};
+use tli_overlay_core::tracker::stav::{Beh, Sledovac, POLOZKA_FE, STRANKA_BATOHU_OSTATNE, STRANKY_BATOHU_SLEDOVANE};
 use tli_overlay_core::tracker::steam;
 use tli_overlay_core::tracker::trh::je_otvorenie_trhu;
 use tli_overlay_core::tracker::varovania::SledovacVarovania;
@@ -606,14 +606,32 @@ pub struct PrehladProUi {
     /// Posledná DOKONČENÁ mapa (TLI 25) — mini-panel ukazuje „čo padlo"
     /// aj medzi mapami, keď `zivo` je `None`. Hubové behy sa preskakujú.
     pub posledna_mapa: Option<Zivo>,
-    /// CURRENT INVENTORY (TLI 47) — aktuálny obsah batohu („ostatné", nie
-    /// výstroj/zručnosti/meny a NIE sklad), s cenou a hodnotou za kus. Skryté
-    /// položky (`Nastavenia::batoh_skryte_polozky`) tu NIE SÚ — appka ich
-    /// nezahadzuje nikde inde, len z tohto zoznamu na predaj.
+    /// CURRENT INVENTORY (TLI 47, rozšírené TLI 53) — aktuálny obsah
+    /// stránok `STRANKY_BATOHU_SLEDOVANE` (zručnosti, meny vrátane FE,
+    /// ostatné materiály; NIE výstroj a NIE sklad), s cenou a hodnotou za
+    /// kus. Skryté položky (`Nastavenia::batoh_skryte_polozky`) tu NIE SÚ —
+    /// appka ich nezahadzuje nikde inde, len z tohto zoznamu na predaj.
     pub batoh: Vec<PolozkaBatohu>,
-    /// Súčet hodnoty `batoh` (bez skrytých) + čistý zisk doteraz odohraných
-    /// máp — zadanie TLI 47 bod 2: „net worth = batoh × ceny + aktuálny beh".
+    /// Hodnota CELÉHO aktuálneho majetku: FE 1:1 + všetko ostatné z `batoh`
+    /// (bez skrytých) ocenené cenníkom, s daňou podľa nastavenia — presne
+    /// TITrackova formula (`api/routes/inventory.py`), zhodnotené TLI 53
+    /// (zadanie `2026-10-19-1453-mcp.md` bod A). **Do TLI 53 appka namiesto
+    /// skutočného FE zostatku pripočítavala `cisty_zisk` (kumulatívny zisk
+    /// z odohraných máp) — to bola náhrada za chýbajúci prístup k stránke
+    /// 102, Net Worth bol preto systematicky podhodnotený.** `cisty_zisk`
+    /// ostáva ako samostatná metrika v `prehlad`, do `net_worth_fe` sa už
+    /// nepočíta — sčítanie oboch by teraz FE zostatok započítalo dvakrát.
     pub net_worth_fe: f64,
+    /// `true`, keď appka už videla aspoň jeden dump stránky 103 „ostatné"
+    /// (hráč v hre použil „Sort"). TLI 53: predtým bolo „Sortni inventár"
+    /// upozornenie naviazané na `batoh.is_empty()`, ale `batoh` odteraz
+    /// obsahuje aj stránky 101/102, ktoré appka vidí hneď pri prihlásení aj
+    /// BEZ Sortu (FE zostatok) — `batoh` by teda takmer nikdy nebol prázdny
+    /// a upozornenie na nesortnuté materiály by prestalo fungovať. UI toto
+    /// pole používa namiesto `batoh.length === 0` len pre toto konkrétne
+    /// upozornenie; `net_worth_fe`/zoznam `batoh` sa ukazujú vždy, bez
+    /// ohľadu naň (aj neúplný súčet je lepší než žiadny).
+    pub materialy_sortovane: bool,
     /// Unixový čas (sekundy), kedy appka naposledy DOKONČILA kolo
     /// synchronizácie cien s partiou (TLI 49 bod 2) — `None`, kým appka ešte
     /// ani raz kolo nedokončila. JS si z neho sám urobí „HH:MM" v lokálnom
@@ -641,22 +659,28 @@ pub struct PolozkaBatohu {
     pub cena_vek: Option<String>,
 }
 
-/// Postaví zoznam `batoh` z aktuálneho stavu `Sledovac` + cenník. Skryté
-/// položky (`skryte_polozky`) sa v zozname UKÁŽU (appka nič nezahadzuje ticho),
-/// len appka ich označí príznakom — UI rozhoduje, či ich pri predajnom
-/// zozname vynechá, ale napr. do `net_worth_fe` sa nerátajú (sú to veci, čo
-/// si hráč necháva, nie majetok na predaj).
+/// Postaví zoznam `batoh` z aktuálneho stavu `Sledovac` + cenník, nad
+/// `STRANKY_BATOHU_SLEDOVANE` (TLI 53 — predtým len `STRANKA_BATOHU_OSTATNE`,
+/// pozri `PrehladProUi::net_worth_fe`). Skryté položky (`skryte_polozky`) sa
+/// v zozname UKÁŽU (appka nič nezahadzuje ticho), len appka ich označí
+/// príznakom — UI rozhoduje, či ich pri predajnom zozname vynechá, ale do
+/// `net_worth_fe` sa nerátajú (sú to veci, čo si hráč necháva, nie majetok
+/// na predaj). Samotná mena `POLOZKA_FE` má cenu vždy 1:1 a daň sa na ňu
+/// neuplatňuje — rovnaký princíp ako `core::tracker::ceny::ocen_v_case`,
+/// len appka tu navyše potrebuje aj `cena_vek`/`cena_zastarana` pre UI,
+/// preto sa nevolá priamo zdieľaná funkcia.
 fn aktualny_batoh(stav: &StavTrackera, nastavenie: &Nastavenie, skryte_polozky: &[u32], teraz: u64) -> (Vec<PolozkaBatohu>, f64) {
-    let mnozstva = stav.sledovac.batoh_stranka(STRANKA_BATOHU_OSTATNE);
+    let mnozstva = stav.sledovac.batoh_stranky(&STRANKY_BATOHU_SLEDOVANE);
     let mut zoznam = Vec::with_capacity(mnozstva.len());
     let mut hodnota_spolu = 0.0;
     for (polozka, pocet) in mnozstva {
         let skryte = skryte_polozky.contains(&polozka);
+        let je_fe = polozka == POLOZKA_FE;
         let cena = stav.cennik.cena(polozka);
-        let cena_za_kus = cena.map(|c| c.fe);
+        let cena_za_kus = if je_fe { Some(1.0) } else { cena.map(|c| c.fe) };
         let hodnota = cena_za_kus.map(|c| {
             let mut h = c * (pocet as f64);
-            if nastavenie.dan {
+            if nastavenie.dan && !je_fe {
                 h *= 0.875;
             }
             h
@@ -669,9 +693,9 @@ fn aktualny_batoh(stav: &StavTrackera, nastavenie: &Nastavenie, skryte_polozky: 
             mnozstvo: pocet,
             cena_za_kus_fe: cena_za_kus,
             hodnota_fe: hodnota,
-            cena_zastarana: cena.is_some() && stav.cennik.je_zastarana(polozka, teraz),
+            cena_zastarana: !je_fe && cena.is_some() && stav.cennik.je_zastarana(polozka, teraz),
             skryte,
-            cena_vek: cena.map(|c| vek_text(teraz.saturating_sub(c.kedy))),
+            cena_vek: if je_fe { None } else { cena.map(|c| vek_text(teraz.saturating_sub(c.kedy))) },
         });
     }
     (zoznam, hodnota_spolu)
@@ -766,7 +790,11 @@ pub fn prehlad_pre_ui(stav: &StavTrackera, zapnuty: bool, dan: bool, skryte_polo
     let posledna_mapa = stav.behy.iter().rev().find_map(na_zivo);
 
     let (batoh, hodnota_batohu) = aktualny_batoh(stav, &nastavenie, skryte_polozky, teraz);
-    let net_worth_fe = hodnota_batohu + suhrn.celkom.cisty_zisk;
+    // TLI 53: NIE `+ suhrn.celkom.cisty_zisk`. `hodnota_batohu` už od TLI 53
+    // obsahuje aj skutočný FE zostatok (stránka 102), takže pripočítanie
+    // kumulatívneho zisku z máp by ten istý FE zarátalo druhý raz.
+    let net_worth_fe = hodnota_batohu;
+    let materialy_sortovane = !stav.sledovac.batoh_stranka(STRANKA_BATOHU_OSTATNE).is_empty();
 
     PrehladProUi {
         zapnuty,
@@ -793,6 +821,7 @@ pub fn prehlad_pre_ui(stav: &StavTrackera, zapnuty: bool, dan: bool, skryte_polo
         posledna_mapa,
         batoh,
         net_worth_fe,
+        materialy_sortovane,
         ceny_synchronizovane_o: stav.posledna_synchronizacia_cien,
     }
 }
@@ -2048,5 +2077,74 @@ mod testy {
 
         let _ = std::fs::remove_file(&cesta_a);
         let _ = std::fs::remove_file(&cesta_b);
+    }
+
+    // TLI 53 (`2026-10-19-1453-mcp.md` bod A) — appka do tejto chvíle čítala
+    // do CURRENT INVENTORY/NET WORTH len stránku 103 ("ostatné"), hoci FE aj
+    // ostatné meny/crafting materiály (embery, memory thready, divinity,
+    // wedge) ležia v reálnom logu na stránke 102 — overené priamo na
+    // Richardovom uploadnutom `UE_game.log`. Nasledujúce testy pokrývajú
+    // opravu: FE sa počíta 1:1 bez dane, ostatné položky stránky 102 sa
+    // cenia cenníkom ako doteraz stránka 103, a `net_worth_fe` už nepripočíta
+    // `cisty_zisk` navyše (to by FE zarátalo dvakrát).
+
+    #[test]
+    fn current_inventory_zahrna_fe_zo_stranky_102_oceneny_1_1_bez_dane() {
+        let mut stav = StavTrackera::default();
+        stav.sledovac.riadok("BagMgr@:InitBagData PageId = 102 SlotId = 1 ConfigBaseId = 100300 Num = 12000");
+
+        let p = prehlad_pre_ui(&stav, true, true, &[]);
+        let fe = p.batoh.iter().find(|r| r.config_base_id == POLOZKA_FE).expect("FE musí byť v CURRENT INVENTORY");
+        assert_eq!(fe.mnozstvo, 12000);
+        assert_eq!(fe.cena_za_kus_fe, Some(1.0));
+        assert_eq!(fe.hodnota_fe, Some(12000.0));
+        assert!(!fe.cena_zastarana);
+        assert_eq!(p.net_worth_fe, 12000.0);
+    }
+
+    #[test]
+    fn current_inventory_zahrna_komoditu_zo_stranky_102_s_cenou_z_cennika() {
+        let mut stav = StavTrackera::default();
+        // 200003 = "Fine Ember" v reálnom logu tiež na stránke 102.
+        stav.sledovac.riadok("BagMgr@:InitBagData PageId = 102 SlotId = 2 ConfigBaseId = 200003 Num = 10");
+        stav.cennik.vloz(Cena::vlastna(200003, 5.0, 5.0, 3, unixovy_cas()));
+
+        let p = prehlad_pre_ui(&stav, true, true, &[]);
+        let ember = p.batoh.iter().find(|r| r.config_base_id == 200003).expect("embery musia byť v CURRENT INVENTORY");
+        assert_eq!(ember.mnozstvo, 10);
+        assert_eq!(ember.cena_za_kus_fe, Some(5.0));
+        // Daň (87,5 %) sa na bežnú komoditu uplatní, na FE nie.
+        assert_eq!(ember.hodnota_fe, Some(10.0 * 5.0 * 0.875));
+        assert_eq!(p.net_worth_fe, 10.0 * 5.0 * 0.875);
+    }
+
+    #[test]
+    fn vystroj_na_strance_100_sa_do_current_inventory_nedostane() {
+        let mut stav = StavTrackera::default();
+        stav.sledovac.riadok("BagMgr@:InitBagData PageId = 100 SlotId = 1 ConfigBaseId = 8125 Num = 1");
+
+        let p = prehlad_pre_ui(&stav, true, false, &[]);
+        assert!(p.batoh.is_empty());
+        assert_eq!(p.net_worth_fe, 0.0);
+    }
+
+    #[test]
+    fn net_worth_sa_uz_nescitava_s_cistym_ziskom_aby_nedoslo_k_dvojitemu_zarataniu_fe() {
+        // Pred TLI 53 appka počítala `net_worth_fe = hodnota_batohu + cisty_zisk`
+        // a hodnota_batohu nikdy nemala FE (čítala len stránku 103) — teraz, keď
+        // hodnota_batohu FE obsahuje, by sčítanie oboch FE zarátalo dvakrát.
+        let mut stav = StavTrackera::default();
+        // Aktuálny FE zostatok (stránka 102) — 500.
+        stav.sledovac.riadok("BagMgr@:InitBagData PageId = 102 SlotId = 1 ConfigBaseId = 100300 Num = 500");
+        // Odohraný beh s vlastným čistým ziskom 300 FE, nezávislý od aktuálneho
+        // zostatku — keby `net_worth_fe` ešte stále pripočítaval `cisty_zisk`,
+        // vyšlo by 800, nie 500.
+        let mut beh = prazdny_beh_pre_test("Mapa1");
+        beh.dropy.insert(POLOZKA_FE, 300);
+        stav.behy.push(beh);
+
+        let p = prehlad_pre_ui(&stav, true, false, &[]);
+        assert_eq!(p.prehlad.celkom.cisty_zisk, 300.0, "test predpokladá nenulový cisty_zisk, inak nič nedokazuje");
+        assert_eq!(p.net_worth_fe, 500.0);
     }
 }

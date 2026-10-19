@@ -83,6 +83,8 @@ const UKAZKA_TRACKER = {
     { config_base_id: 999999, mnozstvo: 3, cena_za_kus_fe: null, hodnota_fe: null, cena_zastarana: false, skryte: false, cena_vek: null },
   ],
   net_worth_fe: 971.8,
+  // TLI 53 — appka v tomto náhľade už videla Sort materiálov.
+  materialy_sortovane: true,
   // TLI 49 bod 2 — footer „ceny aktualizované HH:MM".
   ceny_synchronizovane_o: 1760866800,
 };

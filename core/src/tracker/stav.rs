@@ -14,6 +14,27 @@ const MENA_FE: &str = "100300";
 /// nehrozí teda, že by sa sem omylom priplietli veci zo skladu.
 pub const STRANKA_BATOHU_OSTATNE: u32 = 103;
 
+/// Stránky batohu, ktoré CURRENT INVENTORY / NET WORTH zahŕňajú (TLI 53,
+/// zadanie `2026-10-19-1453-mcp.md` bod A) — zhodné s TITrackovým
+/// `TRACKED_PAGES` (`titrack.data.inventory.InventoryPage`): 101 zručnosti
+/// (voľné, nenasadené gemy), 102 meny a crafting materiály (FE, embery,
+/// memory thready, divinity, wedge — presne tie položky, ktoré TLI 47
+/// omylom vynechalo, pozri nižšie), 103 ostatné. Výstroj (100) sa vynecháva
+/// zámerne — cena závisí od afixov a appka ju nevie oceniť, presne ako
+/// TITrackovo `EXCLUDED_PAGES = [GEAR]`.
+///
+/// **TLI 47 pôvodne čítalo LEN stránku 103** („ostatné"), v domnení, že tam
+/// je všetok predajný loot. Reálny log (Richardov upload, overené TLI 53
+/// priamo na `BagMgr@` riadkoch) ukazuje, že FE (100300), embery (200003,
+/// 200028–30, 201028–29), memory thready (5142–5144) aj divinity/wedge
+/// materiály (5201, 5210, 5220, 5230, 5250) sú na stránke **102** („meny"),
+/// nie 103 — appka ich teda do CURRENT INVENTORY ani do NET WORTH vôbec
+/// nezarátavala, hoci stav batohu pre stránky 100–102 appka interne
+/// sledovala správne už od TLI 49/51 (dvojité počítanie z TLI 49 bodu 3
+/// opravilo TLI 51). Chýbal len posledný krok: UI stránku 102 vôbec
+/// nečítalo.
+pub const STRANKY_BATOHU_SLEDOVANE: [u32; 3] = [101, 102, 103];
+
 /// `InitBagData` riadky tej istej stránky do seba zlejú do jednej DÁVKY, keď
 /// medzi nimi neprešlo viac než tento prah — zhodné s TITrackovým
 /// `_init_batch_threshold_seconds = 2.0` (`titrack.collector.collector`),
@@ -403,6 +424,21 @@ impl Sledovac {
         let mut vysledok = BTreeMap::new();
         for (&(s, _slot), &(polozka, num)) in &self.batoh {
             if s == stranka && num > 0 {
+                *vysledok.entry(polozka).or_insert(0) += num;
+            }
+        }
+        vysledok
+    }
+
+    /// To isté ako `batoh_stranka`, ale zlúči viacero stránok naraz (napr.
+    /// `STRANKY_BATOHU_SLEDOVANE`) — `(ConfigBaseId, počet kusov)` súčtom
+    /// cez všetky zadané stránky. Položka sa v praxi nikdy nevyskytuje na
+    /// dvoch stránkach naraz (každá je vlastný systém — meny/materiály/
+    /// zručnosti), ale sčítanie je bezpečné, aj keby sa to niekedy stalo.
+    pub fn batoh_stranky(&self, stranky: &[u32]) -> BTreeMap<u32, i64> {
+        let mut vysledok = BTreeMap::new();
+        for (&(s, _slot), &(polozka, num)) in &self.batoh {
+            if stranky.contains(&s) && num > 0 {
                 *vysledok.entry(polozka).or_insert(0) += num;
             }
         }

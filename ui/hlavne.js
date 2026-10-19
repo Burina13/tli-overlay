@@ -214,20 +214,27 @@ function karta(popis, hodnota, detail, trieda) {
     </div>`;
 }
 
-// TLI 45/47 — sedem kariet presne podľa TITracku (zadanie bod 1). Od TLI 47
-// appka ČÍTA celý batoh (CURRENT INVENTORY, cez InitBagData po Sorte) a NET
-// WORTH je skutočný súčet batohu (bez skrytých položiek) + doterajší zisk
-// — kým appka ešte nevidela ani jeden Sort tejto session (`p.batoh` prázdny),
-// karta to hovorí nahlas odznakom namiesto predstierania hodnoty, ktorú
-// nepozná (viď aj pätička „Sortni inventár").
+// TLI 45/47/53 — sedem kariet presne podľa TITracku (zadanie bod 1). Appka
+// ČÍTA celý batoh (CURRENT INVENTORY: zručnosti, meny vrátane FE, ostatné
+// materiály — všetko okrem výstroja) a NET WORTH je skutočný súčet CELÉHO
+// aktuálneho majetku (FE 1:1 + ostatné ocenené cenníkom, bez skrytých
+// položiek) — TLI 53 (`2026-10-19-1453-mcp.md` bod A) z neho vyhodilo
+// pripočítavanie `cisty_zisk`, lebo appka odvtedy číta aj skutočný FE
+// zostatok (predtým bola náhrada za chýbajúci prístup k stránke 102, Net
+// Worth bol preto systematicky podhodnotený). `p.materialy_sortovane` je
+// `false`, kým appka ešte nevidela ani jeden Sort materiálovej stránky v
+// tejto session — FE/zručnosti appka vidí už pri prihlásení aj bez Sortu,
+// takže `p.batoh` samotné už na toto rozlíšenie nestačí (viď aj pätička
+// „Sortni inventár").
 function vykresliKarty(p) {
     const c = p.prehlad.celkom;
     const zaHodinu = c.cas_ms > 0 ? (c.cisty_zisk * 3600000) / c.cas_ms : 0;
     const priemer = c.pocet_map > 0 ? c.cisty_zisk / c.pocet_map : 0;
     const priemernyCas = c.pocet_map > 0 ? c.cas_ms / c.pocet_map : 0;
-    const maBatoh = p.batoh && p.batoh.length > 0;
-    const netWorth = maBatoh ? p.net_worth_fe : c.cisty_zisk;
-    const netWorthDetail = maBatoh ? "batoh (bez skrytých) + doterajší zisk" : "⏳ ešte bez batohu — sortni inventár v hre";
+    const netWorth = p.net_worth_fe || 0;
+    const netWorthDetail = p.materialy_sortovane
+        ? "FE + ostatný majetok (bez skrytých)"
+        : "FE zatiaľ bez materiálov — sortni inventár v hre pre presný súčet";
 
     document.getElementById("karty-statistik").innerHTML = [
         karta("NET WORTH", fe(netWorth), netWorthDetail, triedaZnamienka(netWorth)),
@@ -376,10 +383,13 @@ function textReportuBehu(b) {
     ].join("\n");
 }
 
-// ─── CURRENT INVENTORY (TLI 47, `2026-10-19-0744-mcp.md` bod 2) ────────────
-// Len batoh hráča (appka ho vidí z `BagMgr` PageId „ostatné" po Sorte v hre),
-// NIE sklad — appka do skladu (WareHouseMgr) ani nenazerá. Appka tu nič
-// nepredáva ani neposiela — je to zoznam na POZRETIE pred predajom v hre.
+// ─── CURRENT INVENTORY (TLI 47, rozšírené TLI 53 bod A) ────────────────────
+// Batoh hráča — zručnosti, meny (vrátane FE) a ostatné materiály (`BagMgr`
+// stránky 101/102/103), NIE výstroj (cena závisí od afixov, appka ju nevie
+// oceniť) a NIE sklad — appka do skladu (WareHouseMgr) ani nenazerá. FE a
+// zručnosti appka vidí hneď pri prihlásení, materiály až po Sorte v hre
+// (`p.materialy_sortovane`). Appka tu nič nepredáva ani neposiela — je to
+// zoznam na POZRETIE pred predajom v hre.
 let inventarFilterText = "";
 let inventarTriedenie = "hodnota";
 let inventarZobrazSkryte = false;
@@ -1205,14 +1215,16 @@ function vykresliPatickaUploadu(p) {
     }
 }
 
-/// „Sortni inventár" (TLI 47 bod 1c) — appka vie o CURRENT INVENTORY len z
-/// `InitBagData`, ktoré hra zapíše pri Sorte (aj pri prihlásení). Kým sa to
-/// nestane, `p.batoh` je prázdny a zoznam na predaj aj NET WORTH klamú, že
-/// hráč nemá nič — treba o tom vedieť, nie si to mýliť s „naozaj nič nemá".
+/// „Sortni inventár" (TLI 47 bod 1c, upravené TLI 53) — appka vie o
+/// materiálovej stránke CURRENT INVENTORY len z `InitBagData`, ktoré hra
+/// zapíše pri Sorte. FE a zručnosti appka vidí už pri prihlásení aj BEZ
+/// Sortu (TLI 53 ich pridalo do `p.batoh`/`net_worth_fe`), takže
+/// `p.batoh.length === 0` už nie je spoľahlivý signál — appka preto dostala
+/// vlastné pole `p.materialy_sortovane`.
 function vykresliVyzvuNaSort(p) {
     const hraBezi = Boolean(p.zivo) || (p.behy && p.behy.length > 0);
-    if (hraBezi && (!p.batoh || p.batoh.length === 0)) {
-        pitaSortVyzva.textContent = "⚠ Sortni inventár v hre — appka ešte nevidela batoh";
+    if (hraBezi && !p.materialy_sortovane) {
+        pitaSortVyzva.textContent = "⚠ Sortni inventár v hre — appka ešte nevidela materiály (Net Worth je neúplný)";
     } else {
         pitaSortVyzva.textContent = "";
     }

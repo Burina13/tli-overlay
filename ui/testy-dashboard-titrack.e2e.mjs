@@ -237,23 +237,25 @@ test("footer varuje, keď upload mlčí > 15 min pri bežiacej hre, ale nie mimo
     }
 });
 
-// TLI 47 (`2026-10-19-0744-mcp.md` bod 1c) — appka vidí CURRENT INVENTORY
-// len z InitBagData (Sort v hre); kým sa to nestane, treba o tom vedieť.
-test("footer vyzve na Sort, keď appka hrá, ale batoh je ešte prázdny", async () => {
+// TLI 47 (`2026-10-19-0744-mcp.md` bod 1c), upravené TLI 53 — appka vidí
+// materiálovú stránku CURRENT INVENTORY len z InitBagData (Sort v hre); kým
+// sa to nestane, treba o tom vedieť. `materialy_sortovane` (nie `batoh`),
+// lebo od TLI 53 appka vidí FE/zručnosti aj bez Sortu.
+test("footer vyzve na Sort, keď appka hrá, ale materiály ešte nesortla", async () => {
     const { window, document } = postavApp();
     try {
         await pockajNaPrvePrekreslenie(window);
         const vyzva = document.getElementById("pita-sort-vyzva");
-        // Náhľadové dáta už majú neprázdny batoh — žiadna výzva.
+        // Náhľadové dáta už majú materialy_sortovane: true — žiadna výzva.
         assert.equal(vyzva.textContent, "");
 
-        window.vykresliVyzvuNaSort({ zivo: { zona: "x" }, batoh: [] });
+        window.vykresliVyzvuNaSort({ zivo: { zona: "x" }, materialy_sortovane: false });
         assert.match(vyzva.textContent, /Sortni inventár/);
 
-        window.vykresliVyzvuNaSort({ zivo: { zona: "x" }, batoh: [{ config_base_id: 1, mnozstvo: 1 }] });
+        window.vykresliVyzvuNaSort({ zivo: { zona: "x" }, materialy_sortovane: true });
         assert.equal(vyzva.textContent, "");
 
-        window.vykresliVyzvuNaSort({ zivo: null, behy: [], batoh: [] });
+        window.vykresliVyzvuNaSort({ zivo: null, behy: [], materialy_sortovane: false });
         assert.equal(vyzva.textContent, "");
     } finally {
         window.close();
@@ -281,17 +283,23 @@ test("CURRENT INVENTORY: zobrazí batoh, 'bez ceny' pre neznámu položku, a NET
     }
 });
 
-test("CURRENT INVENTORY: prázdny batoh ukáže vysvetlivku a NET WORTH odznak namiesto predstierania hodnoty", async () => {
+test("CURRENT INVENTORY: nesortnuté materiály ukážu vysvetlivku, NET WORTH ukazuje aspoň FE", async () => {
     const { window, document } = postavApp();
     try {
         await pockajNaPrvePrekreslenie(window);
-        window.vykresliKarty({ prehlad: { celkom: { cisty_zisk: 42, cas_ms: 0, pocet_map: 0 } }, batoh: [] });
+        // Appka ešte nevidela Sort, ale FE (stránka 102) už pozná — TLI 53.
+        window.vykresliKarty({
+            prehlad: { celkom: { cisty_zisk: 42, cas_ms: 0, pocet_map: 0 } },
+            net_worth_fe: 500,
+            materialy_sortovane: false,
+        });
         window.vykresliInventar({ batoh: [] });
 
         assert.equal(document.getElementById("prazdne-inventar").classList.contains("skryte"), false);
         assert.equal(document.getElementById("tabulka-inventar").classList.contains("skryte"), true);
         const netWorth = [...document.querySelectorAll("#karty-statistik .karta-popis")]
             .find((e) => e.textContent === "NET WORTH").closest(".karta-statistika");
+        assert.match(netWorth.querySelector(".karta-hodnota").textContent, /500/);
         assert.match(netWorth.querySelector(".karta-detail").textContent, /sortni inventár/);
     } finally {
         window.close();

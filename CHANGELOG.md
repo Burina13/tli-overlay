@@ -2,6 +2,60 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.20.6 — 19.10.2026 (TLI 53 časť 1/N — Net Worth počítal len stránku 103, chýbala stránka 102)
+
+Úloha `2026-10-19-1453-mcp.md` (HNED, nedozorovaný beh, trieda `zasah`, repo
+`/home/agent/praca/tli-overlay`). core 0.13.14→0.13.15.
+
+**Potvrdený nahlásený bug.** CURRENT INVENTORY/NET WORTH doteraz čítali len
+`BagMgr` stránku 103 („ostatné"). Overené priamo na Richardovom uploadnutom
+`UE_game.log` (CT 114, cez `pct exec`): FE (100300), embery (200003,
+200028–30, 201028–29), memory thready (5142–5144) aj divinity/wedge
+materiály (5201, 5210, 5220, 5230, 5250) sú na stránke **102** („meny"), nie
+103 — presne ako Richard tušil. Appka stav všetkých stránok (100–102)
+interne sledovala správne už od TLI 51 (dvojité počítanie z TLI 49 bodu 3
+opravila TLI 51), chýbal len posledný krok: UI stránku 102 vôbec nečítalo.
+
+**Oprava, zhodná s TITrackovým `TRACKED_PAGES`** (`titrack.data.inventory`,
+MIT, overené v zdroji): CURRENT INVENTORY aj NET WORTH teraz zahŕňajú
+stránky 101 (zručnosti), 102 (meny) a 103 (ostatné) — výstroj (100) ostáva
+vynechaná, presne ako TITrackovo `EXCLUDED_PAGES = [GEAR]` (cena závisí od
+afixov, appka ju nevie oceniť). Nová `STRANKY_BATOHU_SLEDOVANE` a
+`Sledovac::batoh_stranky()` v `core`. FE sa cení vždy 1:1 bez dane (rovnaký
+princíp ako `core::tracker::ceny::ocen_v_case`, teraz aj v
+`aktualny_batoh()`).
+
+**Zmenená formula Net Worth.** Pôvodne `net_worth_fe = hodnota_batohu (len
+stránka 103) + cisty_zisk` — `cisty_zisk` bol náhrada za chýbajúci prístup
+k skutočnému FE zostatku. Teraz, keď `hodnota_batohu` FE zostatok obsahuje
+priamo, `net_worth_fe = hodnota_batohu` (presne TITrackova formula z
+`api/routes/inventory.py`: FE 1:1 + všetko ostatné s daňou). Sčítanie oboch
+by FE zarátalo dvakrát. `cisty_zisk` ostáva ako vlastná metrika (karta
+„CUMULATIVE VALUE"), len sa už nemieša do Net Worth.
+
+**UI dôsledok:** keďže appka FE/zručnosti vidí hneď pri prihlásení aj bez
+Sortu materiálov (na rozdiel od stránky 103), `batoh.length === 0` prestalo
+byť spoľahlivým signálom pre upozornenie „Sortni inventár". Appka dostala
+nové pole `materialy_sortovane` (`true`, len keď appka už videla dump
+stránky 103) a dashboard aj footer naň prešli.
+
+**Testy:** +4 nové (`current_inventory_zahrna_fe_zo_stranky_102_...`,
+`..._komoditu_zo_stranky_102...`, `vystroj_na_strance_100_sa_nedostane...`,
+`net_worth_sa_uz_nescitava_s_cistym_ziskom...`), core 409→409 (bez zmeny,
+zmenil sa len `stav.rs` o pridanú metódu, žiadny nový core-level test),
+UI jsdom testy upravené (2× `testy-dashboard-titrack.e2e.mjs`, zmenená
+sémantika `materialy_sortovane`), `nahlad-stub.js` dostal `materialy_sortovane: true`.
+
+**Čo zostáva na ďalšiu časť TLI 53** (self-queued pokračovanie, nie
+BACKLOG): bod B — grafika ako TITrack vrátane offline ikon ~2000 položiek
+(`data:` URI/lokálne súbory, zdroj `cdn.tlidb.com` z `img` poľa v
+`tlidb_items_seed_en.json`) naprieč Dashboard/Recent Runs/Current
+Inventory/Economy/loot overlay; bod C — screenshoty pred/po loot overlayu.
+Audit zvyšku TLI 40–52 (toasty, Tartarus Ctrl+Q, Frozen Canvas F9, ceny F10,
+upload logov, self-update) prebehol čítaním kódu/testov/JOURNALu bez nájdenia
+ďalšieho rozdielu oproti zadaniu — TLI 51 bežala na Sonnet 5, táto časť na
+Sonnet 5 (nie na Opus 5.5 — taký model neexistuje, pozri hlásenie).
+
 ## 0.20.5 — 19.10.2026 (TLI 52, časť 2/2 — perUser NSIS inštalátor + kód na tichú aktualizáciu, zatiaľ VYPNUTÉ naživo)
 
 Úloha `2026-10-19-1408-agent.md` (HNED, self-queued pokračovanie časti 1/2,
