@@ -1,6 +1,6 @@
 {
-  "version": "0.20.9",
-  "notes": "TLI 56: Current Inventory presunuté do vlastnej záložky Inventory (súčet hodnoty, triedenie aj kliknutím na hlavičku). NET WORTH aj RUNS/Recent Runs/FE-HOUR už po reštarte appky NEZMIZNÚ — appka si teraz pamätá posledný známy stav batohu aj históriu máp z lokálnej DB, presne ako to doteraz robila s cenami. Pozri CHANGELOG.",
-  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.20.9/Tvoj-Tatko-TLI-Overlay_0.20.9_x64_en-US.msi",
-  "msiSha256": "bd988b6da210fbee81399fa0012c0b72e5b46e8b7cf11901663eab8cea2bb8e1"
+  "version": "0.21.0",
+  "notes": "TLI 55: loot overlay počas mapy teraz ukazuje živý ČAS a FE/h (predtým '—', kým mapa bežala) a pod nimi aj súhrn za celú session (zisk/čas/FE-h), presne ako TITrack. Názov mapy v nadpise je preložený, už nie surové interné meno enginu. Pozri CHANGELOG.",
+  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.21.0/Tvoj-Tatko-TLI-Overlay_0.21.0_x64_en-US.msi",
+  "msiSha256": "dc7272dcf7caadfe05d90b0c0774542fd6cb2e6c552e50744840e92d001c075e"
 }
