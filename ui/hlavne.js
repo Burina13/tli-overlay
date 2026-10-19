@@ -575,6 +575,7 @@ async function obnovTracker() {
         vykresliStav(p);
         vykresliVyzvuCien(p);
         vykresliStavUploadu(p);
+        vykresliPatickaUploadu(p);
 
         // Automatické odoslanie partii — len keď si to hráč zapol a len raz za
         // SYNC_KAZDYCH_KOL kôl, nech sa pri každom takte nechodí na server.
@@ -811,6 +812,7 @@ const btnSyncTeraz = document.getElementById("btn-sync-teraz");
 const stavSync = document.getElementById("stav-sync");
 const btnUploadTeraz = document.getElementById("btn-upload-teraz");
 const stavUpload = document.getElementById("stav-upload");
+const pitaUpload = document.getElementById("pita-upload");
 
 /// Koľko kôl `obnovTracker` (á 3 s) prejde medzi dvoma automatickými odoslaniami.
 /// 60 kôl = 3 minúty: dosť zriedka na to, aby to nikoho neobťažovalo, a dosť
@@ -885,6 +887,28 @@ function ukazStavUploadu(text, chyba) {
     stavUpload.classList.toggle("hodnota-zaporna", Boolean(chyba));
 }
 
+/// Rovnaký stav v pätičke dashboardu (TLI 47) — na rozdiel od `#stav-upload`
+/// (panel Nastavení trackera, skrytý kým nerozbalíš sekciu) je toto vidieť
+/// VŽDY, presne ako TITrack „Log was last updated" dole pod appkou.
+function vykresliPatickaUploadu(p) {
+    if (!chkUpload.checked) {
+        pitaUpload.textContent = "Posledný upload: vypnutý";
+        pitaUpload.classList.remove("hodnota-zaporna");
+        return;
+    }
+    if (p.posledna_chyba_uploadu) {
+        const kedy = p.posledna_kontrola_uploadu_pred ? ` (${p.posledna_kontrola_uploadu_pred})` : "";
+        pitaUpload.textContent = "Posledný upload: chyba" + kedy;
+        pitaUpload.classList.add("hodnota-zaporna");
+    } else if (p.posledna_kontrola_uploadu_pred) {
+        pitaUpload.textContent = "Posledný upload: " + p.posledna_kontrola_uploadu_pred;
+        pitaUpload.classList.remove("hodnota-zaporna");
+    } else {
+        pitaUpload.textContent = "Posledný upload: zatiaľ žiadny";
+        pitaUpload.classList.remove("hodnota-zaporna");
+    }
+}
+
 /// Stav uploadu AJ z tichého behu na pozadí (TLI 21, `2026-10-16-1528-mcp.md`
 /// bod 4) — predtým sa `stav-upload` menil len po ručnom kliku na „Nahrať log
 /// teraz" a medzitým bolo vidieť naposledy zobrazenú (často už zastaranú)
@@ -920,6 +944,7 @@ chkUpload.addEventListener("change", async () => {
     } else {
         ukazStavUploadu("Log sa na server nenahráva.", false);
     }
+    vykresliPatickaUploadu(POSLEDNY_PREHLAD || {});
 });
 
 btnUploadTeraz.addEventListener("click", async () => {

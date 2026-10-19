@@ -2,6 +2,28 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.19.3 — 19.10.2026 (TLI 47 bod A — viditeľný stav uploadu logu)
+
+Úloha `2026-10-19-0731-mcp.md`, nedozorovaný nočný beh. Richard si myslel, že
+upload logu na server nefunguje (server vraj od 14.10. nemá nové dáta) —
+server-side overenie (`/srv/games/tli/tracker/<discord_id>/`, nie priečinok
+`burina` z predošlej manuálnej analýzy TLI 46) ukázalo, že upload v
+skutočnosti **funguje a je priebežne aktuálny** (naposledy 19.10. 00:21,
+celý 845 MB log bez medzery). Príčina falošného poplachu bola, že predošlé
+analýzy čítali starý, raz ručne nahraný priečinok `burina/`, nie skutočnú
+cestu podľa Discord ID, kam appka reálne nahráva. Detail:
+`docs/fakty/hry/torchlight-infinite/README.md` § 2026-10-19.
+
+- **Stav uploadu je teraz vidieť aj v pätičke dashboardu**, nielen v
+  skrytom paneli Nastavení trackera (`#stav-upload`) — nový
+  `vykresliPatickaUploadu()` v `hlavne.js` ukazuje „Posledný upload: pred X"
+  / „Posledný upload: chyba (…)" / „Posledný upload: vypnutý" vedľa verzie
+  appky, presne ako TITrack „Log was last updated". Dáta sú tie isté, čo už
+  appka od TLI 21/24 počíta (`posledna_kontrola_uploadu_pred`,
+  `posledna_chyba_uploadu`) — len doteraz neboli nikde trvalo viditeľné.
+- Nový E2E test (`ui/testy-dashboard-titrack.e2e.mjs`) — pätička reaguje na
+  úspech, chybu aj vypnutie prepínača.
+
 ## 0.19.2 — 19.10.2026 (TLI 45 časť 1/3 — dashboard podľa TITracku)
 
 Úloha `2026-10-19-0024-mcp.md`, nedozorovaný nočný beh. Richard pred spaním (cez

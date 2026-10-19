@@ -191,3 +191,28 @@ test("footer Collector ukazuje verziu a vie skontrolovať aktualizáciu", async 
         window.close();
     }
 });
+
+// TLI 47 (`2026-10-19-0731-mcp.md`, bod A) — „Posledný upload" musí byť
+// vidieť v pätičke bez otvárania záložky Nastavenia (ako TITrack
+// „Log was last updated").
+test("footer ukazuje posledný upload a reaguje na chybu aj vypnutie", async () => {
+    const { window, document } = postavApp();
+    try {
+        await pockajNaPrvePrekreslenie(window);
+        const pitaUpload = document.getElementById("pita-upload");
+        assert.equal(pitaUpload.textContent, "Posledný upload: pred 2 min");
+        assert.equal(pitaUpload.classList.contains("hodnota-zaporna"), false);
+
+        window.vykresliPatickaUploadu({ posledna_chyba_uploadu: "HTTP 500", posledna_kontrola_uploadu_pred: "pred 1 min" });
+        assert.equal(pitaUpload.textContent, "Posledný upload: chyba (pred 1 min)");
+        assert.ok(pitaUpload.classList.contains("hodnota-zaporna"));
+
+        document.getElementById("chk-upload").checked = false;
+        document.getElementById("chk-upload").dispatchEvent(new window.Event("change", { bubbles: true }));
+        await new Promise((hotovo) => setTimeout(hotovo, 10));
+        assert.equal(pitaUpload.textContent, "Posledný upload: vypnutý");
+        assert.equal(pitaUpload.classList.contains("hodnota-zaporna"), false);
+    } finally {
+        window.close();
+    }
+});
