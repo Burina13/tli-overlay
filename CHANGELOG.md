@@ -2,6 +2,53 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## core 0.13.23 — 20.10.2026 (TLI 59b2b: rozpoznanie obsahu bunky + template matching ikon, bez appka releasu)
+
+Úloha `2026-10-20-0032-agent.md` (HNED, self-queued pokračovanie TLI 59b
+časti 2a). Zadanie žiadalo body 2–3 z pôvodného zoznamu TLI 59: rozpoznanie
+obsahu jednej bunky platna z farby, template matching ikon monštier a pokus
+o reálne screenshoty na kalibráciu.
+
+**Nový modul `core/src/canvas_obsah.rs`** — `rozpoznaj_obsah_bunky(rgb,
+sirka, vyska, riadok, stlpec) -> Option<ObsahBunky>` (`Nedostupna` / `Prazdna`
+/ `Namalovana`), kaskáda jas+sýtosť nad výrezom jednej bunky
+(`canvas_rozlozenie` + `obraz::orez_box01`), prahy zmerané na 468 reálnych
+bunkách z 13 screenshotov Frozen Canvasu (`/srv/games/tli/analyzy`, CT 114) —
+**91,7 % celková presnosť** (96,2 % / 82,6 % / 80,0 % po kategóriách).
+Zdokumentovaný dôležitý nález: pole `dostupna` zo servera/Gemini NIE JE
+odvoditeľné len z farby jednej bunky (~3,4 % vizuálne identických prázdnych
+buniek má `dostupna: false` — je to vlastnosť CELÉHO plátna/susedstva, rieši
+`CanvasStav::volne_susedne_bunky`, nie pixely).
+
+**Nový modul `core/src/canvas_sablony.rs`** — `rozpoznaj_ikonu_z_vyrezu`/
+`rozpoznaj_ikonu` vracia `(typ, skóre_istoty)` z porovnania kvantizovaného 3D
+RGB histogramu (6 binov/kanál, prienik) oproti 13 šablónam vygenerovaným
+OFFLINE z reálnych ikon `/srv/games/tli/ikony/canvas/*.webp` skriptom
+`scripts/games/tli-ikony-canvas-sablony-generuj.py` (repo `ops`) do
+`canvas_sablony/canvas_sablony_data.rs` — appka naďalej nemá žiadnu závislosť
+na dekódovaní obrázkov. Zmerané na 40 reálnych bunkách s monster paintom:
+**37,5 % top-1 / 50,0 % top-3** presnosť (vyskúšané aj 4/5/7/8 binov, rôzne
+orezanie okraja, separovateľný histogram — spoločný 3D histogram celej bunky
+pri 6 binoch vyhral). Limit zapísaný v module aj v `BACKLOG.md`: farebný
+prstenec okolo ikony sa medzi inštanciami rovnakého typu mení a histogram
+celej bunky ho nevie oddeliť od samotnej príšery — vracia sa preto vždy aj
+skóre istoty, nie len najlepšia zhoda.
+
+**`canvas_ocr.rs` doplnený o `parsuj_level_badge(text) -> Option<i64>`** —
+číta úrovňový odznak „LvN" jednej namaľovanej bunky (OCR výrez
+`src-tauri/src/ocr.rs`), rovnaký robustný štýl ako `parsuj_max_level`.
+
+core `508/508` testov zelených (17 nových). Testovacie fixtures (6 nových
+`.rgb` výrezov skutočných buniek z reálnych screenshotov, `core/testy-data/`)
+— **nedownscalované** na rozdiel od `canvas_detekcia`, lebo tu ide o detail
+samotnej bunky (100×100 px), nie celej obrazovky.
+
+Zámerne mimo rozsahu (self-queued ako TLI 59b2c): zapojenie do
+`zber_canvas.rs`/`klient.rs`, prepínač „Canvas: lokálne/server", appka
+release. Vyskúšané a odložené: rozpoznanie žltého „!" markera kľúčovej bunky
+(`oznacena_vykricnikom`) jednoduchou farebnou heuristikou — na 13 pozitívnych
+vzorkách sa neoddelilo od negatívov, zostáva `None` ako doteraz.
+
 ## core 0.13.22 — 20.10.2026 (TLI 59b, časť 2a: OCR scaffold + parsovanie textu cieľa/max levelu, bez appka releasu)
 
 Úloha `2026-10-20-0005-agent.md` (HNED, self-queued pokračovanie TLI 59b

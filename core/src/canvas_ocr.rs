@@ -132,6 +132,32 @@ pub fn parsuj_max_level(text: &str) -> Option<i64> {
     cislice.parse().ok()
 }
 
+/// Nájde v OCR texte ÚROVŇOVÝ ODZNAK jednej namaľovanej bunky platna ("Lv3",
+/// "Lv 3", "LV: 12"…) a vráti jeho číslo (TLI 59b2b, bod 1 — level painta sa
+/// pri rozpoznávaní jednej bunky číta z malého výrezu odznaku v jej pravom
+/// dolnom rohu, OCR naň volá `src-tauri/src/ocr.rs`, parsovanie textu je tu).
+/// Zámerne ÚZKY vzor — len `"lv"` bez ohľadu na veľkosť písmen a potom
+/// najviac pár oddeľovačov pred číslom, rovnaký štýl ako `parsuj_max_level`
+/// vyššie, nie všeobecné „nájdi prvé číslo v texte" (to by sa mohlo naviazať
+/// na číslo z inej časti výrezu, keby OCR zachytil aj okolie odznaku).
+pub fn parsuj_level_badge(text: &str) -> Option<i64> {
+    let maly = text.to_lowercase();
+    let zaciatok = maly.find("lv")?;
+    let za_fraza = &text[zaciatok + 2..];
+
+    let bez_oddelovacov = za_fraza.trim_start_matches(|c: char| c.is_whitespace() || c == ':' || c == '.');
+    let oddelovacov_preskocenych = za_fraza.len() - bez_oddelovacov.len();
+    if oddelovacov_preskocenych > 4 {
+        return None;
+    }
+
+    let cislice: String = bez_oddelovacov.chars().take_while(|c| c.is_ascii_digit()).collect();
+    if cislice.is_empty() {
+        return None;
+    }
+    cislice.parse().ok()
+}
+
 #[cfg(test)]
 mod testy {
     use super::*;
@@ -249,5 +275,34 @@ mod testy {
         // Viac než pár oddeľovacích znakov medzi frázou a číslom — radšej
         // žiadny výsledok než naviazanie na vzdialené, nesúvisiace číslo.
         assert_eq!(parsuj_max_level("Current Max Paint Level           7"), None);
+    }
+
+    #[test]
+    fn level_badge_presny_vzor_zo_screenshotu() {
+        assert_eq!(parsuj_level_badge("Lv3"), Some(3));
+    }
+
+    #[test]
+    fn level_badge_s_medzerou_a_viacciferne() {
+        assert_eq!(parsuj_level_badge("Lv 12"), Some(12));
+        assert_eq!(parsuj_level_badge("LV: 7"), Some(7));
+    }
+
+    #[test]
+    fn level_badge_case_insensitive() {
+        assert_eq!(parsuj_level_badge("lv2"), Some(2));
+        assert_eq!(parsuj_level_badge("LV2"), Some(2));
+    }
+
+    #[test]
+    fn level_badge_chybajuce_cislo_vracia_none() {
+        assert_eq!(parsuj_level_badge("Lv"), None);
+        assert_eq!(parsuj_level_badge(""), None);
+        assert_eq!(parsuj_level_badge("Level up!"), None);
+    }
+
+    #[test]
+    fn level_badge_cislo_prilis_daleko_sa_neberie() {
+        assert_eq!(parsuj_level_badge("Lv           3"), None);
     }
 }

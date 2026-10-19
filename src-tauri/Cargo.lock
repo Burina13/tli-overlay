@@ -4167,7 +4167,7 @@ dependencies = [
 
 [[package]]
 name = "tli-overlay-core"
-version = "0.13.21"
+version = "0.13.23"
 dependencies = [
  "rusqlite",
  "serde",
