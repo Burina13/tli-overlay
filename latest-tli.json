@@ -1,6 +1,6 @@
 {
-  "version": "0.22.0",
-  "notes": "TLI 60: Keď máš otvorený Frozen Canvas, appka po každom kliku myšou sama odfotí okno hry a snímku na pozadí pošle na učenie — nič ti neukáže a nijako ťa nezdrží. Vďaka tomu sa solver naučí aj ostatné smery miešania, nielen Adjacent. Dá sa vypnúť v Nastaveniach („Učenie Canvas na pozadí“). Pozri CHANGELOG.",
-  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.22.0/Tvoj-Tatko-TLI-Overlay_0.22.0_x64_en-US.msi",
-  "msiSha256": "a4532d7ac714c109d4e190efaee837839a77c2d927b94755096a2f4c3f796d29"
+  "version": "0.23.0",
+  "notes": "TLI 61: Na loot overlayi pribudlo FE/MIN vedľa FE/h (mapa aj session) a tlačidlo „⟲ Reset session“ priamo v pásiku úchytu — podrž 1 s, bez dialógu, bez Ctrl+F8. Session sa navyše sama vynuluje po 30 min nečinnosti, takže SESSION ČAS už neráta cez viacero dní a reštartov. Pozri CHANGELOG.",
+  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.23.0/Tvoj-Tatko-TLI-Overlay_0.23.0_x64_en-US.msi",
+  "msiSha256": "0bc78a5e3573d3b3f0f001ec982a84859cdc085b114465312ce6f87018906bf8"
 }
