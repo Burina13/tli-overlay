@@ -12,6 +12,161 @@ on:
         default: "tli-v0.1.0"
 
 jobs:
+  migracia:
+    # TLI 52 krok 3, poistka pred zapnutím `installerUrl`/`installerSha256`
+    # (`STAV.md` → `ROZPRACOVANE: TLI 52`, zadanie `2026-10-20-0019-agent.md`
+    # bod 6): overuje presne tú cestu, akou prejde KAŽDÝ dnešný hráč pri
+    # prvej tichej aktualizácii — stará perMachine MSI nainštalovaná →
+    # appka spustí nový NSIS presne s argumentmi z `pokus_o_tichu_aktualizaciu`
+    # (`main.rs`) → stará MSI musí zmiznúť z HKLM Uninstall, nová perUser
+    # verzia musí byť v HKCU Uninstall a NASTAVENIA/LOGY hráča v
+    # `%APPDATA%\sk.tvojtatko.tli-overlay\` musia migráciu prežiť nedotknuté
+    # (`/UPDATE` to sľubuje, tento test to overuje naživo, nie len zo zdroja
+    # šablóny).
+    name: Migrácia stará MSI → nová NSIS (TLI 52 poistka)
+    runs-on: windows-latest
+    steps:
+      - name: Stiahnuť MSI, NSIS setup.exe a kontrolné súčty
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "${{ inputs.tag }}"
+          $hlavicky = @{
+            Authorization = "Bearer $env:GH_TOKEN"
+            Accept        = "application/vnd.github+json"
+          }
+          $rel = Invoke-RestMethod "https://api.github.com/repos/Burina13/tli-overlay/releases/tags/$tag" -Headers $hlavicky
+          $msi = $rel.assets | Where-Object name -like "*.msi" | Select-Object -First 1
+          $nsis = $rel.assets | Where-Object name -like "*-setup.exe" | Select-Object -First 1
+          $sums = $rel.assets | Where-Object name -eq "SHA256SUMS.txt" | Select-Object -First 1
+          if (-not $msi) { throw "release $tag nemá .msi asset" }
+          if (-not $nsis) { throw "release $tag nemá *-setup.exe asset — tento tag ešte nestaval NSIS target (TLI 52)" }
+          Invoke-WebRequest $msi.browser_download_url -OutFile stara.msi
+          Invoke-WebRequest $nsis.browser_download_url -OutFile novy-setup.exe
+          Invoke-WebRequest $sums.browser_download_url -OutFile SHA256SUMS.txt
+
+          foreach ($pair in @(@{subor="stara.msi"; nazov=$msi.name}, @{subor="novy-setup.exe"; nazov=$nsis.name})) {
+            $riadok = (Get-Content SHA256SUMS.txt) | Where-Object { $_ -match [regex]::Escape($pair.nazov) }
+            if (-not $riadok) { throw "SHA256SUMS.txt neobsahuje riadok pre $($pair.nazov)" }
+            $ocakavany = ($riadok -split '\s+')[0]
+            $skutocny = (Get-FileHash $pair.subor -Algorithm SHA256).Hash.ToLower()
+            if ($ocakavany -ne $skutocny) { throw "SHA256 nesedí pre $($pair.nazov): $skutocny vs $ocakavany" }
+          }
+          $verzia = $tag -replace '^tli-v', ''
+          Write-Host "tag=$tag verzia=$verzia"
+          "VERZIA=$verzia" >> $env:GITHUB_ENV
+
+      - name: Nainštalovať STARÚ MSI (simuluje existujúceho hráča pred migráciou)
+        shell: pwsh
+        run: |
+          Start-Process msiexec -ArgumentList '/i','stara.msi','/qn','/norestart' -Wait
+          if (-not (Test-Path "C:\Program Files\Tvoj Tatko TLI Overlay")) {
+            throw "stará MSI sa nenainštalovala — predpoklad testu neplatí"
+          }
+          $zaznam = Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*",
+                                     "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*" `
+                                     -ErrorAction SilentlyContinue | Where-Object DisplayName -eq "Tvoj Tatko TLI Overlay"
+          if (-not $zaznam) { throw "stará MSI nie je v HKLM Uninstall — predpoklad testu neplatí" }
+          Write-Host "stará MSI nainštalovaná, HKLM Uninstall záznam existuje"
+
+      - name: Vložiť marker do %APPDATA% (nastavenia/logy, ktoré MUSIA prežiť)
+        shell: pwsh
+        run: |
+          $priecinok = Join-Path $env:APPDATA "sk.tvojtatko.tli-overlay"
+          New-Item -ItemType Directory -Force -Path $priecinok | Out-Null
+          New-Item -ItemType Directory -Force -Path (Join-Path $priecinok "logs") | Out-Null
+          '{"marker_test_migracie_tli52": "pred-migraciou-12345"}' |
+            Set-Content -Path (Join-Path $priecinok "nastavenia.json") -Encoding utf8 -NoNewline
+          'marker log pred migráciou TLI 52' |
+            Set-Content -Path (Join-Path $priecinok "logs\tli-overlay.log") -Encoding utf8 -NoNewline
+
+      - name: Spustiť NOVÝ NSIS presne s argumentmi z pokus_o_tichu_aktualizacie (main.rs)
+        shell: pwsh
+        run: |
+          # `/S /UPDATE /R /ARGS ""` — presne to, čo appka sama posiela pri
+          # tichej aktualizácii (main.rs:pokus_o_tichu_aktualizaciu). Jediný
+          # rozdiel oproti produkcii: appku tu nespúšťa Rust proces, ale CI
+          # krok priamo — scenár na disku (stará MSI + nastavenia v %APPDATA%)
+          # je identický.
+          $p = Start-Process -FilePath (Resolve-Path novy-setup.exe).Path -ArgumentList '/S /UPDATE /R /ARGS ""' -PassThru
+          $p.WaitForExit(120000) | Out-Null
+          if (-not $p.HasExited) { throw "NSIS inštalátor nedobehol do 120 s" }
+          if ($p.ExitCode -ne 0) { throw "NSIS inštalátor skončil s kódom $($p.ExitCode)" }
+          # `/R` appku po dokončení reštartuje — v CI ju netreba, len nech
+          # nezostane bežať a nezablokuje nasledujúce kroky/upratovanie runnera.
+          Start-Sleep -Seconds 5
+          Get-Process -Name "Tvoj Tatko TLI Overlay" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+
+      - name: Stará MSI zmizla z HKLM Uninstall (vstavaná migrácia NSIS šablóny)
+        shell: pwsh
+        run: |
+          $stara = Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*",
+                                     "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*" `
+                                     -ErrorAction SilentlyContinue | Where-Object DisplayName -eq "Tvoj Tatko TLI Overlay"
+          if ($stara) {
+            throw "stará perMachine MSI je STÁLE v HKLM Uninstall po migrácii — self-update by hráčovi nechal dva nainštalované produkty: $($stara | Format-List | Out-String)"
+          }
+          Write-Host "stará MSI je preč z HKLM Uninstall — migrácia prebehla"
+
+      - name: Nová perUser verzia je naozaj nainštalovaná a funguje (HKCU + log)
+        shell: pwsh
+        run: |
+          $zaznam = Get-ItemProperty "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*" -ErrorAction SilentlyContinue |
+                    Where-Object DisplayName -eq "Tvoj Tatko TLI Overlay"
+          if (-not $zaznam) { throw "nová perUser appka nie je v HKCU Uninstall — migrácia neskončila inštaláciou novej verzie" }
+          Write-Host "nová verzia v registri: $($zaznam.DisplayVersion)"
+          if ($zaznam.DisplayVersion -ne $env:VERZIA) {
+            throw "HKCU DisplayVersion $($zaznam.DisplayVersion) nesedí s tagom $env:VERZIA"
+          }
+
+          $instalDir = $zaznam.InstallLocation
+          if (-not $instalDir -or -not (Test-Path $instalDir)) {
+            $najdeny = Get-ChildItem -Path $env:LOCALAPPDATA -Recurse -Filter "Tvoj Tatko TLI Overlay.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+            if (-not $najdeny) { throw "exe novej perUser appky sa nenašlo pod $env:LOCALAPPDATA" }
+            $instalDir = $najdeny.DirectoryName
+          }
+          $exe = Get-ChildItem $instalDir -Filter *.exe | Select-Object -First 1
+          if (-not $exe) { throw "priečinok $instalDir neobsahuje žiadne .exe" }
+          if ($exe.VersionInfo.ProductVersion -notlike "$env:VERZIA*") {
+            throw "nainštalované exe má verziu $($exe.VersionInfo.ProductVersion), čakal sa $env:VERZIA"
+          }
+
+          # Funkčný dôkaz, nielen registry — rovnaký vzor ako `install` job nižšie.
+          $logPath = Join-Path $env:APPDATA "sk.tvojtatko.tli-overlay\logs\tli-overlay.log"
+          Remove-Item $logPath -Force -ErrorAction SilentlyContinue
+          $proc = Start-Process -FilePath $exe.FullName -PassThru
+          Start-Sleep -Seconds 10
+          if ($proc.HasExited) { throw "migrovaná appka po 10 s nebeží (exit code $($proc.ExitCode))" }
+          if (-not (Test-Path $logPath) -or ((Get-Content $logPath -Raw) -notmatch "registrácia OK")) {
+            Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+            throw "migrovaná appka nezapísala úspešnú registráciu klávesovej skratky do denníka"
+          }
+          Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+          Write-Host "nová perUser appka po migrácii naozaj beží"
+
+      - name: Nastavenia/logy v %APPDATA% prežili migráciu NEDOTKNUTÉ (/UPDATE)
+        shell: pwsh
+        run: |
+          $subor = Join-Path $env:APPDATA "sk.tvojtatko.tli-overlay\nastavenia.json"
+          if (-not (Test-Path $subor)) {
+            throw "$subor po migrácii zmizol — /UPDATE malo nastavenia hráča zachovať"
+          }
+          $obsah = Get-Content $subor -Raw
+          if ($obsah -notmatch "pred-migraciou-12345") {
+            throw "marker v nastaveniach po migrácii zmizol/bol prepísaný (obsah: $obsah) — /UPDATE nezachovalo pôvodný súbor"
+          }
+          Write-Host "nastavenia hráča prežili migráciu nedotknuté: $obsah"
+
+      - name: Odinštalovať novú perUser appku (upratanie runnera)
+        shell: pwsh
+        run: |
+          $zaznam = Get-ItemProperty "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*" -ErrorAction SilentlyContinue |
+                    Where-Object DisplayName -eq "Tvoj Tatko TLI Overlay"
+          if ($zaznam -and $zaznam.UninstallString) {
+            Start-Process cmd -ArgumentList "/c", $zaznam.UninstallString, "/S" -Wait -ErrorAction SilentlyContinue
+          }
+
   install:
     name: Inštalácia na čistom Windowse
     runs-on: windows-latest
