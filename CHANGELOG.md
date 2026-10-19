@@ -2,6 +2,61 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.20.7 — 19.10.2026 (TLI 53 časť 2/N — offline ikony položiek, oprava skutočnej CSP chyby)
+
+Úloha `2026-10-19-1537-agent.md` (HNED, self-queued pokračovanie TLI 53 časti
+1/N, nedozorovaný beh, trieda `zasah`). core bez zmeny (0.13.15) — zmena je
+čisto v `ui/`, žiadny Rust súbor sa nemenil.
+
+**Skutočný nájdený bug, nie len vizuálne vylepšenie.** Appka od TLI 48
+ťahala ikony položiek v Economy aj v loot overlay mini-paneli ako
+`<img src="${url_servera}/ikony/polozka/${id}">` — teda z INÉHO pôvodu než
+appka sama (herný server `tli.tvojtatko.sk`). Appkina CSP je
+`img-src 'self' data:` (rovnaký dôvod, prečo Guide, TLI 11, posiela ikony
+ako `data:` URI, JOURNAL.md 15.10.2026) — tie requesty teda CSP ticho
+blokovala a `onerror="this.remove()"` zakaždým len schoval prázdny
+obrázok. Ikony sa v Economy ani v mini-paneli **nikdy nezobrazili**, odkedy
+boli zadané (TLI 48, 19.10.2026).
+
+**Oprava — ikony sú teraz OFFLINE súčasťou appky.** Zdroj: TITrackov
+`tlidb_items_seed_en.json` (MIT, `github.com/astockman99/TITrack`), pole
+`img`. Stiahnutých **1 859 unikátnych** ikon (33 MB, 27 chýba 404 na CDN —
+nevydané/placeholder položky budúcich sezón, rovnaký stav ako chýbajúce
+mená) do `ui/ikony/polozky/<subor>.webp`, nový `ui/polozky-ikony.json`
+mapuje `id -> relatívna cesta` (2 161 id, viaceré zdieľajú súbor). Súbory
+idú do appky cez `frontendDist` (`../ui`), takže `<img src="ikony/polozky/
+…webp">` je pre appkinu CSP `'self'` — presne dôvod, prečo sa toto (na
+rozdiel od predošlej verzie) naozaj vykreslí.
+
+Nový spoločný helper `ikonaPolozkyHtml(id, trieda)` (`ui/hlavne.js`)
+nahrádza mŕtvy `ZAKLAD_IKON`/`nastavenia.url_servera` mechanizmus (ten
+zostáva v Nastaveniach ako predtým, používa sa len inde — sync/upload v
+Rust vrstve, nie v JS pre ikony). Ikona sa teraz kreslí v:
+Economy (`economyIkona`, predtým existovalo, len opravené), CURRENT
+INVENTORY (nový stĺpec s ikonou pred menom), Recent Runs rozbalenie „čo
+padlo" (ikona pri každom odznaku). Mini-panel (`ui/mini.js`) dostal
+rovnakú opravu — `IKONY_POLOZIEK` z `polozky-ikony.json`, bez
+`ZAKLAD_IKON`. **`ui/ikony.js` (ručne kreslené SVG siluety väzňov/akcií)
+sa nedotýka** — je to zámerne iný, rýchlejší offline systém (komentár na
+začiatku súboru), nové reálne ikony položiek sú vedľa neho, nie namiesto.
+
+**Seed zosynchronizovaný na TITrack revision 2** (`ui/polozky-seed-en.json`
+1933→2189 položiek, `ui/polozky-kategorie-en.json` 1933→2189 — nových 256
+id zaradených podľa existujúcej mapy `type_cn -> kategória` z TLI 49, 6
+nových čínskych typov zo SS14 Tartarus — `塔罗斯技能`/`始源塔罗斯技能` →
+Skills, `塔罗斯技能历练材料`/`始源塔罗斯技能历练材料` → Skills, `赛季罗盘`
+→ Compasses, `追随者` → Followers — priradených ručne proti existujúcim
+vzorom, nie necháných padnúť do General).
+
+4 nové UI jsdom testy (Economy/Current Inventory/Recent Runs ikona,
+mini-panel ikona) — `ui/testy-dashboard-titrack.e2e.mjs` +3,
+`ui/testy-mini-pripomienka.e2e.mjs` +1 (82 zelených spolu, predtým 78).
+`src-tauri` len `cargo check` (žiadna zmena v Rust kóde, kontrola len kvôli
+istote), `core` `cargo check` nezávisle tiež zelený.
+
+**Bod C (screenshoty pred/po) zo zadania TLI 53 je v tomto behu takisto
+spracovaný** — pozri hlásenie úlohy a `JOURNAL.md` 19.10.2026.
+
 ## 0.20.6 — 19.10.2026 (TLI 53 časť 1/N — Net Worth počítal len stránku 103, chýbala stránka 102)
 
 Úloha `2026-10-19-1453-mcp.md` (HNED, nedozorovaný beh, trieda `zasah`, repo

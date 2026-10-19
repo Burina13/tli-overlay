@@ -512,3 +512,62 @@ test("Current Inventory ukazuje vek ceny vedľa Cena/ks, keď ho appka pozná", 
         window.close();
     }
 });
+
+// ─── Ikony položiek (TLI 53 bod B) ──────────────────────────────────────────
+// Doterajšia verzia (TLI 48 bod 3) ťahala `<img>` z nášho herného servera —
+// iný pôvod než appka sama, čo appkino CSP `img-src 'self' data:` ticho
+// blokovalo a ikona sa nikdy nevykreslila. Appka teraz berie ikonu z
+// lokálneho balíka `polozky-ikony.json` (`window.__IKONY_POLOZIEK__`
+// v náhľade) a <img src> teda ukazuje na SÚČASŤ appky, nie na cudziu adresu.
+
+test("Economy: riadok so známou ikonou ju vykreslí z lokálneho balíka, neznáma ikona ostane bez <img>", async () => {
+    const { window, document } = postavApp();
+    try {
+        await pockajNaPrvePrekreslenie(window);
+        const riadky = [...document.querySelectorAll("#tabulka-economy-telo tr")];
+
+        const sIkonou = riadky.find((r) => r.textContent.includes("Steel Forge Beacon"));
+        const img = sIkonou.querySelector("img.economy-ikona");
+        assert.ok(img, "400021 má ikonu v __IKONY_POLOZIEK__ stube");
+        assert.match(img.getAttribute("src"), /^data:image\/svg\+xml/, "appka ikonu berie z lokálneho balíka, nie z cudzej adresy");
+
+        // 999999 nie je v __IKONY_POLOZIEK__ (rovnako ako nie je v seede mien) —
+        // appka nesmie vykresliť rozbitý <img>, radšej žiaden.
+        const bezIkony = riadky.find((r) => r.textContent.includes("#999999"));
+        assert.equal(bezIkony.querySelector("img.economy-ikona"), null);
+    } finally {
+        window.close();
+    }
+});
+
+test("CURRENT INVENTORY: riadok so známou ikonou ju vykreslí vedľa mena položky", async () => {
+    const { window, document } = postavApp();
+    try {
+        await pockajNaPrvePrekreslenie(window);
+        const riadky = [...document.querySelectorAll("#tabulka-inventar tbody tr")];
+        const sIkonou = riadky.find((r) => r.textContent.includes("Steel Forge Beacon"));
+        const img = sIkonou.querySelector("img.inventar-ikona");
+        assert.ok(img, "400021 má ikonu v __IKONY_POLOZIEK__ stube");
+        assert.match(img.getAttribute("src"), /^data:image\/svg\+xml/);
+    } finally {
+        window.close();
+    }
+});
+
+test("Recent Runs — rozbalenie 'čo padlo' ukazuje ikonu pri každom dropy so známym id", async () => {
+    const { window, document } = postavApp();
+    try {
+        await pockajNaPrvePrekreslenie(window);
+        const riadokBehu = document.querySelector('[data-beh-id="1"]');
+        riadokBehu.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+        const rozbalenie = document.querySelector('[data-beh-rozbalenie="1"]');
+        const odznaky = [...rozbalenie.querySelectorAll(".odznak")];
+        assert.ok(odznaky.length >= 2, "beh #1 má top_dropy 400021 a 500101");
+        for (const odznak of odznaky) {
+            const img = odznak.querySelector("img.odznak-ikona");
+            assert.ok(img, `odznak "${odznak.textContent}" má mať ikonu zo stubu`);
+        }
+    } finally {
+        window.close();
+    }
+});

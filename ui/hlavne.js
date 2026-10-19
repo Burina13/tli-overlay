@@ -87,10 +87,16 @@ const PREKLAD_MAPY = {
 // holé `#400021` namiesto mien.
 let MENA_POLOZIEK = window.__MENA_POLOZIEK__ || {};
 
-// Odkiaľ brať ikony položiek (TLI 48 bod 3, rovnaký zdroj ako mini-panel,
-// `ui/mini.js`) — z NÁŠHO servera (`/ikony/polozka/<id>`), nie z cudzieho CDN.
-// `null`, kým sa nenačítajú Nastavenia — dovtedy appka Economy ukáže bez ikon.
-let ZAKLAD_IKON = null;
+// Ikony položiek (TLI 53 bod B). Balík `polozky-ikony.json` mapuje id na
+// LOKÁLNY súbor v `ui/ikony/polozky/` (offline, súčasť appky) — doterajšia
+// verzia (TLI 48 bod 3) ťahala `<img src="${ZAKLAD_IKON}/ikony/polozka/${id}">`
+// z nášho herného servera, teda z INÉHO pôvodu než appka sama; appka má CSP
+// `img-src 'self' data:`, takže tie requesty CSP ticho blokovala (rovnaký
+// dôvod ako pri Guide, JOURNAL.md 15.10.2026) a ikony sa v Economy ani
+// v loot overlayi nikdy nezobrazili — `onerror` ich len ticho schoval.
+// `window.__IKONY_POLOZIEK__` podsúva náhľad pre CI, rovnaký vzor ako
+// `MENA_POLOZIEK` vyššie.
+let IKONY_POLOZIEK = window.__IKONY_POLOZIEK__ || {};
 
 // `typeof fetch` sa kontroluje zámerne: v jsdom teste (`ui/testy-zalozky.e2e.mjs`)
 // `fetch` neexistuje a holé volanie by zhodilo CELÝ skript pri načítaní —
@@ -106,6 +112,25 @@ if (typeof fetch === "function") {
             }
         })
         .catch(() => {});
+    fetch("polozky-ikony.json")
+        .then((o) => (o.ok ? o.json() : null))
+        .then((d) => {
+            if (d && d.ikony) {
+                IKONY_POLOZIEK = d.ikony;
+                obnovTracker().catch(() => {});
+            }
+        })
+        .catch(() => {});
+}
+
+/// `<img>` na ikonu položky, alebo prázdny reťazec, keď appka pre dané id
+/// ikonu nemá (nová položka pribudnutá v hre skôr, než appka dostala svoj
+/// ďalší update seedu — appka nesmie na chýbajúcej ikone stáť, rovnako ako
+/// `nazovPolozky`).
+function ikonaPolozkyHtml(id, trieda) {
+    const cesta = IKONY_POLOZIEK[String(id)];
+    if (!cesta) return "";
+    return `<img class="${trieda}" loading="lazy" alt="" src="${cesta}">`;
 }
 
 /// `400021` → `Steel Forge Beacon (Timemark 7)`, alebo `neznáma položka
@@ -332,7 +357,7 @@ function rozbalenieBehu(b) {
         ? dropy
               .map((d) => {
                   const hodnota = d.hodnota != null ? fe(d.hodnota) : "bez ceny";
-                  return `<span class="odznak" title="#${d.polozka}">${nazovPolozky(d.polozka)} ×${d.pocet} — ${hodnota}</span>`;
+                  return `<span class="odznak" title="#${d.polozka}">${ikonaPolozkyHtml(d.polozka, "odznak-ikona")}${nazovPolozky(d.polozka)} ×${d.pocet} — ${hodnota}</span>`;
               })
               .join("")
         : '<span class="rozbalenie-prazdne">Z tejto mapy nepadlo nič oceniteľné.</span>';
@@ -426,7 +451,7 @@ function vykresliInventar(p) {
             const cena = pol.cena_za_kus_fe != null ? fe(pol.cena_za_kus_fe) + vek : "bez ceny";
             const hodnota = pol.hodnota_fe != null ? fe(pol.hodnota_fe) + zastarana : "bez ceny";
             return `<tr class="${pol.skryte ? "riadok-skryty" : ""}">
-                <td>${nazovPolozky(pol.config_base_id)}</td>
+                <td>${ikonaPolozkyHtml(pol.config_base_id, "inventar-ikona")}${nazovPolozky(pol.config_base_id)}</td>
                 <td class="cislo">${pol.mnozstvo}</td>
                 <td class="cislo">${cena}</td>
                 <td class="cislo">${hodnota}</td>
@@ -548,8 +573,7 @@ const ZDROJ_POPIS = {
 };
 
 function economyIkona(id) {
-    if (!ZAKLAD_IKON) return "";
-    return `<img class="economy-ikona" loading="lazy" alt="" src="${ZAKLAD_IKON}/ikony/polozka/${id}" onerror="this.remove()">`;
+    return ikonaPolozkyHtml(id, "economy-ikona");
 }
 
 function economyZmenaText(percent) {
@@ -1407,9 +1431,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         chkUpload.checked = nastavenia.upload_logov !== false;
         // A pre ceny z obrazovky trhu (TLI 22) — tiež predvolene zapnuté.
         chkCenyObrazovka.checked = nastavenia.ceny_obrazovka_zapnute !== false;
-        if (nastavenia.url_servera) {
-            ZAKLAD_IKON = String(nastavenia.url_servera).replace(/\/+$/, "");
-        }
         ukazStavSyncu(chkSync.checked ? "Posiela sa automaticky každé tri minúty."
                                       : "Partii sa neposiela nič.", false);
         ukazStavUploadu(chkUpload.checked ? "Nahráva sa automaticky na pozadí."

@@ -867,7 +867,9 @@ tr.riadok-rozbalenia td {
     user-select: none;
 }
 
-.economy-ikona {
+.economy-ikona,
+.inventar-ikona,
+.odznak-ikona {
     width: 18px;
     height: 18px;
     border-radius: 3px;

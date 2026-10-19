@@ -14,13 +14,14 @@ import { JSDOM } from "jsdom";
 
 const TU = path.dirname(fileURLToPath(import.meta.url));
 
-function postav(htmlSubor, jsSubor, predPrikazy = {}) {
+function postav(htmlSubor, jsSubor, predPrikazy = {}, predGlobal = {}) {
     const dom = new JSDOM(readFileSync(path.join(TU, htmlSubor), "utf8"), {
         url: "file://" + path.join(TU, htmlSubor),
         runScripts: "outside-only",
         pretendToBeVisual: true,
     });
     const { window } = dom;
+    Object.assign(window, predGlobal);
     const poslucháči = {};
     const volania = [];
     // Minimálny Tauri shim — `invoke` vracia to, čo mu test podstrčí,
@@ -95,6 +96,31 @@ test("TLI 49 bod 2: vlastná/partiová cena s vekom dostane kratší tooltip 'ce
     ] }, true);
     const riadky = document.querySelectorAll("#mini-dropy-zoznam .hodnota");
     assert.equal(riadky[0].title, "cena pred 2 min");
+});
+
+// ─── Ikony položiek (TLI 53 bod B) ──────────────────────────────────────────
+// Doterajšia verzia (TLI 48 bod 3) ťahala `<img>` priamo z herného servera
+// appky — iný pôvod než appka sama, čo CSP `img-src 'self' data:` ticho
+// blokovala a ikona sa v mini-paneli nikdy nezobrazila. Teraz ide z lokálneho
+// balíka `polozky-ikony.json` (`window.__IKONY_POLOZIEK__` v teste).
+
+test("mini-panel vykreslí ikonu položky z lokálneho balíka, chýbajúca ikona nekreslí rozbitý <img>", (t) => {
+    const { window, document, zavri } = postav("mini.html", "mini.js",
+        { tracker_prehlad: null },
+        { __IKONY_POLOZIEK__: { 10001: "data:image/svg+xml;base64,AAAA" } });
+    t.after(zavri);
+    window.vykresliDropy({ top_dropy: [
+        { polozka: 10001, pocet: 2, hodnota: 3.5 },
+        { polozka: 115, pocet: 1, hodnota: null },
+    ] }, true);
+    const polozky = [...document.querySelectorAll("#mini-dropy-zoznam li")];
+    const sIkonou = polozky.find((li) => li.textContent.includes("#10001"));
+    const img = sIkonou.querySelector("img.ikona");
+    assert.ok(img, "10001 má ikonu v __IKONY_POLOZIEK__ stube");
+    assert.equal(img.getAttribute("src"), "data:image/svg+xml;base64,AAAA");
+
+    const bezIkony = polozky.find((li) => li.textContent.includes("#115"));
+    assert.equal(bezIkony.querySelector("img.ikona"), null, "neznáma ikona nesmie nechať rozbitý <img>");
 });
 
 test("pripomienka bez textu nekreslí rám", (t) => {

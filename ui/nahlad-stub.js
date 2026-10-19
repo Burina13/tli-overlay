@@ -114,6 +114,27 @@ window.__KATEGORIE_POLOZIEK__ = {
   999999: "general",
 };
 
+// Ikony pre náhľad (TLI 53 bod B) — rovnaký dôvod ako mená/kategórie vyššie:
+// `fetch("polozky-ikony.json")` z `file://` neprejde. Appka reálne dostáva
+// cestu k lokálnemu súboru (`ikony/polozky/<subor>.webp`); v náhľade stačí
+// `data:` URI (rovnaký obrázok ako `IKONA_UKAZKA` nižšie), nech je na
+// screenshote vidieť, že sa ikona vykreslí vo všetkých troch miestach
+// (Economy, Current Inventory, Recent Runs „čo padlo"), nie len že sa
+// nezrúti appka, keď chýba.
+const IKONA_POLOZKY_UKAZKA =
+  "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9" +
+  "IjAgMCAzMiAzMiI+PHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iNiIgZmlsbD0iIzM4OGJmZiIvPjx0ZXh0" +
+  "IHg9IjE2IiB5PSIyMiIgZm9udC1zaXplPSIxNiIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0iI2ZmZmZmZiI+STwv" +
+  "dGV4dD48L3N2Zz4=";
+window.__IKONY_POLOZIEK__ = {
+  400021: IKONA_POLOZKY_UKAZKA,
+  140005: IKONA_POLOZKY_UKAZKA,
+  5080: IKONA_POLOZKY_UKAZKA,
+  100300: IKONA_POLOZKY_UKAZKA,
+  500101: IKONA_POLOZKY_UKAZKA,
+  500102: IKONA_POLOZKY_UKAZKA,
+};
+
 // Ukážkový sprievodca pre záložku Guide (TLI 11, krok 4). Tvar je presne ten,
 // čo vracia príkaz `guide_data` — vrátane ikony ako `data:` URI, lebo tak ju
 // appka naozaj dostane (`img-src 'self' data:` v CSP nič iné nepustí).

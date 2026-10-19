@@ -76,10 +76,20 @@ function nazovPolozky(id) {
     return meno || `neznáma položka #${id}`;
 }
 
-// Ikony sa ťahajú z NÁŠHO servera (`/ikony/polozka/<id>`), nie priamo z
-// cudzieho CDN: appka hráča tak nikam inam nechodí a obrázok sa sťahuje raz
-// za celú partiu. Keď ikona nie je, `onerror` ju schová a ostane len text.
-let ZAKLAD_IKON = null;
+// Ikony položiek (TLI 53 bod B). Balík `polozky-ikony.json` mapuje id na
+// LOKÁLNY súbor v `ui/ikony/polozky/` — appke sa teda sťahuje naraz s ňou
+// (build time), nie za behu z nášho servera. Doterajšia verzia (TLI 48 bod
+// 3) ťahala `<img src="${ZAKLAD_IKON}/ikony/polozka/${id}">` z iného pôvodu
+// než appka sama, čo CSP `img-src 'self' data:` ticho blokovala — ikony sa
+// preto v tomto paneli nikdy nezobrazili, `onerror` len schoval prázdny
+// obrázok. `window.__IKONY_POLOZIEK__` podsúva náhľad pre CI.
+let IKONY_POLOZIEK = window.__IKONY_POLOZIEK__ || {};
+if (typeof fetch === "function") {
+    fetch("polozky-ikony.json")
+        .then((o) => (o.ok ? o.json() : null))
+        .then((d) => { if (d && d.ikony) IKONY_POLOZIEK = d.ikony; })
+        .catch(() => {});
+}
 
 function vykresliDropy(zivo, bezi) {
     const obal = document.getElementById("mini-dropy");
@@ -99,17 +109,17 @@ function vykresliDropy(zivo, bezi) {
         const li = document.createElement("li");
 
         // Ikona ide DOVNÚTRA bunky s menom, nie do vlastného stĺpca mriežky:
-        // keď sa nenačíta (alebo adresa servera nie je známa), prázdny stĺpec
-        // by rozhodil zarovnanie ostatných riadkov.
+        // keď appka pre dané id ikonu nemá, prázdny stĺpec by rozhodil
+        // zarovnanie ostatných riadkov.
         const meno = document.createElement("span");
         meno.className = "meno";
-        if (ZAKLAD_IKON) {
+        const cestaIkony = IKONY_POLOZIEK[String(d.polozka)];
+        if (cestaIkony) {
             const img = document.createElement("img");
             img.className = "ikona";
             img.loading = "lazy";
             img.alt = "";
-            img.src = ZAKLAD_IKON + "/ikony/polozka/" + d.polozka;
-            img.addEventListener("error", () => img.remove());
+            img.src = cestaIkony;
             meno.appendChild(img);
         }
         const text = document.createElement("span");
@@ -228,12 +238,6 @@ document.addEventListener("DOMContentLoaded", () => {
     invoke("nacitaj_nastavenia")
         .then((n) => {
             nastavPriehladnost(n && n.rozlozenie && n.rozlozenie.priehladnost);
-            // Odkiaľ brať ikony položiek (TLI 25) — z nášho servera, nie
-            // z cudzieho CDN. Keď sa adresa nenačíta, zoznam dropov sa
-            // vykreslí bez obrázkov; text je to podstatné.
-            if (n && n.url_servera) {
-                ZAKLAD_IKON = String(n.url_servera).replace(/\/+$/, "");
-            }
         })
         .catch(() => {});
 
