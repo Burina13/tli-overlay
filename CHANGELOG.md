@@ -2,6 +2,52 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## core 0.13.21 — 20.10.2026 (TLI 59b, časť 1: pevná geometria mriežky Frozen Canvasu, bez appka releasu)
+
+Úloha `2026-10-19-2244-agent.md` (HNED, self-queued pokračovanie TLI 59a).
+Pôvodné zadanie TLI 59 žiada pre lokálne rozpoznanie Frozen Canvasu „mriežku
+6×6 na pevnom mieste obrazovky — prepočítaj podľa rozlíšenia a DPI (reuse
+`suradnice.rs`)". Táto časť rieši presne a LEN geometriu (kam sa pozrieť),
+nie samotné rozpoznanie obsahu (OCR, template matching) — to zostáva ako
+ROZPRACOVANE, pozri `STAV.md`.
+
+**Nový modul `core/src/canvas_rozlozenie.rs`** — Box01 pozícia všetkých 36
+políčok platna a slotov ruky, odvodená VZORCOM (počiatok + pitch), nie 47
+magickými číslami. **Hodnoty sú zmerané, nie odhadnuté:** priemer zo 14
+reálnych rozpoznaní modulu `canvas` (Gemini vision) z `/srv/games/tli/analyzy`
+na CT 114 (Richardova hracia session 19.10.2026) — smerodajná odchýlka
+počiatku mriežky len ~0,0006–0,0007 Box01, teda Frozen Canvas UI sedí na
+pevnom mieste vzhľadom na okno hry. **Limit zapísaný priamo v kóde:** zmerané
+na jednom rozlíšení/okne, platnosť pri iných rozlíšeniach/DPI je zatiaľ len
+pracovná hypotéza (Box01 by to malo preniesť, ak hra škáluje UI proporčne) —
+treba overiť, keď appka raz zbiera dáta z iného rozlíšenia.
+8 nových testov (36 políčok v správnom poradí, zhoda so zmeranými dátami pre
+r1c1/r6c6/ruka slot 0, bunky sa pitchom neprekrývajú). `core` **470/470**
+testov zelených. `src-tauri` `cargo check` čisto (modul zatiaľ nemá
+volajúceho — rovnaké zámerné rozhodnutie ako pri TLI 59a).
+
+**Vedľajší výsledok: 13 chýbajúcich ikon Monster Paint dotiahnutých.**
+Zadanie žiadalo overiť, či `/srv/games/tli/ikony` má kompletnú sadu pre
+všetkých 13 `MONSTER_PAINT_TYPY` pred nasadením template matchingu — **nemala
+ANI JEDNU** (109 položiek v manifeste, nič k téme canvas/paint/monster typom).
+Zdroj: `tlidb.com` (`The_Frozen_Canvas_Season`), CDN `cdn.tlidb.com` vyžaduje
+`Referer: https://tlidb.com/` (bez neho 403) — zdokumentované v novom
+`scripts/games/tli-ikony-canvas-stiahni.py`. Stiahnutých a vizuálne overených
+13/13 (ratlin, dwarf, agito, pest, dragonbone, aember, test_subject, gang,
+ichi, sand_monster, eumbra, einherjar, ghost), nasadené do
+`/srv/games/tli/ikony/canvas/*.webp` + `manifest.json` na CT 114. Template
+matching (krok 1, druhá polovica) ich teraz má k dispozícii — predtým by bol
+nenasaditeľný úplne.
+
+**Zámerne NEUROBENÉ v tejto časti** (self-queued pokračovanie
+`2026-10-20-00xx-agent.md`): `Windows.Media.Ocr` volanie + parsovanie textu
+cieľa/levelu (krok 1, OCR polovica), rozpoznanie obsahu bunky z farby/ikony
+(prázdna/paint/monštrum s levelom/zamrznutá), prepínač „Canvas: lokálne/
+server" (krok 3), presnosť voči `/srv/games/tli/analyzy` (krok 4), appka
+release a hlásenie do `#torchlight`. Táto geometria je predpoklad pre
+všetky — bez nej by sa OCR/template matching museli hádať, kam sa vôbec
+pozrieť.
+
 ## 0.23.0 (core 0.13.20) — 19.10.2026 (TLI 61 — FE/min, Reset session na overlayi, automatický reset po nečinnosti)
 
 Úloha `2026-10-19-2241-mcp.md` (HNED, MALÁ, Opus, Gemini nesmel písať kód).
