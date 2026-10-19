@@ -73,7 +73,8 @@ label {
 
 input[type="text"],
 input[type="password"],
-input[type="number"] {
+input[type="number"],
+select {
     background: rgba(0, 0, 0, 0.3);
     border: 1px solid var(--border);
     color: var(--text-hlavny);
@@ -85,10 +86,23 @@ input[type="number"] {
 
 input[type="text"]:focus,
 input[type="password"]:focus,
-input[type="number"]:focus {
+input[type="number"]:focus,
+select:focus {
     outline: none;
     border-color: var(--akcent);
     box-shadow: 0 0 0 2px rgba(255, 150, 44, 0.2);
+}
+
+/* TLI 58 — pole, ktoré v zvolenom režime nemá účinok (napr. „Automatické
+   skrytie (sekundy)" pri skrývaní po kliku myšou). */
+.skupina.nedostupne label,
+.skupina.nedostupne small {
+    opacity: 0.5;
+}
+
+.skupina.nedostupne input:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
 }
 
 small {

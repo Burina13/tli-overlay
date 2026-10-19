@@ -78,9 +78,21 @@
             </div>
 
             <div class="skupina">
+                <label for="inp-skrytie-rezim">Skryť radu</label>
+                <select id="inp-skrytie-rezim">
+                    <option value="klik">po kliku myšou (predvolené)</option>
+                    <option value="cas">po čase</option>
+                </select>
+                <small>Pri „po kliku myšou" ostane rada svietiť, kým niekde neklikneš
+                    ľavým alebo pravým tlačidlom — klik ide do hry normálne ďalej.
+                    Poistka: zhasne aj po 120 sekundách bez kliku a vždy pri Esc.</small>
+            </div>
+
+            <div class="skupina">
                 <label for="inp-autoskrytie">Automatické skrytie (sekundy)</label>
                 <input type="number" id="inp-autoskrytie" min="0" value="0">
-                <small>Ak je nastavené na 0, overlay sa nikdy neskryje sám.</small>
+                <small>Platí len pre režim „po čase". Ak je nastavené na 0, overlay
+                    sa nikdy neskryje sám.</small>
             </div>
 
             <div class="skupina">

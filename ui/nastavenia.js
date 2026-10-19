@@ -15,6 +15,7 @@ const elStavHotkeyCanvas = document.getElementById("stav-hotkey-canvas");
 const elStavHotkeyTrh = document.getElementById("stav-hotkey-trh");
 const inpProces = document.getElementById("inp-proces");
 const inpAutoskrytie = document.getElementById("inp-autoskrytie");
+const inpSkrytieRezim = document.getElementById("inp-skrytie-rezim");
 const inpZvuk = document.getElementById("inp-zvuk");
 const inpZberDat = document.getElementById("inp-zber-dat");
 
@@ -208,6 +209,17 @@ async function obnovStavHotkeys() {
     }
 }
 
+/// Pole „Automatické skrytie (sekundy)" má zmysel len v režime „po čase" —
+/// v režime kliku je zašednuté, nech hráč nehľadá, prečo sa číslom nič nemení.
+/// Exportované cez `window` len kvôli jsdom testom (rovnaký vzor ako inde v UI).
+function zosuladSkrytieRezim() {
+    const poCase = inpSkrytieRezim.value === "cas";
+    inpAutoskrytie.disabled = !poCase;
+    inpAutoskrytie.closest(".skupina").classList.toggle("nedostupne", !poCase);
+}
+
+inpSkrytieRezim.addEventListener("change", zosuladSkrytieRezim);
+
 // --- Inicializácia ---
 document.addEventListener("DOMContentLoaded", async () => {
     try {
@@ -221,6 +233,11 @@ document.addEventListener("DOMContentLoaded", async () => {
         inpHotkeyTrh.value = nastavenia.hotkey_trh || "F10";
         inpProces.value = nastavenia.proces_hry || "";
         inpAutoskrytie.value = nastavenia.autoskrytie_s || 0;
+        // TLI 58: predvolený režim je klik. `undefined` (staré nastavenia bez
+        // tohto poľa) sa musí správať ako `true` — rovnako ako `#[serde(default)]`
+        // na strane Rustu, inak by formulár hráčovi potichu prepol režim na čas.
+        inpSkrytieRezim.value = nastavenia.skryt_radu_klikom === false ? "cas" : "klik";
+        zosuladSkrytieRezim();
         inpZvuk.checked = !!nastavenia.zvuk;
         inpZberDat.checked = !!nastavenia.zber_dat_zapnute;
         const priehladnost = nastavenia.rozlozenie && nastavenia.rozlozenie.priehladnost;
@@ -304,6 +321,7 @@ formular.addEventListener("submit", async (e) => {
         hotkey_trh: novyHotkeyTrh,
         proces_hry: inpProces.value.trim(),
         autoskrytie_s: parseInt(inpAutoskrytie.value, 10) || 0,
+        skryt_radu_klikom: inpSkrytieRezim.value !== "cas",
         zvuk: inpZvuk.checked,
         zber_dat_zapnute: inpZberDat.checked
     };

@@ -2,6 +2,51 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.21.3 — 19.10.2026 (TLI 58 — rada zhasne až po kliku myšou, nie po čase)
+
+Úloha `2026-10-19-2134-mcp.md` (HNED, 30 min). Core `0.13.17` → `0.13.18`
+(nové nastavenie `skryt_radu_klikom`).
+
+Richard 19.10.2026: „po stlačení solvera nech mi svieti overlay, kým nespravím
+klik myškou, až potom zhasne, namiesto času."
+
+1. **Panel rady a zvýraznenia sa po zobrazení NEskrývajú časovačom.** Zhasnú
+   až pri PRVOM kliku ľavým alebo pravým tlačidlom myši kdekoľvek na
+   obrazovke. Platí pre oba moduly rovnako (Tartarus aj Frozen Canvas) aj pre
+   „Test overlaya" z tray menu — ten má ukázať to, čo hráč naozaj dostane,
+   nie vlastný desaťsekundový režim.
+2. **Klik ide do hry ďalej a nič sa neblokuje.** Overlay ostáva click-through
+   (`set_ignore_cursor_events(true)`, nezmenené) a stav tlačidiel sa len
+   ČÍTA — `GetAsyncKeyState` á 25 ms vo vlastnom vlákne. Zadanie pripúšťalo aj
+   globálny low-level hook myši; zvolený je polling, lebo hook sa inštaluje
+   funkciou, ktorú CI krok „Pravidlá ToS" zakazuje menovite spolu so
+   simuláciou vstupu, a navyše ho Windows pri prekročení
+   `LowLevelHooksTimeout` ticho odpojí. Polling do cesty kliku nevstupuje
+   vôbec. `src-tauri/src/main.rs` (`naplanuj_skrytie_po_kliku`).
+   **Pozor na jednu vec:** overlay sa často zobrazí PRÁVE počas kliku (tray
+   menu „Odfotiť teraz", držané tlačidlo z hry). Preto sa nečaká na „tlačidlo
+   je dole", ale na skutočný nový stlak — automat `krok_cakania_na_klik` najprv
+   počká, kým sú obe tlačidlá hore.
+3. **Dve poistky.** Panel zhasne aj po **120 s** bez kliku
+   (`SKRYTIE_KLIKOM_POISTKA_S`) a vždy pri **Esc** (nezmenené správanie
+   skratky). Poistka je zámerne pevná, nie `autoskrytie_s` z nastavení — tam
+   smie byť nula („nikdy sám"), a to by pri zlyhanej detekcii kliku nechalo
+   panel svietiť navždy.
+4. **Nastavenie „Skryť radu: po kliku myšou (predvolené) / po čase".** Pri
+   režime kliku je pole „Automatické skrytie (sekundy)" zašednuté a
+   zablokované, nech hráč nehľadá, prečo sa číslom nič nemení. Staré
+   `nastavenia.json` pole `skryt_radu_klikom` nemajú — `#[serde(default)]`
+   im dosadí `true`, takže po aktualizácii sa nová funkcia zapne každému
+   (overené testom `stary_subor_bez_pola_dostane_rezim_kliku`).
+5. **Denník rozlišuje dôvod zhasnutia:** `[zobraz] skryté (dôvod=klik|esc|
+   timeout|hotkey|ui)`. Doteraz sa skrytie do logu nezapisovalo vôbec, takže
+   sa pri hlásení „zmizlo mi to samo" nedalo rozlíšiť, čo panel zhaslo.
+
+Testy: `krok_cakania_na_klik` (6 nových v `src-tauri/src/main.rs`, vrátane
+scenára „tlačidlo držané v okamihu zobrazenia"), 2 nové v
+`core/src/nastavenia.rs`, 4 nové jsdom testy
+`ui/testy-nastavenia-skrytie.e2e.mjs`.
+
 ## 0.21.2 — 19.10.2026 (TLI 57 — Zber dát neblokuje radu, sort toast menej otravný)
 
 Úloha `2026-10-19-2113-mcp.md` (HNED, 30 min). Core `0.13.16` → `0.13.17`

@@ -833,12 +833,25 @@ fn ukaz_chybu(app: &AppHandle, obd: Option<&OknoFyz>, sprava: &str) {
 }
 
 /// Skryje overlay a uvoľní Esc späť hre.
-fn skry(app: &AppHandle) {
+///
+/// `dovod` ide do denníka (TLI 58) — bez neho sa v logu nedalo rozlíšiť, či
+/// panel zhasol na klik hráča, na Esc, alebo ho zhasol poistný časovač; a
+/// práve to je prvá otázka, keď hráč hlási „zmizlo mi to samo".
+fn skry(app: &AppHandle, dovod: &str) {
+    let bol_viditelny = app
+        .get_webview_window(OVERLAY)
+        .and_then(|o| o.is_visible().ok())
+        .unwrap_or(false);
     if let Some(overlay) = app.get_webview_window(OVERLAY) {
         let _ = overlay.hide();
     }
     let _ = app.global_shortcut().unregister(esc());
     *app.state::<Stav>().zobrazene_od.lock().unwrap() = None;
+    // Logovať aj skrytie už skrytého okna by denník zaplavilo (Esc/hotkey
+    // chodia aj nad prázdnou plochou) — zapisuje sa len skutočná zmena.
+    if bol_viditelny {
+        denik::zapis("zobraz", &format!("skryté (dôvod={dovod})"));
+    }
 }
 
 /// Overlay sa po `autoskrytie_s` sekundách schová sám. Porovnáva sa značka času,
@@ -851,9 +864,128 @@ fn naplanuj_skrytie(app: AppHandle, znacka: Instant, sekundy: u64) {
         std::thread::sleep(std::time::Duration::from_secs(sekundy));
         let drzi = *app.state::<Stav>().zobrazene_od.lock().unwrap();
         if drzi == Some(znacka) {
-            skry(&app);
+            skry(&app, "timeout");
         }
     });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TLI 58 — skrytie rady až po kliku myšou
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Poistka pre režim „skry až po kliku" — po tomto čase bez kliku panel
+/// zhasne sám. Zámerne NIE je to `autoskrytie_s` z nastavení: tam smie byť
+/// nula („nikdy sám"), a keby detekcia kliku zlyhala (vzdialená plocha, iný
+/// vstup než myš), ostal by panel nad hrou svietiť navždy.
+const SKRYTIE_KLIKOM_POISTKA_S: u64 = 120;
+
+/// Ako často sa pýtame Windowsu na stav tlačidiel myši. 25 ms je pod prahom
+/// postrehnuteľnosti a stojí rádovo nič — `GetAsyncKeyState` je len čítanie
+/// stavovej tabuľky, nie práca so vstupnou frontou.
+const KROK_POLLINGU_MS: u64 = 25;
+
+/// Fáza čakania na klik. Rozdelené na dve preto, že overlay sa často zobrazí
+/// PRÁVE počas kliku (hráč klikne na položku v tray menu „Odfotiť teraz",
+/// alebo drží tlačidlo z hry) — keby sa bralo prosté „tlačidlo je dole",
+/// panel by zhasol v tej istej milisekunde, v ktorej sa objavil. Preto sa
+/// najprv čaká, kým sú obe tlačidlá hore, a až potom sa počíta prvý stlak.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FazaKliku {
+    /// Niektoré tlačidlo bolo dole už v okamihu zobrazenia — čaká sa na pustenie.
+    CakamNaPustenie,
+    /// Obe tlačidlá sú hore — najbližší stlak panel zhasne.
+    CakamNaStlacenie,
+}
+
+/// Jeden krok stavového automatu: vráti novú fázu a `true`, keď sa má skryť.
+///
+/// Oddelené od Windows API zámerne — takto sa dá otestovať na Linuxe v CI
+/// (rovnaký vzor ako `hotkey_debounovany`), bez myši a bez `GetAsyncKeyState`.
+pub(crate) fn krok_cakania_na_klik(faza: FazaKliku, stlacene: bool) -> (FazaKliku, bool) {
+    match (faza, stlacene) {
+        (FazaKliku::CakamNaPustenie, true) => (FazaKliku::CakamNaPustenie, false),
+        (FazaKliku::CakamNaPustenie, false) => (FazaKliku::CakamNaStlacenie, false),
+        (FazaKliku::CakamNaStlacenie, true) => (FazaKliku::CakamNaStlacenie, true),
+        (FazaKliku::CakamNaStlacenie, false) => (FazaKliku::CakamNaStlacenie, false),
+    }
+}
+
+/// Je práve stlačené ľavé alebo pravé tlačidlo myši?
+///
+/// Zadanie TLI 58 pripúšťalo globálny low-level hook myši AJ polling cez
+/// `GetAsyncKeyState` — zvolený je polling, a to z dvoch dôvodov. (1) Hook sa
+/// inštaluje funkciou, ktorú CI krok „Pravidlá ToS" zakazuje menovite spolu so
+/// simuláciou vstupu; appka sa k vstupu hráča nesmie priblížiť ani omylom.
+/// (2) Hook navyše vyžaduje VLASTNÚ message loop v tom istom vlákne a Windows
+/// ho pri prekročení `LowLevelHooksTimeout` ticho odpojí — teda presne tá
+/// trieda chýb, pri ktorej by appka hráčovi spomalila vstup do hry. Polling je
+/// len ČÍTANIE stavovej tabuľky: do cesty kliku nevstupuje vôbec, nič
+/// neodchytáva a nič nemení, takže klik ide do hry ďalej bez zmeny (zadanie:
+/// „hook nič neblokuje").
+#[cfg(windows)]
+fn tlacidlo_mysi_dole() -> bool {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON, VK_RBUTTON};
+    // Vysoký bit = klávesa/tlačidlo je PRÁVE dole. Nízky bit („stlačené od
+    // posledného volania") sa zámerne nepoužíva — ten si Windows nuluje pri
+    // každom čítaní, takže by sa oň pretekali iné procesy aj naše vlastné
+    // vlákno a stlak by sa občas stratil.
+    unsafe {
+        (GetAsyncKeyState(VK_LBUTTON.0 as i32) as u16 & 0x8000) != 0
+            || (GetAsyncKeyState(VK_RBUTTON.0 as i32) as u16 & 0x8000) != 0
+    }
+}
+
+/// Mimo Windowsu sa klik nedá zistiť — overlay tam aj tak nebeží, appka sa
+/// na Linuxe kompiluje len kvôli testom a `cargo check` v CI.
+#[cfg(not(windows))]
+fn tlacidlo_mysi_dole() -> bool {
+    false
+}
+
+/// Overlay ostane svietiť, kým hráč neklikne (ľavým alebo pravým tlačidlom
+/// kdekoľvek na obrazovke). Poistky: `SKRYTIE_KLIKOM_POISTKA_S` sekúnd bez
+/// kliku a Esc (ten rieši handler skratiek, nie toto vlákno).
+///
+/// Rovnako ako `naplanuj_skrytie` porovnáva značku času zobrazenia — keď
+/// medzitým príde nová analýza, toto vlákno novší panel nezhasne.
+fn naplanuj_skrytie_po_kliku(app: AppHandle, znacka: Instant) {
+    std::thread::spawn(move || {
+        let zaciatok = Instant::now();
+        let poistka = std::time::Duration::from_secs(SKRYTIE_KLIKOM_POISTKA_S);
+        let mut faza = if tlacidlo_mysi_dole() {
+            FazaKliku::CakamNaPustenie
+        } else {
+            FazaKliku::CakamNaStlacenie
+        };
+        loop {
+            // Panel medzitým zhasol (Esc, hotkey) alebo ho nahradila novšia
+            // analýza — toto vlákno nemá čo riešiť a končí.
+            if *app.state::<Stav>().zobrazene_od.lock().unwrap() != Some(znacka) {
+                return;
+            }
+            if zaciatok.elapsed() >= poistka {
+                skry(&app, "timeout");
+                return;
+            }
+            let (nova, skryt) = krok_cakania_na_klik(faza, tlacidlo_mysi_dole());
+            faza = nova;
+            if skryt {
+                skry(&app, "klik");
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(KROK_POLLINGU_MS));
+        }
+    });
+}
+
+/// Naplánuje skrytie podľa nastavenia hráča (TLI 58): buď čaká na klik myšou
+/// (predvolené), alebo odpočítava `autoskrytie_s` sekúnd ako doteraz.
+fn naplanuj_skrytie_podla_nastavenia(app: AppHandle, znacka: Instant, n: &Nastavenia) {
+    if n.skryt_radu_klikom {
+        naplanuj_skrytie_po_kliku(app, znacka);
+    } else {
+        naplanuj_skrytie(app, znacka, n.autoskrytie_s);
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1471,7 +1603,7 @@ V hre prepni Nastavenia → Zobrazenie → Režim okna na „Okno bez okrajov“
         let znacka = *app.state::<Stav>().zobrazene_od.lock().unwrap();
         if let Some(znacka) = znacka {
             over_prezentaciu(&app, &obdlznik, &snimok.rgb, zdroj);
-            naplanuj_skrytie(app.clone(), znacka, nastavenia.autoskrytie_s);
+            naplanuj_skrytie_podla_nastavenia(app.clone(), znacka, &nastavenia);
         }
 
         // TLI 41: požiadavka zdržaná počas tohto behu (pozri `cakajuci_dalsi`
@@ -1593,11 +1725,22 @@ fn test_overlay(app: &AppHandle) {
             "trvanie_ms": 0,
         }),
     );
-    denik::zapis("test-overlay", "stav=hotovo (testovací) odoslaný, mizne o 10 s");
+    // TLI 58: aj test z tray menu sa správa podľa nastavenia — má ukázať to,
+    // čo hráč naozaj dostane pri F8, nie vlastný desaťsekundový režim.
+    let nastavenia = app.state::<Stav>().nastavenia.lock().unwrap().clone();
+    denik::zapis(
+        "test-overlay",
+        if nastavenia.skryt_radu_klikom {
+            "stav=hotovo (testovací) odoslaný, zhasne po kliku myšou".to_string()
+        } else {
+            format!("stav=hotovo (testovací) odoslaný, mizne o {} s", nastavenia.autoskrytie_s)
+        }
+        .as_str(),
+    );
 
     let znacka = *app.state::<Stav>().zobrazene_od.lock().unwrap();
     if let Some(znacka) = znacka {
-        naplanuj_skrytie(app.clone(), znacka, 10);
+        naplanuj_skrytie_podla_nastavenia(app.clone(), znacka, &nastavenia);
     }
 }
 
@@ -2748,7 +2891,7 @@ fn otestuj_pripojenie(stav: tauri::State<Stav>) -> Result<String, String> {
 
 #[tauri::command]
 fn skry_overlay(app: AppHandle) -> Result<(), String> {
-    skry(&app);
+    skry(&app, "ui");
     Ok(())
 }
 
@@ -3079,8 +3222,10 @@ fn main() {
                 .unwrap_or(false);
 
             if viditelny {
-                // Hotkey aj Esc robia to isté: zhasnú overlay.
-                skry(app);
+                // Hotkey aj Esc robia to isté: zhasnú overlay. Dôvod sa v
+                // denníku rozlišuje (TLI 58) — „esc" je podľa zadania jedna
+                // z poistiek, stlačenie hotkey je vedomé zhasnutie hráčom.
+                skry(app, if skratka == &esc() { "esc" } else { "hotkey" });
             } else if skratka != &esc() {
                 // Ktorý z troch hotkey práve spustil analýzu sa pozná podľa
                 // zhody s AKTUÁLNE nastaveným `hotkey_canvas`/`hotkey_trh` (nie
@@ -3516,5 +3661,66 @@ mod testy {
     #[test]
     fn ziadny_podiel_sa_neda_overit() {
         assert_eq!(vyhodnot_prezentaciu(None), VysledokPrezentacie::NedaSaOverit);
+    }
+
+    // ── krok_cakania_na_klik (TLI 58) ──────────────────────────────────────
+
+    /// Pomocník: prehrá postupnosť stavov tlačidla a vráti, po koľkých
+    /// krokoch sa panel skryl (`None` = nikdy).
+    fn prehraj(start: FazaKliku, stavy: &[bool]) -> Option<usize> {
+        let mut faza = start;
+        for (i, stlacene) in stavy.iter().enumerate() {
+            let (nova, skryt) = krok_cakania_na_klik(faza, *stlacene);
+            faza = nova;
+            if skryt {
+                return Some(i);
+            }
+        }
+        None
+    }
+
+    #[test]
+    fn prvy_klik_po_zobrazeni_skryje() {
+        assert_eq!(prehraj(FazaKliku::CakamNaStlacenie, &[false, false, true]), Some(2));
+    }
+
+    #[test]
+    fn bez_kliku_sa_neskryje_nikdy() {
+        assert_eq!(prehraj(FazaKliku::CakamNaStlacenie, &[false; 50]), None);
+    }
+
+    /// Jadro veci: overlay sa často zobrazí PRÁVE v okamihu, keď hráč drží
+    /// tlačidlo (klik na „Odfotiť teraz" v tray menu). Keby sa bralo prosté
+    /// „tlačidlo je dole", panel by zhasol v tej istej milisekunde, v ktorej
+    /// sa objavil — preto sa najprv čaká na pustenie.
+    #[test]
+    fn drzane_tlacidlo_pri_zobrazeni_panel_nezhasne() {
+        // dole, dole, pustené, hore, a až potom nový stlak
+        assert_eq!(
+            prehraj(FazaKliku::CakamNaPustenie, &[true, true, false, false, true]),
+            Some(4)
+        );
+    }
+
+    #[test]
+    fn drzane_tlacidlo_bez_pustenia_nikdy_neskryje() {
+        assert_eq!(prehraj(FazaKliku::CakamNaPustenie, &[true; 50]), None);
+    }
+
+    /// Po pustení sa fáza už nevracia — druhé „hore" nesmie automat zresetovať.
+    #[test]
+    fn opakovane_hore_drzi_fazu_cakania_na_stlacenie() {
+        let (f1, _) = krok_cakania_na_klik(FazaKliku::CakamNaPustenie, false);
+        assert_eq!(f1, FazaKliku::CakamNaStlacenie);
+        let (f2, skryt) = krok_cakania_na_klik(f1, false);
+        assert_eq!(f2, FazaKliku::CakamNaStlacenie);
+        assert!(!skryt);
+    }
+
+    /// Poistka musí byť kratšia než „navždy" a dlhšia než bežné prečítanie
+    /// rady — 120 s zo zadania TLI 58.
+    #[test]
+    fn poistka_je_120_sekund() {
+        assert_eq!(SKRYTIE_KLIKOM_POISTKA_S, 120);
     }
 }

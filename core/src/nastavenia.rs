@@ -22,6 +22,16 @@ pub struct Nastavenia {
     /// prekliknúť si režim).
     pub hotkey_canvas: String,
     pub autoskrytie_s: u64,
+    /// TLI 58 (`2026-10-19-2134-mcp.md`) — ako zhasnúť panel rady po analýze.
+    /// `true` (predvolené) = až po PRVOM kliku myšou kdekoľvek; `false` =
+    /// po `autoskrytie_s` sekundách, ako to bolo do 19.10.2026. Richard
+    /// 19.10.2026: „po stlačení solvera nech mi svieti overlay, kým nespravím
+    /// klik myškou, až potom zhasne, namiesto času." Pri režime kliku je
+    /// `autoskrytie_s` nepoužité — poistkou je pevných
+    /// `SKRYTIE_KLIKOM_POISTKA_S` sekúnd (`main.rs`), nie nastavenie hráča:
+    /// nula v `autoskrytie_s` znamená „nikdy sám", a to by pri zlyhanej
+    /// detekcii kliku nechalo overlay svietiť navždy.
+    pub skryt_radu_klikom: bool,
     pub proces_hry: String,
     pub zvuk: bool,
     /// Zber dát (TLI 4c, `2026-10-15-0028-mcp.md`): keď zapnuté, hotkey pre
@@ -122,6 +132,7 @@ impl Default for Nastavenia {
             hotkey: "F8".to_string(),
             hotkey_canvas: "F9".to_string(),
             autoskrytie_s: 20,
+            skryt_radu_klikom: true,
             proces_hry: "Torchlight Infinite, Torchlight".to_string(),
             zvuk: false,
             zber_dat_zapnute: false,
@@ -256,6 +267,20 @@ mod testy {
         assert_eq!(n.kluc, "");
         assert_eq!(n.hotkey, "F8");
         assert_eq!(n.hotkey_canvas, "F9");
+        assert_eq!(n.autoskrytie_s, 20);
+        // TLI 58: predvolený režim je „skry až po kliku myšou", nie po čase.
+        assert!(n.skryt_radu_klikom);
+    }
+
+    /// Staré `nastavenia.json` (spred TLI 58) pole `skryt_radu_klikom`
+    /// nemajú — `#[serde(default)]` nad štruktúrou musí dosadiť `true`,
+    /// nie `false` z `Default::default()` pre `bool`. Keby dosadil `false`,
+    /// každému existujúcemu hráčovi by aktualizácia potichu nechala staré
+    /// správanie a nová funkcia by sa u nikoho nezapla.
+    #[test]
+    fn stary_subor_bez_pola_dostane_rezim_kliku() {
+        let n: Nastavenia = serde_json::from_str(r#"{"hotkey":"F8"}"#).unwrap();
+        assert!(n.skryt_radu_klikom);
         assert_eq!(n.autoskrytie_s, 20);
     }
 
