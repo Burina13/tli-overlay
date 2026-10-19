@@ -1,6 +1,6 @@
 {
-  "version": "0.21.3",
-  "notes": "TLI 58: Rada po stlačení solvera (F8/F9) už nezhasína po čase, ale až keď niekde klikneš ľavým alebo pravým tlačidlom myši — klik ide do hry normálne ďalej. Poistka: zhasne aj po 120 s bez kliku a vždy pri Esc. V Nastaveniach sa dá prepnúť späť na „po čase“. Pozri CHANGELOG.",
-  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.21.3/Tvoj-Tatko-TLI-Overlay_0.21.3_x64_en-US.msi",
-  "msiSha256": "4f4599b8416a9708a57056c505c4992b0b63c93d9745d0f568b7c7475e8db57a"
+  "version": "0.22.0",
+  "notes": "TLI 60: Keď máš otvorený Frozen Canvas, appka po každom kliku myšou sama odfotí okno hry a snímku na pozadí pošle na učenie — nič ti neukáže a nijako ťa nezdrží. Vďaka tomu sa solver naučí aj ostatné smery miešania, nielen Adjacent. Dá sa vypnúť v Nastaveniach („Učenie Canvas na pozadí“). Pozri CHANGELOG.",
+  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.22.0/Tvoj-Tatko-TLI-Overlay_0.22.0_x64_en-US.msi",
+  "msiSha256": "a4532d7ac714c109d4e190efaee837839a77c2d927b94755096a2f4c3f796d29"
 }
