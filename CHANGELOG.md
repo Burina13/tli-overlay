@@ -2,6 +2,58 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.21.2 — 19.10.2026 (TLI 57 — Zber dát neblokuje radu, sort toast menej otravný)
+
+Úloha `2026-10-19-2113-mcp.md` (HNED, 30 min). Core `0.13.16` → `0.13.17`
+(`SledovacVarovania` dostal nastaviteľný interval).
+
+Tri malé nahlásené problémy z Richardovho reálneho hrania (v0.21.1, 19.10. ~20:00):
+
+1. **Zber dát (Frozen Canvas) už neblokuje radu.** Keď bolo zapnuté nastavenie
+   „Zber dát", appka predtým ukázala LEN „Zber dát — uložené #N" a radu
+   solvera vôbec nevykreslila — Richard to vnímal ako „appka vôbec
+   nerozpoznáva, čo má robiť". Server stav ukladá vždy, nezávisle od toho,
+   či sa rada zobrazí, takže appka teraz robí OBOJE naraz: počíta uložené
+   snímky A ZÁROVEŇ vykreslí kroky z tej istej odpovede (`zber_pocet` v novom
+   poli odpovede `hotovo_canvas`, fáza `zber_ulozene` zrušená — bola to jediná
+   vetva, ktorá ju posielala). `src-tauri/src/main.rs`, `ui/overlay.js`,
+   `ui/nastavenia.html` (popis nastavenia).
+2. **„Frozen Canvas — nerozpoznané".** Keď solver nemá žiadny krok PRETOŽE
+   vision model vôbec nerozpoznal cieľ plátna (`analyza.platno.ciel` chýba —
+   typicky zlý screenshot/iné okno), panel to teraz povie rovno: „Nerozpoznal
+   som plátno – otvor Frozen Canvas na celú obrazovku." Predtým sa v tomto
+   prípade ukázala tá istá všeobecná veta ako pri „cieľ už splnený", čo
+   vyzeralo ako ticho. `ui/overlay.js`.
+3. **Toast „Sortni inventár v hre" sa už neopakuje donekonečna á 25 s.** Má
+   vlastný, oveľa dlhší interval obnovy (`OPAKOVAT_PO_S_SORT` = 600 s,
+   `core/src/tracker/varovania.rs`) a navyše zmizne HNEĎ pri prvom
+   `InitBagData` po probléme (`skry_pripomienku_ak_text` v `main.rs`), nie až
+   po svojom vlastnom časovači. Toast uploadu (`OPAKOVAT_PO_S` = 25 s) sa
+   nemení — rieši reálnu stratu dát, nie len neúplný Net Worth.
+
+Meranie latencie `/api/analyza?modul=canvas` (bod 3 zadania, 18 s nahlásených
+Richardom): živé meranie v tomto behu nebolo spravené (žiadny snapshot po
+ruke, hrozilo by skutočné volanie Vertexu mimo rozpočtu MALEJ úlohy). Z kódu
+(`stacks/games/tli-web/app.py` v `ops` repe): `VISION_PROMPT_CANVAS` (627 tok.)
+je KRATŠÍ než `VISION_PROMPT` pre Tartarus (1208 tok.), takže vstupný prompt
+nie je príčina. Canvas je ale JEDINÝ modul, ktorý si od vision modelu pýta
+pixelové súradnice (`box`) pre VŠETKÝCH 36 buniek plátna (6×6) AJ pre každý
+slot v ruke naraz (`polia_platno`/`polia_ruky`) — to je rádovo väčší
+OUTPUT, ktorý musí model vygenerovať, než pri Tartarus. Odhad: väčšina 18 s
+ide na generovanie tohto veľkého štruktúrovaného JSONu vo vision modeli, nie
+na sieť/JPEG (zdieľané s Tartarus cez tú istú `zmensenie::MAX_DLZKA`) ani na
+solver (`canvas_solver.navrhni_kroky` je čisté počítanie nad už hotovým
+stavom, rádovo ms). Rýchla oprava (menší JPEG/iný model) sa v tomto behu
+NEROBILA — vyžadovalo by zmenu kontraktu API (`canvas-api-kontrakt.md`) a
+testovanie proti reálnym screenshotom, čo presahuje rámec MALEJ úlohy.
+**Návrh na ďalší beh:** počítať súradnice 36 buniek/slotov ANALYTICKY z pevnej
+mriežky (fixný layout obrazovky) namiesto toho, aby ich vracal vision model —
+ten by sa pýtal len na OBSAH buniek (paint/dostupná) a 1–2 kotviace súradnice
+plátna, čím by sa output zmenšil rádovo. Druhá, menej istá možnosť: vlastný
+(rýchlejší) model len pre `modul=canvas` cez nové pole v `gemini:` configu
+(dnes jeden `model` pre všetky moduly) — treba overiť na reálnych dátach, či
+nestráca presnosť.
+
 ## 0.21.1 — 19.10.2026 (TLI 54b — Supreme potvrdené: 6. stupeň rarity, nie 5)
 
 Úloha `2026-10-19-1731-agent.md` (HNED, self-queued pokračovanie TLI 54). Core

@@ -258,7 +258,11 @@ impl Default for StavTrackera {
             trh_otvoreny: false,
             povodna_velkost_logu: None,
             varovanie_uploadu: SledovacVarovania::novy(),
-            varovanie_sortu: SledovacVarovania::novy(),
+            // TLI 57: sort sa opakuje oveľa zriedkavejšie než upload — pozri
+            // `OPAKOVAT_PO_S_SORT`.
+            varovanie_sortu: SledovacVarovania::novy_s_intervalom(
+                tli_overlay_core::tracker::varovania::OPAKOVAT_PO_S_SORT,
+            ),
             posledna_synchronizacia_cien: None,
             zivy_zaciatok_real: None,
         }
@@ -1554,7 +1558,7 @@ pub fn spusti_vlakno(app: AppHandle) {
             if zapnuty {
                 if let Some(cesta) = cesta {
                     let tracker = app.state::<Tracker>();
-                    let (novych, pripomienka_udalosti, trh_otvoreny, ukaz_upload, ukaz_sort) = {
+                    let (novych, pripomienka_udalosti, trh_otvoreny, ukaz_upload, ukaz_sort, sort_problem) = {
                         let mut t = tracker.0.lock().unwrap();
                         t.pripomienka.nastav_zapnute(pripominat);
                         let vysledok = precitaj(&mut t, &cesta);
@@ -1595,6 +1599,7 @@ pub fn spusti_vlakno(app: AppHandle) {
                             t.odober_trh_otvoreny(),
                             ukaz_upload,
                             ukaz_sort,
+                            sort_problem,
                         )
                     };
                     if novych > 0 {
@@ -1615,6 +1620,11 @@ pub fn spusti_vlakno(app: AppHandle) {
                             "upozornenie",
                             tli_overlay_core::tracker::varovania::OPAKOVAT_PO_S + 10,
                         );
+                    } else if !sort_problem {
+                        // TLI 57: hráč práve sortol (prvý `InitBagData` po
+                        // probléme) — toast má zmiznúť HNEĎ, nie čakať na
+                        // vlastný (teraz oveľa dlhší) časovač.
+                        crate::skry_pripomienku_ak_text(&app, "Sortni inventár v hre");
                     }
                     if ukaz_upload {
                         crate::ukaz_pripomienku_toast(

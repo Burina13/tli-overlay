@@ -1364,22 +1364,24 @@ V hre prepni Nastavenia → Zobrazenie → Režim okna na „Okno bez okrajov“
                     Err(e) => denik::zapis("http", &format!("canvas CHYBA: {e}")),
                 }
                 match vysledok {
-                    // Zber dát (TLI 4c): server ULOŽIL stav (robí to vždy, bez
-                    // ohľadu na istotu solvera — nezmenené od TLI 4b), takže
-                    // KAŽDÉ Ok() tu znamená "uložené", nezávisle od toho, či
-                    // solver vôbec niečo navrhol. Žiadna rada sa nevykresľuje —
-                    // zámerne, nech zber dát nepokazí nehádaný smer tým, že by
-                    // vnucoval neoverenú radu.
-                    Ok(_v) if nastavenia.zber_dat_zapnute => {
-                        let pocet = {
+                    Ok(v) => {
+                        // TLI 57: Zber dát (TLI 4c) predtým BLOKOVAL radu —
+                        // keď bolo zapnuté, appka ukázala len "uložené" a
+                        // rada sa nevykreslila vôbec (hráč to vnímal, akoby
+                        // appka vôbec nerozpoznávala, čo má robiť). Server
+                        // ULOŽIL stav vždy, bez ohľadu na istotu solvera
+                        // (nezmenené od TLI 4b) — appka preto odteraz robí
+                        // OBOJE: počíta uložené snímky A ZÁROVEŇ vykreslí
+                        // radu solvera z tej istej odpovede.
+                        let zber_pocet = if nastavenia.zber_dat_zapnute {
                             let stav = app.state::<Stav>();
                             let mut p = stav.pocitadlo_zber.lock().unwrap();
                             *p += 1;
-                            *p
+                            Some(*p)
+                        } else {
+                            None
                         };
-                        let _ = app.emit("stav", json!({ "faza": "zber_ulozene", "pocet": pocet }));
-                    }
-                    Ok(v) => {
+
                         // Frozen Canvas (TLI 4b): KAŽDÝ krok nesie DVA páry
                         // súradníc (zdroj v ruke + cieľ na plátne), prepočítané
                         // tou istou funkciou ako Tartarus políčka.
@@ -1412,6 +1414,7 @@ V hre prepni Nastavenia → Zobrazenie → Režim okna na „Okno bez okrajov“
                                 "sirka": sirka_log,
                                 "vyska": vyska_log,
                                 "trvanie_ms": v.trvanie_ms,
+                                "zber_pocet": zber_pocet,
                             }),
                         );
                     }
@@ -2126,6 +2129,24 @@ fn ukaz_pripomienku_toast(app: &AppHandle, text: &str, trieda: &str, sekund: u64
     let znacka = Instant::now();
     *app.state::<Stav>().pripomienka_zobrazena_od.lock().unwrap() = Some(znacka);
     naplanuj_skrytie_pripomienky(app.clone(), znacka, sekund);
+}
+
+/// TLI 57: keď podmienka opakovaného toastu (sort) prestane platiť, toast má
+/// zmiznúť HNEĎ (prvý `InitBagData`), nie až po svojom vlastnom časovači —
+/// predtým mohol „Sortni inventár v hre" visieť ešte desiatky sekúnd po
+/// tom, čo si hráč batoh reálne sortol. Hýbe sa len vtedy, keď je PRÁVE
+/// zobrazený TENTO konkrétny text — iný, novší toast (napr. upload) sa
+/// nedotkne.
+pub(crate) fn skry_pripomienku_ak_text(app: &AppHandle, text: &str) {
+    let obsah = app.state::<Stav>().pripomienka_obsah.lock().unwrap().clone();
+    if obsah.map(|(t, _)| t).as_deref() != Some(text) {
+        return;
+    }
+    *app.state::<Stav>().pripomienka_obsah.lock().unwrap() = None;
+    *app.state::<Stav>().pripomienka_zobrazena_od.lock().unwrap() = None;
+    if let Some(okno) = app.get_webview_window(PRIPOMIENKA) {
+        let _ = okno.hide();
+    }
 }
 
 /// Okno hry pre umiestnenie panelov nad ňou (TLI 21: mini-panel, toast,

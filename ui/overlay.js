@@ -134,9 +134,6 @@ listen("stav", (event) => {
     else if (payload.faza === "hotovo_canvas") {
         vykresliHotovoCanvas(payload);
     }
-    else if (payload.faza === "zber_ulozene") {
-        vykresliZberUlozene(payload);
-    }
 });
 
 // ── TLI 21 — uložená poloha/veľkosť/priehľadnosť panela (mimo režimu úpravy).
@@ -313,18 +310,6 @@ window.addEventListener("mouseup", () => {
     tahaniePresunu = null;
     tahanieVelkosti = null;
 });
-
-// ── Zber dát (TLI 4c) — žiadna rada, len potvrdenie že sa snímka odoslala
-// a server ju uložil (robí to vždy, bez ohľadu na istotu solvera).
-function vykresliZberUlozene(data) {
-    pNadpis.textContent = `Zber dát — uložené #${data.pocet}`;
-    pDovod.textContent = "Snímka odoslaná a uložená na serveri. Over F9 pred aj po "
-        + "každom položení paintu.";
-    pIstota.textContent = "";
-    pSkontroluj.classList.add("skryte");
-    pAlternativy.classList.add("skryte");
-    elPanel.classList.remove("skryte");
-}
 
 /* TLI 8 — riadok s ikonami nad dôvodom: koho sa odporúčanie týka
    (väzeň/paint) a akú akciu s ním urobiť. Keď sa ani jedna ikona nedá
@@ -802,11 +787,27 @@ const ZELENA_KROK = "#36e05f";
 function vykresliHotovoCanvas(data) {
     const kroky = data.kroky || [];
     const analyza = data.analyza || {};
+    // TLI 57: Zber dát už radu nezatajuje — keď appka snímku popri rade aj
+    // uložila (nastavenie „zber dát" zapnuté), hráč to vidí ako predponu
+    // nadpisu namiesto toho, aby rada zmizla celá (predtým `zber_ulozene`).
+    const zberPrefix = (typeof data.zber_pocet === "number")
+        ? `Zber dát #${data.zber_pocet} — `
+        : "";
 
     if (kroky.length === 0) {
-        pNadpis.textContent = "Frozen Canvas — žiadny krok";
-        pDovod.textContent = (analyza.skontroluj && analyza.skontroluj[0]) ||
-            "Server nenavrhol žiadny ťah (cieľ môže byť už splnený, alebo smer miešania ešte nemá overené pravidlo).";
+        // Solver nenavrhol žiadny krok z DVOCH celkom odlišných dôvodov a
+        // hráč ich má vidieť inak: `platno.ciel` chýba, keď rozpoznávanie
+        // vôbec NEVIDELO Frozen Canvas (zlý screenshot/iná obrazovka) — dovtedy
+        // appka mlčala rovnako ako pri „cieľ splnený", čo Richard vnímal ako
+        // „vôbec nerozpoznáva, čo má robiť".
+        const platnoRozpoznane = Boolean(analyza.platno && analyza.platno.ciel);
+        pNadpis.textContent = zberPrefix + (platnoRozpoznane
+            ? "Frozen Canvas — žiadny krok"
+            : "Frozen Canvas — nerozpoznané");
+        pDovod.textContent = platnoRozpoznane
+            ? ((analyza.skontroluj && analyza.skontroluj[0]) ||
+                "Server nenavrhol žiadny ťah (cieľ môže byť už splnený, alebo smer miešania ešte nemá overené pravidlo).")
+            : "Nerozpoznal som plátno – otvor Frozen Canvas na celú obrazovku.";
         pIstota.textContent = "";
         pSkontroluj.classList.add("skryte");
         pAlternativy.classList.add("skryte");
@@ -850,7 +851,7 @@ function vykresliHotovoCanvas(data) {
     // ako isté pravidlo.
     const neoverene = analyza.pravidlo_overene === false;
     const prefixNadpisu = neoverene ? "⚠️ " : "";
-    pNadpis.textContent = prefixNadpisu + (kroky.length === 1
+    pNadpis.textContent = zberPrefix + prefixNadpisu + (kroky.length === 1
         ? "Frozen Canvas — 1 krok"
         : `Frozen Canvas — ${kroky.length} krokov`);
 
