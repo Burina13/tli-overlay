@@ -1,6 +1,6 @@
 {
-  "version": "0.20.8",
-  "notes": "TLI 53 (časť 2/N): ikony položiek (Economy, Current Inventory, Recent Runs, loot overlay mini-panel) sú teraz offline súčasťou appky — doterajšia verzia ich ťahala z herného servera, čo appkina CSP ticho blokovala a nikdy sa nezobrazili. Seed zosynchronizovaný na TITrack revision 2 (2189 položiek). Pozri CHANGELOG.",
-  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.20.8/Tvoj-Tatko-TLI-Overlay_0.20.8_x64_en-US.msi",
-  "msiSha256": "17ff886271e6491cd98f84c24d40c7b5c4adf82fb1aa4869bfcda9ea6dec9ca8"
+  "version": "0.20.9",
+  "notes": "TLI 56: Current Inventory presunuté do vlastnej záložky Inventory (súčet hodnoty, triedenie aj kliknutím na hlavičku). NET WORTH aj RUNS/Recent Runs/FE-HOUR už po reštarte appky NEZMIZNÚ — appka si teraz pamätá posledný známy stav batohu aj históriu máp z lokálnej DB, presne ako to doteraz robila s cenami. Pozri CHANGELOG.",
+  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.20.9/Tvoj-Tatko-TLI-Overlay_0.20.9_x64_en-US.msi",
+  "msiSha256": "bd988b6da210fbee81399fa0012c0b72e5b46e8b7cf11901663eab8cea2bb8e1"
 }
