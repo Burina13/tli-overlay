@@ -1,6 +1,6 @@
 {
-  "version": "0.20.5",
-  "notes": "TLI 52 (časť 2/2): pripravený perUser inštalátor (NSIS) vedľa doterajšieho MSI — zatiaľ len príprava, tichá aktualizácia bez potvrdzovania (UAC) sa ešte NESPÚŠŤA automaticky, kým ju Richard osobne neoverí. Update sa teda správa úplne rovnako ako doteraz: klikneš „Check for Updates“, appka ťa odkáže na MSI na stiahnutie. Pozri CHANGELOG.",
-  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.20.5/Tvoj-Tatko-TLI-Overlay_0.20.5_x64_en-US.msi",
-  "msiSha256": "c90e4d6c876c448e31780ee47917ade33f4f5bf2c4be46671550974d6a792fcf"
+  "version": "0.20.6",
+  "notes": "TLI 53 (časť 1/N): Current Inventory a NET WORTH predtým čítali len batoh stránku 103 (\"ostatné\") — chýbala stránka 102 (FE a ostatné meny/materiály ako embery, memory thready, divinity, wedge), takže Net Worth bol podhodnotený. Opravené podľa TITracku: appka teraz počíta celý majetok (FE 1:1 + ostatné s cenníkom). Pozri CHANGELOG.",
+  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.20.6/Tvoj-Tatko-TLI-Overlay_0.20.6_x64_en-US.msi",
+  "msiSha256": "c92e449335f935475381b3eb9a8e0b85c3726de22a1104ae6c78ec48caa16763"
 }
