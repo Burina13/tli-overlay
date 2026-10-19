@@ -875,3 +875,28 @@ tr.riadok-rozbalenia td {
     vertical-align: middle;
     margin-right: 6px;
 }
+
+/* Kategórie Economy (TLI 49 bod 1) — záložky nad tabuľkou, nie <select>. */
+#economy-kategorie {
+    flex-wrap: wrap;
+}
+
+.zalozka-kategoria {
+    padding: 6px 12px;
+    border: 1px solid var(--farba-okraj);
+    border-radius: 16px;
+    background-color: var(--farba-priehladna);
+    color: var(--farba-text-tlmeny);
+    cursor: pointer;
+    font-size: 0.85rem;
+}
+
+.zalozka-kategoria:hover {
+    color: var(--farba-text-hlavny);
+}
+
+.zalozka-kategoria.aktivna {
+    color: var(--farba-akcent-text);
+    border-color: var(--farba-akcent);
+    background-color: var(--farba-akcent-pozadie, transparent);
+}

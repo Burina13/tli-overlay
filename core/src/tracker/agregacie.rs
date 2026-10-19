@@ -533,12 +533,16 @@ pub fn top_dropy(
                 if nastavenie.dan {
                     hodnota *= 0.875;
                 }
-                let (zdroj, prispievatelia, vek) = if cena.zdroj == Zdroj::Titrack {
-                    (Some("titrack.ninja".to_string()), Some(cena.zdrojov),
-                     Some(vek_text(teraz.saturating_sub(cena.kedy))))
+                // TLI 49 bod 2: vek sa predtým posielal LEN pre titrack ceny
+                // (atribúcia „odkiaľ"); appka ale vek ceny pozná vždy (`Cena::
+                // kedy`) a Richard chcel „cena pred X min" vidieť aj v loot
+                // overlay pre vlastné/partiové ceny, nie len pre titrack.
+                let (zdroj, prispievatelia) = if cena.zdroj == Zdroj::Titrack {
+                    (Some("titrack.ninja".to_string()), Some(cena.zdrojov))
                 } else {
-                    (None, None, None)
+                    (None, None)
                 };
+                let vek = Some(vek_text(teraz.saturating_sub(cena.kedy)));
                 ocenene.push(DropRiadok {
                     polozka, pocet, hodnota: Some(hodnota), zdroj, prispievatelia, vek,
                 });
@@ -629,13 +633,16 @@ mod testy_dropy {
     }
 
     #[test]
-    fn vlastna_cena_nenesie_titrack_atribuciu() {
+    fn vlastna_cena_nenesie_titrack_atribuciu_ale_vek_ano() {
         let beh = beh_s_dropmi(&[(10, 1)]);
-        let c = cennik(&[(10, 1.0)]); // `cennik()` helper used Cena::vlastna
+        let c = cennik(&[(10, 1.0)]); // `cennik()` helper used Cena::vlastna, kedy=0
         let v = top_dropy(&beh, &c, &Nastavenie { dan: false }, 5, 2000);
         assert_eq!(v[0].zdroj, None);
         assert_eq!(v[0].prispievatelia, None);
-        assert_eq!(v[0].vek, None);
+        // TLI 49 bod 2: vek appka pozná pre KAŽDÚ cenu, nielen titrack — len
+        // atribúcia „odkiaľ" (zdroj/prispievatelia) je titrack-only.
+        // `cennik()` vyššie vkladá ceny s `kedy=1000`, `teraz` tu je 2000.
+        assert_eq!(v[0].vek.as_deref(), Some("pred 16 min"));
     }
 
     #[test]

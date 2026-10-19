@@ -30,7 +30,13 @@ licenciou. Súbor sa dopĺňa pri KAŽDOM ďalšom prevzatí — nie spätne.
    `core/src/tracker/stav.rs` (`test_xchg_realny_tvar_*`) — riadky pochádzajú
    z `tests/unit/test_exchange_parser.py` v TITracku a sú to výpisy z reálnych
    herných logov z 26./28. 1. 2026.
-4. **Rozloženie a pomenovanie hlavného dashboardu** (TLI 45, 19. 10. 2026) —
+4. **`ui/polozky-kategorie-en.json`** (TLI 49 bod 1, 19. 10. 2026) — dvojice
+   `ConfigBaseId → kategória` odvodené z poľa `type_cn` v tom istom súbore
+   `tlidb_items_seed_en.json` (čínsky typ položky), namapované na 12
+   anglických kategórií appkou. Prevzaté je IBA priradenie
+   položka→čínsky typ, mapovacia tabuľka typ→kategória je vlastná práca
+   (`meta.poznamka` v súbore).
+5. **Rozloženie a pomenovanie hlavného dashboardu** (TLI 45, 19. 10. 2026) —
    Richard chcel záložku Tracker vzhľadovo aj funkčne bližšie k desktopovej
    appke TITracku. Prevzaté sú anglické NÁZVY siedmich štatistických kariet
    (NET WORTH, CUMULATIVE VALUE, FE/HOUR, FE/MAP, RUNS, AVG RUN TIME, TOTAL
@@ -52,3 +58,12 @@ postup**, nie prevzatý kód — a bol v tomto projekte už od TLI 13.
 
 Na **komunitné ceny TITracku (Supabase) sa tento projekt NENAPÁJA.** Dôvod je
 v `docs/fakty/hry/torchlight-infinite/README.md` (zápis zo 16. 10. 2026).
+
+**Jednorazové overenie (TLI 49 bod 3, 19. 10. 2026):** na kontrolu, či appka
+parsuje `BagMgr` rovnako ako TITrack, sa TITrackov vlastný zdrojový kód
+(klonovaný do `/tmp`, nie súčasť tohto repa) spustil ako CLI
+(`titrack.cli.commands.cmd_parse_file`) nad TOU ISTOU surovou kópiou
+Richardovho `UE_game.log`, aká je uložená na serveri (`/srv/games/tli/
+tracker/<discord_id>/logy/`). Výsledok je zápis v `JOURNAL.md` 19. 10. 2026 —
+žiadny kód z TITracku sa pritom do appky neskopíroval, len sa porovnal
+výstup dvoch nezávislých parserov nad rovnakým vstupom.

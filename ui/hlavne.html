@@ -386,20 +386,22 @@
             </div>
         </section>
 
-        <!-- Economy (TLI 48 bod 3) — plný prehliadač cien: kombinuje lokálny
-             cenník (vlastné vyhľadania, obrazovka trhu) aj to, čo appka dostala
-             od partie a z titrack.ninja (`Zdroj::Partia`/`Zdroj::Titrack`,
-             viď `core/src/tracker/ceny.rs`). Appka NEPOZNÁ skutočné herné
-             kategórie položiek (seed mien má zámerne len dvojice id→meno,
-             `ui/polozky-seed-en.json` § meta.poznamka) — filter preto ponúka
-             len zdroj ceny a textové hľadanie, nie herné kategórie. -->
+        <!-- Economy (TLI 48 bod 3, kategórie TLI 49 bod 1) — plný prehliadač
+             cien: kombinuje lokálny cenník (vlastné vyhľadania, obrazovka
+             trhu) aj to, čo appka dostala od partie a z titrack.ninja
+             (`Zdroj::Partia`/`Zdroj::Titrack`, viď `core/src/tracker/ceny.rs`).
+             Kategórie (`ui/polozky-kategorie-en.json`, odvodené z TITracku,
+             NOTICE.md bod 4) sú záložky nad tabuľkou, nie ďalší <select> —
+             rovnaký vzor ako titrack.ninja. -->
         <section id="panel-economy" class="panel skryte">
             <h2>Economy</h2>
             <p class="vysvetlivka">
                 Ceny, ktoré appka pozná — vlastné vyhľadania, obrazovka trhu,
                 partia aj titrack.ninja. Nastavenie zdieľania je v záložke
-                Tracker („Zdieľať ceny s partiou“).
+                Tracker („Zdieľať ceny s partiou“). Ceny aktualizované:
+                <span id="economy-synchronizovane">—</span>.
             </p>
+            <div class="riadok-akcii" id="economy-kategorie" role="tablist"></div>
             <div class="riadok-akcii">
                 <input type="text" id="economy-hladanie" placeholder="Hľadať položku…">
                 <select id="economy-zdroj">
@@ -453,6 +455,10 @@
              nech je to vidieť bez otvárania panela (ako TITrack „Log was last
              updated"). -->
         <span id="pita-upload"></span>
+        <!-- „Ceny aktualizované HH:MM" (TLI 49 bod 2) — kedy appka naposledy
+             DOKONČILA kolo synchronizácie cien s partiou (`sync_cien_kolo`),
+             nezávisle od toho, čo je zrovna otvorené. -->
+        <span id="pita-ceny"></span>
         <!-- CURRENT INVENTORY (TLI 47, `2026-10-19-0744-mcp.md` bod 1c) — keď
              hráč hrá, ale appka ešte nevidela InitBagData (žiadny Sort v tejto
              session), zoznam na predaj je prázdny a treba o tom vedieť. -->

@@ -132,10 +132,15 @@ function vykresliDropy(zivo, bezi) {
             // TLI 43: cena z titracku dostane atribúciu ako tooltip, nie ako
             // viditeľný text — panel je úzky (viď komentár vyššie pri FE/h)
             // a tri riadky s dlhým textom by sa doň nezmestili.
+            // TLI 49 bod 2: appka pozná vek KAŽDEJ ceny, nielen titrackovej —
+            // vlastná/partiová cena preto dostane kratší tooltip „cena pred
+            // X min", nie žiadny.
             if (d.zdroj === "titrack.ninja") {
                 const prisp = typeof d.prispievatelia === "number" ? d.prispievatelia : "?";
                 const vek = d.vek || "";
                 hodnota.title = `${d.zdroj} · ${prisp} prisp.${vek ? " · " + vek : ""}`;
+            } else if (d.vek) {
+                hodnota.title = `cena ${d.vek}`;
             }
         } else {
             hodnota.className = "hodnota bez-ceny";
@@ -261,8 +266,14 @@ document.addEventListener("DOMContentLoaded", () => {
             });
         }
         if (uchytVelkost) {
+            // TLI 50: `startResizeDragging` doteraz resolvol bez toho, aby appka
+            // novú veľkosť čokoľvek uložila — po reštarte appky sa mini-panel
+            // vrátil na pôvodné rozmery, akoby sa zmena veľkosti vôbec nestala.
+            // `mini_ulozit_polohu` ukladá polohu AJ veľkosť naraz (číta
+            // `okno.outer_size()` čerstvo), rovnaký príkaz ako pri presune.
             uchytVelkost.addEventListener("mousedown", () => {
                 okno.startResizeDragging("SouthEast")
+                    .then(() => invoke("mini_ulozit_polohu"))
                     .catch((e) => console.error("Zmena veľkosti mini-panela zlyhala:", e));
             });
         }

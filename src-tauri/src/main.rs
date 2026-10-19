@@ -408,9 +408,14 @@ fn monitor_signatura_app(app: &AppHandle, obd: &OknoFyz) -> String {
 fn predvolena_poloha(panel: &str) -> Obdlznik01 {
     match panel {
         // TLI 25: vyššie než pôvodných 92 px — pribudol zoznam „čo padlo".
-        // Kto si mini-panel posunul ešte pred 0.18.0, má uloženú vlastnú
-        // (nižšiu) veľkosť a zoznam sa mu oreže; zväčší si ho Ctrl+F8.
-        PANEL_MINI => Obdlznik01 { x: 1620.0 / 1920.0, y: 20.0 / 1080.0, w: 280.0 / 1920.0, h: 196.0 / 1080.0 },
+        // TLI 50: ešte vyššie (196→220) — horný pásik na presun dostal
+        // vlastný riadok namiesto prekrývania obsahu, takže potrebuje o kus
+        // viac miesta navyše, aby sa doň zmestila aj hlavička a 3 riadky
+        // dropov bez scrollovania pri predvolenej veľkosti.
+        // Kto si mini-panel posunul ešte PRED touto zmenou, má uloženú
+        // vlastnú (nižšiu) veľkosť — appka mu ju nemení, zväčší si ju sám
+        // za úchyt v pravom dolnom rohu (funguje teraz aj mimo Ctrl+F8).
+        PANEL_MINI => Obdlznik01 { x: 1620.0 / 1920.0, y: 20.0 / 1080.0, w: 280.0 / 1920.0, h: 220.0 / 1080.0 },
         PANEL_PRIPOMIENKA => {
             Obdlznik01 { x: 720.0 / 1920.0, y: 40.0 / 1080.0, w: 480.0 / 1920.0, h: 110.0 / 1080.0 }
         }

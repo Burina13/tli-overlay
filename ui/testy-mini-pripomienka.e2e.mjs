@@ -22,16 +22,30 @@ function postav(htmlSubor, jsSubor, predPrikazy = {}) {
     });
     const { window } = dom;
     const poslucháči = {};
+    const volania = [];
     // Minimálny Tauri shim — `invoke` vracia to, čo mu test podstrčí,
     // `listen` si odloží poslucháča, aby sa dal udalosťou zavolať.
+    // `window.window` (TLI 50): `getCurrentWindow()` s `startDragging`/
+    // `startResizeDragging`, ktoré hneď resolvnú — bez toho `mini.js` svoj
+    // blok s úchytmi na presun/veľkosť vôbec nepripojí (`if (window.__TAURI__.
+    // window)` by bolo `falsy`) a test by nemal čo kliknúť.
     window.__TAURI__ = {
         core: {
-            invoke: (meno) => (meno in predPrikazy
-                ? Promise.resolve(predPrikazy[meno])
-                : Promise.reject(new Error("neznámy príkaz " + meno))),
+            invoke: (meno, argy) => {
+                volania.push({ prikaz: meno, argy });
+                return meno in predPrikazy
+                    ? Promise.resolve(predPrikazy[meno])
+                    : Promise.reject(new Error("neznámy príkaz " + meno));
+            },
         },
         event: {
             listen: (meno, fn) => { poslucháči[meno] = fn; return Promise.resolve(() => {}); },
+        },
+        window: {
+            getCurrentWindow: () => ({
+                startDragging: () => Promise.resolve(),
+                startResizeDragging: () => Promise.resolve(),
+            }),
         },
     };
     window.fetch = undefined;
@@ -39,7 +53,7 @@ function postav(htmlSubor, jsSubor, predPrikazy = {}) {
     window.document.dispatchEvent(new window.Event("DOMContentLoaded"));
     // `mini.js` si po načítaní nastaví opakovaný časovač obnovy — bez
     // `zavri()` by proces testu nikdy neskončil.
-    return { window, document: window.document, poslucháči, zavri: () => dom.window.close() };
+    return { window, document: window.document, poslucháči, volania, zavri: () => dom.window.close() };
 }
 
 test("mini-panel pomenuje aj položku, ktorú nemá v balíku mien", (t) => {
@@ -72,6 +86,17 @@ test("TLI 43: cena z titracku dostane tooltip s atribúciou, vlastná/partiová 
     assert.equal(riadky[1].title, "", "vlastná/partiová cena nesmie dostať cudziu atribúciu");
 });
 
+test("TLI 49 bod 2: vlastná/partiová cena s vekom dostane kratší tooltip 'cena pred X min'", (t) => {
+    const { window, document, zavri } = postav("mini.html", "mini.js",
+        { tracker_prehlad: null });
+    t.after(zavri);
+    window.vykresliDropy({ top_dropy: [
+        { polozka: 10002, pocet: 1, hodnota: 5.0, vek: "pred 2 min" },
+    ] }, true);
+    const riadky = document.querySelectorAll("#mini-dropy-zoznam .hodnota");
+    assert.equal(riadky[0].title, "cena pred 2 min");
+});
+
 test("pripomienka bez textu nekreslí rám", (t) => {
     const { document, poslucháči, zavri } = postav("pripomienka.html", "pripomienka.js");
     t.after(zavri);
@@ -96,4 +121,33 @@ test("pripomienka si po načítaní vypýta posledný text, keby udalosť minula
     await new Promise((r) => setTimeout(r, 0));
     assert.equal(document.getElementById("toast-text").textContent, "Zapni Enable Log");
     assert.ok(!document.getElementById("toast").className.includes("prazdny"));
+});
+
+// ─── TLI 50 — zmena veľkosti mini-panela za úchyt v pravom dolnom rohu ─────
+
+test("TLI 50: úchyt na presun je samostatný riadok, NIE absolútne položený cez obsah", (t) => {
+    const { document, zavri } = postav("mini.html", "mini.js", { nacitaj_nastavenia: {} });
+    t.after(zavri);
+    const obal = document.querySelector(".mini-obsah");
+    assert.ok(obal, "obsah musí byť vo vlastnom obale pod horným pásikom");
+    assert.ok(obal.contains(document.getElementById("mini-mapa")), "nadpis mapy patrí do obalu obsahu");
+    assert.ok(!obal.contains(document.getElementById("mini-uchyt-presun")), "pásik na presun NIE JE súčasťou obalu obsahu");
+});
+
+test("TLI 50: ťahanie úchytu na zmenu veľkosti po pustení uloží novú veľkosť", async (t) => {
+    const { document, volania, zavri } = postav("mini.html", "mini.js", { nacitaj_nastavenia: {} });
+    t.after(zavri);
+    // DOMContentLoaded handler v `mini.js` si `invoke("nacitaj_nastavenia")`
+    // vybavuje asynchrónne — počkaj naň, kým sa pripoja listenery na úchyty.
+    await new Promise((r) => setTimeout(r, 10));
+
+    const uchyt = document.getElementById("mini-uchyt-velkost");
+    assert.ok(uchyt, "úchyt na zmenu veľkosti chýba v DOM");
+    uchyt.dispatchEvent(new document.defaultView.MouseEvent("mousedown", { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 10));
+
+    assert.ok(
+        volania.some((v) => v.prikaz === "mini_ulozit_polohu"),
+        "po zmene veľkosti (startResizeDragging resolvol) sa má zavolať mini_ulozit_polohu, inak sa veľkosť po reštarte stratí"
+    );
 });

@@ -396,3 +396,74 @@ test("Economy: klik na hlavičku stĺpca 'Zmena 24h' zoradí riadky a druhý kli
         window.close();
     }
 });
+
+// ─── Kategórie Economy (TLI 49 bod 1) ──────────────────────────────────────
+
+test("Economy: záložky kategórií sa vykreslia a „Všetky“ je na začiatku aktívna", async () => {
+    const { window, document } = postavApp();
+    try {
+        await pockajNaPrvePrekreslenie(window);
+        const zalozky = [...document.querySelectorAll("#economy-kategorie .zalozka-kategoria")];
+        // 1 "Všetky" + 12 definovaných kategórií.
+        assert.equal(zalozky.length, 13);
+        assert.equal(zalozky[0].textContent, "Všetky");
+        assert.ok(zalozky[0].classList.contains("aktivna"));
+        assert.ok(zalozky.some((z) => z.textContent.includes("Beacons")));
+        assert.ok(zalozky.some((z) => z.textContent.includes("Legendary Gear")));
+    } finally {
+        window.close();
+    }
+});
+
+test("Economy: klik na záložku kategórie filtruje riadky podľa polozky-kategorie-en.json", async () => {
+    const { window, document } = postavApp();
+    try {
+        await pockajNaPrvePrekreslenie(window);
+        const beacons = [...document.querySelectorAll("#economy-kategorie .zalozka-kategoria")]
+            .find((z) => z.textContent.includes("Beacons"));
+        beacons.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+
+        assert.ok(beacons.classList.contains("aktivna"));
+        const riadky = [...document.querySelectorAll("#tabulka-economy-telo tr")];
+        assert.equal(riadky.length, 1, "stub má v kategórii beacons len Steel Forge Beacon (400021)");
+        assert.match(riadky[0].textContent, /Steel Forge Beacon/);
+
+        // Návrat na „Všetky" ukáže znova všetkých 5.
+        const vsetky = document.querySelector('#economy-kategorie .zalozka-kategoria[data-kategoria=""]');
+        vsetky.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+        assert.equal(document.querySelectorAll("#tabulka-economy-telo tr").length, 5);
+    } finally {
+        window.close();
+    }
+});
+
+// ─── „Ceny aktualizované HH:MM" v pätičke (TLI 49 bod 2) ───────────────────
+
+test("Pätička aj Economy ukazujú „ceny aktualizované“ z ceny_synchronizovane_o", async () => {
+    const { window, document } = postavApp();
+    try {
+        await pockajNaPrvePrekreslenie(window);
+        assert.match(document.getElementById("pita-ceny").textContent, /^Ceny aktualizované: \d{1,2}:\d{2}/);
+        assert.match(document.getElementById("economy-synchronizovane").textContent, /^\d{1,2}:\d{2}/);
+    } finally {
+        window.close();
+    }
+});
+
+// ─── Vek ceny v CURRENT INVENTORY (TLI 49 bod 2) ───────────────────────────
+
+test("Current Inventory ukazuje vek ceny vedľa Cena/ks, keď ho appka pozná", async () => {
+    const { window, document } = postavApp();
+    try {
+        await pockajNaPrvePrekreslenie(window);
+        const riadky = [...document.querySelectorAll("#tabulka-inventar tbody tr")];
+        const sMenom = riadky.find((r) => r.textContent.includes("Steel Forge Beacon"));
+        assert.match(sMenom.textContent, /pred 4 min/);
+        // Položka bez ceny (999999) nemá čo ukázať ako vek.
+        const bezCeny = riadky.find((r) => r.textContent.includes("#999999"));
+        assert.ok(bezCeny, "riadok neznámej položky 999999 chýba");
+        assert.doesNotMatch(bezCeny.textContent, /pred \d+ min/);
+    } finally {
+        window.close();
+    }
+});

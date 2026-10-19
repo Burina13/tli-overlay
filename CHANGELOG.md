@@ -2,6 +2,62 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.20.2 — 19.10.2026 (TLI 49 — kategórie v Economy, čerstvosť cien všade, overenie proti TITracku)
+
+Úloha `2026-10-19-1011-mcp.md` (HNED, dokončenie zvyšku TLI 48). core
+0.13.11→0.13.12.
+
+**Bod 1 — kategórie v Economy HOTOVÉ.** Richardovo tvrdenie bolo správne:
+TITrackov zdrojový súbor (`tlidb_items_seed_en.json`) MÁ pole `type_cn` pre
+každú položku — appka si pri prevzatí 16.10.2026 zámerne ponechala len
+dvojice id→meno (`meta.poznamka`), typy sa nikdy nepreberali. Nové
+`ui/polozky-kategorie-en.json` mapuje všetkých 1933 položiek z nášho seedu na
+12 anglických kategórií (Legendary Gear, Compasses, Beacons, Skills, Destiny,
+Organs, Followers, Prisms, Divinity, Netherrealm, Season Items, General) —
+vlastná mapovacia tabuľka nad prevzatým `type_cn`, nie prevzatá kategorizácia
+(NOTICE.md bod 4). Economy dostala záložky s ikonami nad tabuľkou (rovnaký
+vzor ako titrack.ninja), filtrovanie sa kombinuje so zdrojom aj hľadaním.
+
+**Bod 2 — čerstvosť cien.** Nájdený a opravený skutočný bug: `zapisane`
+(lokálny čas zápisu do DB) sa pri cenách od partie/titracku ukladal ako
+`c.kedy` — teda čas, kedy NIEKTO V PARTII cenu vyhľadal, nie kedy ju TÁTO
+appka stiahla. Presne to je dôvod, prečo Richard na vlastnom PC videl 8 919
+riadkov `ceny` so zdrojom `titrack` bez čitateľného „kedy stiahnuté". Opravené
+na skutočný čas stiahnutia (`+test`). Appka teraz ukazuje vek ceny v Economy
+(bolo už od TLI 48), aj v Current Inventory („Cena/ks" dostala „(pred X
+min)"), aj v loot overlay mini-paneli (tooltip „cena pred X min" pre
+VŠETKY zdroje, predtým len pre titrack atribúciu). Pätička aj záložka
+Economy ukazujú „ceny aktualizované HH:MM" (kedy appka naposledy DOKONČILA
+kolo synchronizácie s partiou). Každé kolo synchronizácie zapíše riadok do
+denníka appky (počet odoslaných/stiahnutých, trvanie v ms).
+
+**Bod 3 — CURRENT INVENTORY a NET WORTH overené proti TITracku.** TITrackov
+vlastný zdrojový kód (MIT, GitHub) sa spustil ako CLI
+(`titrack.cli.commands.cmd_parse_file`) nad TOU ISTOU surovou kópiou
+Richardovho `UE_game.log`, akú má appka na serveri. Výsledok: appkina
+CURRENT INVENTORY (stránka batohu 103 „ostatné") sa s TITrackom ZHODUJE
+PRESNE — 42/42 položiek, 210/210 kusov, 0 rozdielov. Appka interne sleduje aj
+stránky 100 (výstroj)/101 (zručnosti)/102 (meny), ktoré v UI zatiaľ
+NEUKAZUJE — tam sa našli 4 položky s presne 2× vyšším počtom než u TITracku
+(`8125`, `380201`, `382192`, `502100`), čo appka ani TITrack v UI dnes
+nezobrazujú hráčovi, ale stojí za doriešenie (zadané ako samostatná
+nadväzujúca úloha, nie BACKLOG). Formula NET WORTH je štruktúrne zhodná s
+TITrackom (mena 1:1 + cena×počet×daň 0,875). Detail: `JOURNAL.md` 19.10.2026,
+`NOTICE.md`.
+
+**Bod 4 — auto-ceny.** Regresný test z TLI 48
+(`historicke_otvorenie_trhu_pri_prvom_citani_nenastavi_trh_otvoreny`) pokrýval
+len JEDNO volanie `precitaj` nad malým súborom. Pridaný
+`historicke_otvorenie_trhu_ostava_mrtve_aj_naprieč_viacerymi_davkami_dobiehania`
+overuje to isté nad súborom cez viac `DAVKA_B` (2 MB) dávok — presne scenár
+reálneho ~90 MB logu. Richardov log od 09:54 (reštart na 0.20.1) nemá ani
+jeden výskyt `AuctionHouseShowItemGoodV2 Run` — živé potvrdenie teda zatiaľ
+nie je možné, čaká sa, kým Richard znova otvorí trh v hre.
+
+**Bod 5 — loot overlay, ťahanie bez Ctrl+F8.** Návod pre Richarda je v
+hlásení úlohy (interaktívne otestovať vie len on sám v hre, rovnako ako TLI
+48 bod 2).
+
 ## 0.20.1 — 19.10.2026 (TLI 48 — toasty nad hrou, ťahateľný loot overlay, Economy, oprava auto-cien)
 
 Úloha `2026-10-19-0838-mcp.md` (HNED, dokončenie zvyšku TLI 47/doplnku

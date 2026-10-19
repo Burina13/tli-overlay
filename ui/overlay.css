@@ -68,12 +68,15 @@ html, body {
    polohou mini-panela (predtým ľavý horný roh) — vľavo hore je herný text
    „Objective / Trigger" a mini-panel trackera má SVOJU predvolenú polohu
    tiež vpravo hore (`PANEL_MINI` v `src-tauri/src/main.rs:predvolena_poloha`,
-   x 1620/1920, y 20/1080, h 196/1080), takže panel rady sa tam predtým
-   prekrýval s oboma naraz (nahlásil Richard, F8 screenshot 18.10. ~13:40).
-   240px (text top:24 vrátane) necháva pod mini-panelom medzeru. Hráč so
-   starším uloženým umiestnením nie je dotknutý — toto je len predvoľba pre
-   nikdy neuloženú/obnovenú polohu, musí sedieť s Rust defaultom vyššie, nech
-   editačný režim a bežné zobrazenie štartujú na tom istom mieste. */
+   x 1620/1920, y 20/1080, h 220/1080 — TLI 50 zväčšilo z pôvodných 196/1080),
+   takže panel rady sa tam predtým prekrýval s oboma naraz (nahlásil Richard,
+   F8 screenshot 18.10. ~13:40). 240px (text top:24 vrátane) necháva pod
+   mini-panelom medzeru — po TLI 50 už len tesnú (20+220=240, medzera 0px pri
+   predvolenej polohe oboch), ale len v editačnom režime; naživo sa panely
+   nikdy súčasne nekreslia (iné moduly). Hráč so starším uloženým
+   umiestnením nie je dotknutý — toto je len predvoľba pre nikdy neuloženú/
+   obnovenú polohu, musí sedieť s Rust defaultom vyššie, nech editačný režim
+   a bežné zobrazenie štartujú na tom istom mieste. */
 #panel {
     position: absolute;
     top: var(--panel-top, 240px);

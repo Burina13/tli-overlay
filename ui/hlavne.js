@@ -409,7 +409,11 @@ function vykresliInventar(p) {
     telo.innerHTML = zoznam
         .map((pol) => {
             const zastarana = pol.cena_zastarana ? ' <span class="odznak odznak-bez-ceny">stará cena</span>' : "";
-            const cena = pol.cena_za_kus_fe != null ? fe(pol.cena_za_kus_fe) : "bez ceny";
+            // TLI 49 bod 2: appka pozná vek KAŽDEJ ceny (`Cena::kedy`) — vedľa
+            // samotnej ceny ho appka zobrazí ako „(pred X min)", rovnaký text
+            // ako stĺpec „Vek" v Economy (`vek_text` v Rust).
+            const vek = pol.cena_vek ? ` <span class="vek-ceny">(${pol.cena_vek})</span>` : "";
+            const cena = pol.cena_za_kus_fe != null ? fe(pol.cena_za_kus_fe) + vek : "bez ceny";
             const hodnota = pol.hodnota_fe != null ? fe(pol.hodnota_fe) + zastarana : "bez ceny";
             return `<tr class="${pol.skryte ? "riadok-skryty" : ""}">
                 <td>${nazovPolozky(pol.config_base_id)}</td>
@@ -449,15 +453,81 @@ document.querySelector("#tabulka-inventar tbody").addEventListener("click", asyn
     }
 });
 
-// ─── Economy (TLI 48 bod 3) — plný prehliadač cien ─────────────────────────
-// Appka NEPOZNÁ skutočné herné kategórie položiek (seed mien má zámerne len
-// dvojice id→meno, žiadny typ — `ui/polozky-seed-en.json` § meta.poznamka),
-// takže filter tu ponúka len zdroj ceny a textové hľadanie podľa mena.
+// ─── Economy (TLI 48 bod 3, kategórie TLI 49 bod 1) — plný prehliadač cien ──
+// Kategórie (`ui/polozky-kategorie-en.json`, odvodené z TITracku typ_cn,
+// NOTICE.md bod 4) sú záložky nad tabuľkou — rovnaký vzor ako titrack.ninja.
 let ECONOMY_DATA = [];
 let economyHladanie = "";
 let economyZdroj = "";
+let economyKategoria = ""; // "" = Všetky
 let economyTriedenie = "cena"; // "cena" | "zmena" | "vek"
 let economyTrieditVzostupne = false;
+let KATEGORIE_POLOZIEK = window.__KATEGORIE_POLOZIEK__ || {};
+
+// Poradie záložiek + slovenský/anglický popis + ikona. `general` je vždy
+// posledná — je to zberná kategória pre všetko, čo appka nevedela zaradiť
+// presnejšie, nie hlavný prípad.
+const KATEGORIE_DEFINICIE = [
+    { kod: "legendary_gear", nazov: "Legendary Gear", ikona: "🗡️" },
+    { kod: "compasses", nazov: "Compasses", ikona: "🧭" },
+    { kod: "beacons", nazov: "Beacons", ikona: "📡" },
+    { kod: "skills", nazov: "Skills", ikona: "✨" },
+    { kod: "destiny", nazov: "Destiny", ikona: "🔮" },
+    { kod: "organs", nazov: "Organs", ikona: "🫀" },
+    { kod: "followers", nazov: "Followers", ikona: "🐾" },
+    { kod: "prisms", nazov: "Prisms", ikona: "🔷" },
+    { kod: "divinity", nazov: "Divinity", ikona: "⚡" },
+    { kod: "netherrealm", nazov: "Netherrealm", ikona: "🔥" },
+    { kod: "season_items", nazov: "Season Items", ikona: "🗓️" },
+    { kod: "general", nazov: "General", ikona: "📦" },
+];
+
+if (typeof fetch === "function") {
+    fetch("polozky-kategorie-en.json")
+        .then((o) => (o.ok ? o.json() : null))
+        .then((d) => {
+            if (d && d.kategorie) {
+                KATEGORIE_POLOZIEK = d.kategorie;
+                vykresliEconomy();
+            }
+        })
+        .catch(() => {});
+}
+
+/// `400021` → `"general"` (predvolené, keď appka zaradenie nepozná).
+function kategoriaPolozky(id) {
+    return KATEGORIE_POLOZIEK[String(id)] || "general";
+}
+
+function vykresliKategorieZalozky() {
+    const obal = document.getElementById("economy-kategorie");
+    if (!obal || obal.childElementCount > 0) {
+        return; // vykresľuje sa raz, filtrovanie potom len prepína „aktivna"
+    }
+    const vsetky = document.createElement("button");
+    vsetky.type = "button";
+    vsetky.className = "zalozka-kategoria aktivna";
+    vsetky.textContent = "Všetky";
+    vsetky.dataset.kategoria = "";
+    obal.appendChild(vsetky);
+    for (const k of KATEGORIE_DEFINICIE) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "zalozka-kategoria";
+        btn.textContent = `${k.ikona} ${k.nazov}`;
+        btn.dataset.kategoria = k.kod;
+        obal.appendChild(btn);
+    }
+    obal.addEventListener("click", (e) => {
+        const btn = e.target.closest(".zalozka-kategoria");
+        if (!btn) return;
+        obal.querySelectorAll(".zalozka-kategoria").forEach((b) => b.classList.remove("aktivna"));
+        btn.classList.add("aktivna");
+        economyKategoria = btn.dataset.kategoria;
+        vykresliEconomy();
+    });
+}
+vykresliKategorieZalozky();
 
 const ZDROJ_POPIS = {
     vlastny_trh: "Vlastný trh",
@@ -488,6 +558,9 @@ function vykresliEconomy() {
     let zoznam = ECONOMY_DATA;
     if (economyZdroj) {
         zoznam = zoznam.filter((r) => r.zdroj === economyZdroj);
+    }
+    if (economyKategoria) {
+        zoznam = zoznam.filter((r) => kategoriaPolozky(r.polozka) === economyKategoria);
     }
     if (hladane) {
         zoznam = zoznam.filter((r) => nazovPolozky(r.polozka).toLowerCase().includes(hladane));
@@ -766,6 +839,7 @@ async function obnovTracker() {
         vykresliVyzvuCien(p);
         vykresliStavUploadu(p);
         vykresliPatickaUploadu(p);
+        vykresliPatickaCien(p);
         vykresliVyzvuNaSort(p);
 
         // Automatické odoslanie partii — len keď si to hráč zapol a len raz za
@@ -1004,7 +1078,25 @@ const stavSync = document.getElementById("stav-sync");
 const btnUploadTeraz = document.getElementById("btn-upload-teraz");
 const stavUpload = document.getElementById("stav-upload");
 const pitaUpload = document.getElementById("pita-upload");
+const pitaCeny = document.getElementById("pita-ceny");
 const pitaSortVyzva = document.getElementById("pita-sort-vyzva");
+
+/// „Ceny aktualizované HH:MM" (TLI 49 bod 2) — `p.ceny_synchronizovane_o` je
+/// unixový čas v sekundách, appka si z neho sama urobí lokálny čas hráča
+/// (appka časové pásmo nikde inde neprevádza, nemá začínať práve tu).
+function vykresliPatickaCien(p) {
+    if (typeof p.ceny_synchronizovane_o !== "number") {
+        pitaCeny.textContent = "Ceny aktualizované: zatiaľ nikdy";
+        return;
+    }
+    const cas = new Date(p.ceny_synchronizovane_o * 1000);
+    const hhmm = cas.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    pitaCeny.textContent = "Ceny aktualizované: " + hhmm;
+    const ekonomySpan = document.getElementById("economy-synchronizovane");
+    if (ekonomySpan) {
+        ekonomySpan.textContent = hhmm;
+    }
+}
 
 /// Nad koľkými sekundami bez ÚSPEŠNÉHO uploadu appka pri bežiacej hre ukáže
 /// varovanie namiesto bežného „Posledný upload: …" (TLI 47, zadanie

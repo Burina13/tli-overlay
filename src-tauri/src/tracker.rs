@@ -179,6 +179,11 @@ pub struct StavTrackera {
     /// jednej nereštartuje časovanie druhej.
     pub varovanie_uploadu: SledovacVarovania,
     pub varovanie_sortu: SledovacVarovania,
+    /// TLI 49 bod 2: kedy appka naposledy DOKONČILA kolo synchronizácie cien
+    /// s partiou (`sync_cien_kolo`) — nezávisle od toho, či sa pritom nejaká
+    /// cena naozaj zmenila. Footer dashboardu z toho ukazuje „ceny
+    /// aktualizované HH:MM"; `None`, kým appka ešte ani raz kolo nedokončila.
+    pub posledna_synchronizacia_cien: Option<u64>,
 }
 
 impl Default for StavTrackera {
@@ -214,6 +219,7 @@ impl Default for StavTrackera {
             povodna_velkost_logu: None,
             varovanie_uploadu: SledovacVarovania::novy(),
             varovanie_sortu: SledovacVarovania::novy(),
+            posledna_synchronizacia_cien: None,
         }
     }
 }
@@ -261,7 +267,19 @@ impl StavTrackera {
                         // ceny v lokálnej DB tíško označilo nesprávne.
                         zdroj: c.zdroj.clone(),
                         cas: None,
-                        zapisane: c.kedy,
+                        // TLI 49 bod 2: predtým tu bolo `c.kedy` — teda čas,
+                        // kedy NIEKTO V PARTII (alebo titrack.ninja) tú cenu
+                        // VYHĽADAL, nie kedy ju TÁTO appka stiahla. Richard na
+                        // vlastnom PC videl 8 919 riadkov `ceny` so zdrojom
+                        // `titrack` bez čitateľného „kedy stiahnuté" — presne
+                        // preto, že `zapisane` niesol cudzí, často starý čas.
+                        // `Cennik.kedy` (vyššie, `zapis_do_cennika`) ZOSTÁVA
+                        // `c.kedy` zámerne — tým sa riadi čerstvosť/doveryhodnosť
+                        // ceny (`vaha_veku`), tam ide o vek SAMOTNEJ CENY.
+                        // `zapisane` v lokálnej DB je iný údaj: kedy TÁTO appka
+                        // záznam dostala — na to slúži „ceny aktualizované
+                        // HH:MM" v pätičke aj triedenie v `ceny_pred`.
+                        zapisane: teraz as i64,
                     },
                 );
             }
@@ -596,6 +614,12 @@ pub struct PrehladProUi {
     /// Súčet hodnoty `batoh` (bez skrytých) + čistý zisk doteraz odohraných
     /// máp — zadanie TLI 47 bod 2: „net worth = batoh × ceny + aktuálny beh".
     pub net_worth_fe: f64,
+    /// Unixový čas (sekundy), kedy appka naposledy DOKONČILA kolo
+    /// synchronizácie cien s partiou (TLI 49 bod 2) — `None`, kým appka ešte
+    /// ani raz kolo nedokončila. JS si z neho sám urobí „HH:MM" v lokálnom
+    /// čase hráča (`new Date(s * 1000).toLocaleTimeString()`); appka
+    /// časové pásmo nikde inde neprevádza a nemá začínať práve tu.
+    pub ceny_synchronizovane_o: Option<u64>,
 }
 
 /// Jedna položka aktuálneho batohu pre záložku CURRENT INVENTORY (TLI 47).
@@ -612,6 +636,9 @@ pub struct PolozkaBatohu {
     /// ale UI má na to upozorniť.
     pub cena_zastarana: bool,
     pub skryte: bool,
+    /// Vek ceny v ľudskej podobe (TLI 49 bod 2, rovnaký text ako
+    /// `PrehladProUi::vek_cien`) — `None`, keď appka cenu nepozná vôbec.
+    pub cena_vek: Option<String>,
 }
 
 /// Postaví zoznam `batoh` z aktuálneho stavu `Sledovac` + cenník. Skryté
@@ -644,6 +671,7 @@ fn aktualny_batoh(stav: &StavTrackera, nastavenie: &Nastavenie, skryte_polozky: 
             hodnota_fe: hodnota,
             cena_zastarana: cena.is_some() && stav.cennik.je_zastarana(polozka, teraz),
             skryte,
+            cena_vek: cena.map(|c| vek_text(teraz.saturating_sub(c.kedy))),
         });
     }
     (zoznam, hodnota_spolu)
@@ -765,6 +793,7 @@ pub fn prehlad_pre_ui(stav: &StavTrackera, zapnuty: bool, dan: bool, skryte_polo
         posledna_mapa,
         batoh,
         net_worth_fe,
+        ceny_synchronizovane_o: stav.posledna_synchronizacia_cien,
     }
 }
 
@@ -785,11 +814,11 @@ pub struct RiadokEconomy {
 
 /// Plný zoznam cien pre „Economy" (TLI 48 bod 3) — na rozdiel od
 /// `prehlad_pre_ui` (ktorý posiela len vek cien pre položky V BATOHU/behoch)
-/// toto je CELÝ cenník, zoradený podľa ID položky (`Cennik::vsetky`). Appka
-/// NEPOZNÁ skutočné herné kategórie položiek (seed mien pri vzniku zámerne
-/// prevzal len dvojice id→meno, nie typy — `ui/polozky-seed-en.json`
-/// `meta.poznamka`), preto táto funkcia kategórie neposiela a JS filter
-/// v Economy pracuje len podľa zdroja a textového hľadania.
+/// toto je CELÝ cenník, zoradený podľa ID položky (`Cennik::vsetky`).
+/// Kategórie (TLI 49 bod 1) sa SEM nepridávajú — appka ich dostane
+/// samostatne z `ui/polozky-kategorie-en.json` (JS si ich spojí s `polozka`
+/// na klientovi, rovnako ako meno z `polozky-seed-en.json`), takže táto
+/// funkcia nemusí vedieť nič o kategóriách a nemení sa pri ich zmene.
 pub fn economy_prehlad(stav: &StavTrackera, teraz: u64) -> Vec<RiadokEconomy> {
     let hranica_24h = teraz.saturating_sub(24 * 3600) as i64;
     let ceny_pred_24h = stav
@@ -1048,6 +1077,7 @@ fn posli_windows_notifikaciu(_app: &AppHandle) {}
 pub fn sync_cien_kolo(app: &AppHandle) -> Result<String, String> {
     use tli_overlay_core::tracker::ceny_sync;
 
+    let zaciatok = std::time::Instant::now();
     let n = {
         let stav = app.state::<Stav>();
         let n = stav.nastavenia.lock().unwrap().clone();
@@ -1116,6 +1146,24 @@ pub fn sync_cien_kolo(app: &AppHandle) -> Result<String, String> {
             let _ = db::precen_nevycislene(conn, &t.cennik, &Nastavenie::default(), LIMIT_PRECENENIA);
         }
     }
+
+    // TLI 49 bod 2: appka doteraz nikde nezapisovala, ŽE sa kolo vôbec
+    // stalo — len výsledok (`zhrnutie`) v UI, ktorý hráč väčšinou nevidí
+    // (beží na pozadí). Footer dashboardu („ceny aktualizované HH:MM")
+    // potrebuje vedieť kedy POSLEDNÝ RAZ appka kolo DOKONČILA, nezávisle od
+    // toho, či sa pritom niečo zmenilo — preto sa čas zapisuje vždy sem,
+    // nie len pri `zmenenych > 0` vyššie.
+    {
+        let mut t = tracker.0.lock().unwrap();
+        t.posledna_synchronizacia_cien = Some(unixovy_cas());
+    }
+    crate::denik::zapis(
+        "ceny",
+        &format!(
+            "Sync cien: odoslaných {poslanych}, stiahnutých {stiahnutych} (z toho {zmenenych} nových), {} ms",
+            zaciatok.elapsed().as_millis()
+        ),
+    );
     Ok(ceny_sync::zhrnutie(poslanych, stiahnutych, zmenenych))
 }
 
@@ -1618,6 +1666,56 @@ mod testy {
     }
 
     #[test]
+    fn historicke_otvorenie_trhu_ostava_mrtve_aj_naprieč_viacerymi_davkami_dobiehania() {
+        // TLI 49 bod 4: Richardov skutočný log má ~90 MB — appka ho pri
+        // prvom otvorení doháňa po `DAVKA_B` (2 MB) kúskoch, NIE naraz.
+        // `historicke_otvorenie_trhu_pri_prvom_citani_nenastavi_trh_otvoreny`
+        // (vyššie) overuje len JEDNO volanie `precitaj` nad malým súborom —
+        // toto overuje, že historický riadok ostane mŕtvy aj vtedy, keď sa
+        // (desiatky volaní `precitaj` za sebou) k nemu appka dostane až
+        // v neskoršej dávke, nie hneď v prvej.
+        let cesta = docasny_subor();
+        let vyplnovy_riadok = "x".repeat(200) + "\n"; // ~200 B na riadok
+        let riadkov_pred = (DAVKA_B as usize / vyplnovy_riadok.len()) * 3; // cez tri dávky výplne
+        let mut obsah = vyplnovy_riadok.repeat(riadkov_pred);
+        obsah.push_str(
+            "[2026.10.14-22.23.45:283][305]TLLua: Display: [Game] AuctionHouseShowItemGoodV2 Run\n",
+        );
+        obsah.push_str(&vyplnovy_riadok.repeat(10));
+        napis(&cesta, &obsah);
+
+        let mut stav = StavTrackera::default();
+        let povodna_velkost = std::fs::metadata(&cesta).unwrap().len();
+        let mut precitane_spolu = 0u64;
+        // Volaj `precitaj` v slučke presne tak, ako to robí vlákno appky na
+        // pozadí — kým sa pozícia nedobehne na pôvodnú veľkosť súboru.
+        loop {
+            precitaj(&mut stav, &cesta).unwrap();
+            assert!(
+                !stav.odober_trh_otvoreny(),
+                "historický riadok sa nesmie počítať za živý v ŽIADNEJ dávke dobiehania"
+            );
+            let pozicia = stav.chvost.pozicia;
+            assert!(pozicia >= precitane_spolu, "pozícia sa nemá vrátiť späť");
+            precitane_spolu = pozicia;
+            if pozicia >= povodna_velkost {
+                break;
+            }
+        }
+        assert!(precitane_spolu > DAVKA_B, "test nemá zmysel, ak sa zmestil do jednej dávky");
+
+        // Až TERAZ pridaný riadok (po úplnom dobehnutí) je naozaj živý.
+        pripis(
+            &cesta,
+            "[2026.10.19-09.54.00:000][1]TLLua: Display: [Game] AuctionHouseShowItemGoodV2 Run\n",
+        );
+        precitaj(&mut stav, &cesta).unwrap();
+        assert!(stav.odober_trh_otvoreny(), "riadok PO úplnom dobehnutí histórie je živá udalosť");
+
+        let _ = std::fs::remove_file(&cesta);
+    }
+
+    #[test]
     fn rotacia_logu_posunie_hranicu_na_zaciatok_noveho_suboru() {
         // Po reštarte hry je nový (menší) súbor od prvého riadku živý —
         // appka naň nemá čakať, kým "dobehne" jeho vlastnú (novú) veľkosť.
@@ -1692,6 +1790,56 @@ mod testy {
         let riadky = economy_prehlad(&stav, teraz);
         assert_eq!(riadky.len(), 1);
         assert_eq!(riadky[0].zmena_24h_percent, None, "appka pred 24 h položku ešte nepoznala");
+    }
+
+    // ─── TLI 49 bod 2 — lokálna DB si pri cenách od partie/titracku pamätá,
+    // KEDY ich TÁTO appka stiahla, nie kedy ich niekto v partii vyhľadal ──
+
+    #[test]
+    fn prijmi_ceny_partie_zapise_do_db_cas_stiahnutia_appkou_nie_cas_ceny() {
+        use tli_overlay_core::tracker::ceny_sync::{AgregatPartie, CenaPartie};
+
+        let mut stav = StavTrackera::default();
+        stav.db = Some(db::otvor_v_pamati().unwrap());
+
+        // Cena vznikla (niekto v partii ju vyhľadal) dávno predtým, než ju
+        // táto appka vôbec stiahla — presne scenár, pri ktorom Richard na
+        // vlastnom PC videl v DB staré/nečitateľné „kedy".
+        let cas_vzniku_ceny = 1_000u64;
+        let cas_stiahnutia_appkou = 50_000u64;
+        let agregat = AgregatPartie {
+            ok: true,
+            cas: cas_stiahnutia_appkou as i64,
+            ceny: vec![CenaPartie {
+                polozka: 777,
+                fe: 42.0,
+                zdrojov: 2,
+                pocet_ponuk: 5,
+                kedy: cas_vzniku_ceny as i64,
+                istota: "dobra".to_string(),
+                zdroj: "titrack".to_string(),
+            }],
+        };
+
+        stav.prijmi_ceny_partie(&agregat, cas_stiahnutia_appkou);
+
+        let conn = stav.db.as_ref().unwrap();
+        let (zapisane, cas): (i64, Option<String>) = conn
+            .query_row(
+                "SELECT zapisane, cas FROM ceny WHERE config_base_id = 777",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            zapisane, cas_stiahnutia_appkou as i64,
+            "zapisane má byť čas STIAHNUTIA appkou, nie čas vzniku ceny u partie/titracku"
+        );
+        assert_eq!(cas, None, "herný čas z logu appka pre cenu od partie/titracku nepozná");
+
+        // Cennik (freshness/dôveryhodnosť) sa naopak riadi časom SAMOTNEJ
+        // ceny — to je nezávislý údaj a táto oprava ho nemá meniť.
+        assert_eq!(stav.cennik.cena(777).unwrap().kedy, cas_vzniku_ceny);
     }
 
     #[test]

@@ -9,35 +9,43 @@
 <body>
     <!-- Hlavny obal panela. ID pre JS a trieda pre CSS stylovanie -->
     <div class="mini necinny" id="mini">
-        <!-- TLI 21 — viditeľné len v režime „Upraviť rozloženie" -->
+        <!-- TLI 21 — viditeľné len v režime „Upraviť rozloženie"; TLI 50:
+             samostatný horný pásik (nie absolútne položený CEZ obsah), aby
+             sa neprekrýval s nadpisom mapy — vlastný riadok vo flex stĺpci. -->
         <div id="mini-uchyt-presun" class="rozlozenie-uchyt">⠿ presuň</div>
-        <div id="mini-mapa">Žiadna mapa nebeží</div>
-        
-        <div class="spodny-riadok">
-            <!-- Blok pre zisk -->
-            <div class="blok-hodnoty">
-                <div class="popisok">zisk</div>
-                <div class="cislo" id="mini-zisk">—</div>
+        <!-- TLI 50: obsah je teraz vo vlastnom obale pod pásikom, nech
+             padding `.mini` nerobí pásiku medzery po stranách. -->
+        <div class="mini-obsah">
+            <div id="mini-mapa">Žiadna mapa nebeží</div>
+
+            <div class="spodny-riadok">
+                <!-- Blok pre zisk -->
+                <div class="blok-hodnoty">
+                    <div class="popisok">zisk</div>
+                    <div class="cislo" id="mini-zisk">—</div>
+                </div>
+
+                <!-- Blok pre cas -->
+                <div class="blok-hodnoty">
+                    <div class="popisok">čas</div>
+                    <div class="cislo" id="mini-cas">—</div>
+                </div>
+
+                <!-- Blok pre FE za hodinu -->
+                <div class="blok-hodnoty">
+                    <div class="popisok">FE/h</div>
+                    <div class="cislo" id="mini-zah">—</div>
+                </div>
             </div>
-            
-            <!-- Blok pre cas -->
-            <div class="blok-hodnoty">
-                <div class="popisok">čas</div>
-                <div class="cislo" id="mini-cas">—</div>
+            <!-- TLI 25 — „čo padlo": top dropy aktuálnej (alebo poslednej) mapy
+                 s ikonou, počtom a cenou. Vzor rozloženia: dva addony z TLI 10
+                 (vlastný kód, pozri addony-analyza.md § Licencie). TLI 50:
+                 keď sa riadky nezmestia, panel SCROLLUJE (`overflow-y: auto`
+                 v CSS), neorezáva riadok v polovici. -->
+            <div id="mini-dropy" class="dropy skryte">
+                <div class="dropy-hlavicka"><span id="mini-dropy-popis">čo padlo</span></div>
+                <ul id="mini-dropy-zoznam"></ul>
             </div>
-            
-            <!-- Blok pre FE za hodinu -->
-            <div class="blok-hodnoty">
-                <div class="popisok">FE/h</div>
-                <div class="cislo" id="mini-zah">—</div>
-            </div>
-        </div>
-        <!-- TLI 25 — „čo padlo": top dropy aktuálnej (alebo poslednej) mapy
-             s ikonou, počtom a cenou. Vzor rozloženia: dva addony z TLI 10
-             (vlastný kód, pozri addony-analyza.md § Licencie). -->
-        <div id="mini-dropy" class="dropy skryte">
-            <div class="dropy-hlavicka"><span id="mini-dropy-popis">čo padlo</span></div>
-            <ul id="mini-dropy-zoznam"></ul>
         </div>
         <div id="mini-uchyt-velkost" class="rozlozenie-uchyt" title="Ťahaním zmeníš veľkosť"></div>
     </div>

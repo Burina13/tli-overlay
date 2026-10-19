@@ -14,25 +14,44 @@ body {
 }
 
 /* Hlavny obal — od TLI 21 vypĺňa CELÉ natívne okno (predtým pevných
-   260×92 px), lebo okno sa teraz dá v režime úpravy zväčšiť/zmenšiť. */
+   260×92 px), lebo okno sa teraz dá v režime úpravy zväčšiť/zmenšiť.
+   TLI 50: `.mini` už NEMÁ padding — ten má `.mini-obsah` nižšie, nech horný
+   pásik (`#mini-uchyt-presun`) môže byť skutočný flex riadok na celú šírku
+   namiesto absolútne položeného pásika CEZ obsah (pôvodný problém: pásik sa
+   prekrýval s nadpisom mapy, lebo obsah aj pásik stáli na tej istej vrstve). */
 .mini {
     position: relative;
     width: 100%;
     height: 100%;
-    background: rgba(18, 16, 24, 0.82);
+    /* TLI 50: priehľadnosť zo slidera (`--panel-opacity`) mení LEN alfu
+       pozadia, nie opacity celého panela — predtým nízka hodnota spriehľadnila
+       aj TEXT (ten istý `opacity` na celom `.mini`), takže „čitateľné tmavé
+       pozadie" a „viditeľný text" sa nedali mať naraz. Predvolená hodnota
+       (kým appka nenačíta nastavenia) je 0,85 podľa zadania. */
+    background: rgba(18, 16, 24, var(--panel-opacity, 0.85));
     border: 1px solid rgba(255, 150, 44, 0.45);
     border-radius: 8px;
     box-sizing: border-box;
-    /* TLI 25: užšie okraje — v paneli je odteraz aj zoznam dropov a každý
-       pixel šírky rozhoduje o tom, či sa k menu položky zmestí počet a cena. */
-    padding: 8px 10px;
+    display: flex;
+    flex-direction: column;
+    /* Jemny tien pre vyssiu citatelnost nad jasnymi prvkami v hre */
+    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+    transition: background-color 0.3s ease, opacity 0.3s ease;
+    overflow: hidden;
+}
+
+/* TLI 50 — obal obsahu POD horným pásikom; nesie padding, ktorý predtým
+   mala priamo `.mini` (a kvôli ktorému absolútne položený pásik „visel" nad
+   textom namiesto toho, aby mu robil miesto). */
+.mini-obsah {
+    flex: 1 1 auto;
+    min-height: 0;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    /* Jemny tien pre vyssiu citatelnost nad jasnymi prvkami v hre */
-    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
-    transition: opacity 0.3s ease;
-    opacity: var(--panel-opacity, 1);
+    /* TLI 25: užšie okraje — v paneli je odteraz aj zoznam dropov a každý
+       pixel šírky rozhoduje o tom, či sa k menu položky zmestí počet a cena. */
+    padding: 4px 10px 8px;
 }
 
 /* --- TLI 21: úchyty viditeľné len v režime „Upraviť rozloženie" --- */
@@ -50,20 +69,23 @@ body.rezim-upravy .rozlozenie-uchyt {
    špecifickosť než všeobecné `.rozlozenie-uchyt` vyššie, takže toto `display`/
    `pointer-events` platí VŽDY, nielen keď je na `body` trieda `rezim-upravy`.
    Mimo editácie je len jemne priehľadný (nech neruší pohľad na hru), v nej
-   ostáva plne viditeľný ako doteraz. Úchyt na zmenu veľkosti
-   (`#mini-uchyt-velkost`) sa NEMENÍ — ten zostáva viazaný len na editáciu. */
+   ostáva plne viditeľný ako doteraz.
+   TLI 50: `position: relative` (NIE `absolute` z `.rozlozenie-uchyt`) — pásik
+   je teraz skutočný prvý riadok vo flex stĺpci `.mini`, takže si vyžiada
+   vlastnú výšku a obsah POD ním (`.mini-obsah`) sa už nemá s čím prekrývať.
+   Predtým bol `position:absolute; top:0` CEZ obsah, presne to Richard
+   nahlásil ako „úchyt sa prekrýva s nadpisom". */
 #mini-uchyt-presun {
     display: flex;
+    position: relative;
+    flex: 0 0 auto;
     pointer-events: auto;
-    top: 0;
-    left: 0;
-    right: 0;
     align-items: center;
     justify-content: center;
-    height: 18px;
+    height: 16px;
     font-size: 10px;
     background: rgba(255, 150, 44, 0.35);
-    border-radius: 8px 8px 0 0;
+    border-radius: 7px 7px 0 0;
     cursor: move;
     opacity: 0.35;
     transition: opacity 0.15s ease;
@@ -74,7 +96,15 @@ body.rezim-upravy .rozlozenie-uchyt {
 body.rezim-upravy #mini-uchyt-presun {
     opacity: 1;
 }
+/* TLI 50 — rovnaký princíp ako pásik na presun vyššie: úchyt na zmenu
+   veľkosti je odteraz tiež použiteľný VŽDY, nielen v režime úpravy (predtým
+   ho zadanie TLI 48 bod 2 vedome vynechalo — Richard si teraz vypýtal presne
+   túto paritu). Ostáva `position: absolute` (z `.rozlozenie-uchyt`) — je to
+   malý trojuholník v rohu, nie riadok, a nemá zmysel mu robiť vlastný
+   flex priestor. */
 #mini-uchyt-velkost {
+    display: block;
+    pointer-events: auto;
     right: 1px;
     bottom: 1px;
     width: 14px;
@@ -82,6 +112,14 @@ body.rezim-upravy #mini-uchyt-presun {
     cursor: nwse-resize;
     background: linear-gradient(135deg, transparent 50%, rgba(255, 150, 44, 0.8) 50%);
     border-radius: 0 0 7px 0;
+    opacity: 0.35;
+    transition: opacity 0.15s ease;
+}
+#mini-uchyt-velkost:hover {
+    opacity: 0.9;
+}
+body.rezim-upravy #mini-uchyt-velkost {
+    opacity: 1;
 }
 body.rezim-upravy .mini {
     opacity: 1 !important;
@@ -168,13 +206,19 @@ body.rezim-upravy .mini {
 .skryte { display: none !important; }
 .dropy {
     /* Zoznam je jediná časť, ktorá sa smie zmenšovať — keď si hráč panel
-       zmenší, oreže sa tento, nie čísla nad ním. */
+       zmenší, oreže sa tento, nie čísla nad ním.
+       TLI 50: `overflow-y: auto` namiesto `hidden` — predtým sa riadok, čo
+       sa už nezmestil, oreže NAPOL (presne to Richard nahlásil), teraz sa
+       celý zoznam radšej scrolluje a žiadny riadok nie je vidieť sťaby
+       sťaty. Horizontálne orezanie (dlhé mená, `.meno`/`.dropy li` nižšie)
+       ostáva — to je zámer, nie chyba. */
     flex: 1 1 auto;
     margin-top: 8px;
     padding-top: 6px;
     border-top: 1px solid rgba(255, 255, 255, .12);
     min-height: 0;
-    overflow: hidden;
+    overflow-x: hidden;
+    overflow-y: auto;
 }
 .dropy-hlavicka {
     font-size: 10px;
@@ -220,6 +264,10 @@ body.rezim-upravy .mini {
 .dropy .hodnota {
     color: #8fe3a1;
     font-variant-numeric: tabular-nums;
+    /* TLI 50 — "FE vpravo": hodnota je posledný stĺpec gridu (`auto` šírka
+       podľa obsahu), bez `text-align` by krátke sumy neboli zarovnané s
+       pravým okrajom panela. */
+    text-align: right;
 }
 .dropy .hodnota.bez-ceny { color: #b0b4bd; font-style: italic; }
 .dropy .meno-text { overflow: hidden; text-overflow: ellipsis; }

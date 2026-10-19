@@ -78,11 +78,13 @@ const UKAZKA_TRACKER = {
   posledna_chyba_uploadu: null,
   // CURRENT INVENTORY (TLI 47) — niekoľko vzorových položiek po Sorte.
   batoh: [
-    { config_base_id: 400021, mnozstvo: 3, cena_za_kus_fe: 140.0, hodnota_fe: 420.0, cena_zastarana: false, skryte: false },
-    { config_base_id: 500101, mnozstvo: 24, cena_za_kus_fe: 2.0, hodnota_fe: 48.0, cena_zastarana: false, skryte: false },
-    { config_base_id: 999999, mnozstvo: 3, cena_za_kus_fe: null, hodnota_fe: null, cena_zastarana: false, skryte: false },
+    { config_base_id: 400021, mnozstvo: 3, cena_za_kus_fe: 140.0, hodnota_fe: 420.0, cena_zastarana: false, skryte: false, cena_vek: "pred 4 min" },
+    { config_base_id: 500101, mnozstvo: 24, cena_za_kus_fe: 2.0, hodnota_fe: 48.0, cena_zastarana: false, skryte: false, cena_vek: "pred 4 min" },
+    { config_base_id: 999999, mnozstvo: 3, cena_za_kus_fe: null, hodnota_fe: null, cena_zastarana: false, skryte: false, cena_vek: null },
   ],
   net_worth_fe: 971.8,
+  // TLI 49 bod 2 — footer „ceny aktualizované HH:MM".
+  ceny_synchronizovane_o: 1760866800,
 };
 
 // Mená položiek pre náhľad (TLI 20 bod 7). Náhľad beží z `file://`, kde
@@ -98,6 +100,16 @@ window.__MENA_POLOZIEK__ = {
   140005: "Shallow Dream Talking - Armor",
   5080: "Energy Core",
   100300: "Flame Elementium",
+};
+
+// Kategórie pre náhľad Economy (TLI 49 bod 1) — rovnaký dôvod ako mená
+// vyššie: `fetch("polozky-kategorie-en.json")` z `file://` neprejde.
+window.__KATEGORIE_POLOZIEK__ = {
+  400021: "beacons",
+  140005: "legendary_gear",
+  5080: "general",
+  100300: "general",
+  999999: "general",
 };
 
 // Ukážkový sprievodca pre záložku Guide (TLI 11, krok 4). Tvar je presne ten,
