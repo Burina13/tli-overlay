@@ -47,8 +47,9 @@ def main() -> None:
     for panel in ZALOZKY:
         vyrob("hlavne.html", f"nahlad-hlavne-{panel}.html",
               '<link rel="stylesheet" href="hlavne.css">', panel)
-    # Mini-panel je natívne okno s PEVNOU veľkosťou (280×220, `tauri.conf.json`,
-    # TLI 50: 196→220 — horný pásik na presun dostal vlastný riadok),
+    # Mini-panel je natívne okno s PEVNOU veľkosťou (280×265, `tauri.conf.json`,
+    # TLI 50: 196→220 — horný pásik na presun dostal vlastný riadok; TLI 55:
+    # 220→265 — pribudol session riadok pod ČAS/ZISK/FE-h),
     # ale náhľad je obyčajná stránka a `.mini` je `width: 100%` — bez tohto
     # obmedzenia by sa rozťahoval na šírku okna prehliadača. A Edge headless má
     # minimálnu šírku okna (~500 px), takže `--window-size=320,…` sa NEDODRŽÍ:
@@ -56,7 +57,7 @@ def main() -> None:
     # padli mimo snímku. Zistené 17.10.2026 (TLI 25) po troch pokusoch opraviť
     # to v CSS — chyba nebola v CSS, ale v náhľade.
     vyrob("mini.html", "nahlad-mini.html", '<link rel="stylesheet" href="mini.css">',
-          styl="html, body { width: 280px; height: 220px; margin: 0; }")
+          styl="html, body { width: 280px; height: 265px; margin: 0; }")
 
 
 if __name__ == "__main__":

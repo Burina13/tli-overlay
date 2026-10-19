@@ -2,6 +2,67 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.21.0 — 19.10.2026 (TLI 55 — loot overlay počas mapy: živý ČAS/FE-h, session súhrn, preklad názvu mapy)
+
+Úloha `2026-10-19-1715-mcp.md` (HNED, zaradené za TLI 53/56). Core sa nemenil
+(`0.13.16`).
+
+Richardov screenshot 19.10.2026 z bežiacej mapy: nadpis ukazoval surové
+interné meno enginu („SD_DuiLongJuQiang211"), ZISK bol správne 19,15 FE, ale
+ČAS aj FE/h ukazovali „—".
+
+**Koreňová príčina (bod 3 zadania preveril, nie je to chýbajúci
+`zaciatok_cas`):** `Beh::trvanie_ms()` (`core/src/tracker/stav.rs`) vracia
+`None`/`0`, kým mapa beží — potrebuje aj `koniec`, ktorý má len UZAVRETÝ beh.
+`ZISK` (`cisty_zisk`) na trvaní nezávisí, preto bol vidieť správne; ČAS a
+FE/h z neho priamo vychádzajú, preto „—". Overené priamo na Richardovom
+uploadnutom `tracker.db` z CT 114 (372 behov k 18.10.2026): **0 chýbajúcich
+`zaciatok_cas`/`trvanie_ms`** — žiadna historická diera na dopočítanie,
+appka si tie časy vždy správne zapísala. Oprava preto nemenila `core` ani
+históriu, len živé zobrazenie.
+
+**Oprava (`src-tauri/src/tracker.rs`):**
+- Nové pole `StavTrackera::zivy_zaciatok_real: Option<(beh_id, unix_cas)>`
+  — zachytí SKUTOČNÝ wall-clock čas (`unixovy_cas()`), odkedy appka vidí
+  AKTUÁLNE bežiaci beh. Zámerne NIE je to log-ový `beh.zaciatok` porovnaný
+  s `unixovy_cas()` — log píše LOKÁLNY čas, `unixovy_cas()` je skutočné UTC,
+  rozdiel časových pásiem by živý čas posunul o celé hodiny.
+- `prehlad_pre_ui`: keď je `trvanie_ms` z `ocen_beh` `0` (živá mapa), nahradí
+  sa `teraz - zivy_zaciatok_real`. `posledna_mapa` (uzavretý beh) sa
+  NEDOTÝKA — tam je `trvanie_ms()` z logu presné.
+- Known limitation (zdokumentované v kóde): appka spustená UPROSTRED už
+  bežiacej mapy (dobiehanie logu) započíta čas od spustenia appky, nie od
+  skutočného začiatku mapy.
+- 4 nové testy (`mod testy` v `tracker.rs`): živý čas rastie z nuly,
+  nezačína odznova pri ďalšom riadku tej istej mapy, uzavretá mapa si drží
+  presné trvanie z logu nezávisle od živého odhadu.
+
+**UI (`ui/mini.js`/`.html`/`.css`):**
+- `nazovMapy()` (duplikát rovnakej logiky z `ui/hlavne.js` — mini-panel je
+  samostatné okno bez zdieľaného JS modulu, rovnaký vzor ako `cas()`/`fe()`)
+  nahrádza predošlé `analyzujCestuMapy`, ktoré vracalo surový posledný kus
+  cesty. Preloží overené pinyin kódy (`PREKLAD_MAPY`), inak aspoň rozdelí na
+  čitateľné slová — nikdy nie surovú internú cestu.
+- Po skončení mapy ostávajú ZISK/ČAS/FE-h z POSLEDNEJ mapy (nie „—"), rovnaký
+  princíp ako „čo padlo" (TLI 25); úplne nová appka bez jedinej odohranej
+  mapy ďalej ukazuje „—".
+- Nový riadok „session zisk / session čas / session FE/h" pod hlavnými
+  tromi číslami — rovnaké súhrnné čísla ako RUNS/TOTAL TIME/FE-HOUR na
+  hlavnom dashboarde (`prehlad.celkom`, teda od posledného „Reset Stats"),
+  presne ako to ukazuje TITrack overlay (zadanie bod 2).
+- Samostatný 1s ticker (`tiknutie()`) dopočíta ČAS/FE-h medzi dvoma 2s
+  pollami backendu z vlastného `Date.now()` — appka teda naozaj tiká každú
+  sekundu, nie len raz za 2 s. `obnov()` ostáva na 2s intervale (IPC sa
+  nezvyšuje).
+- Mini okno zväčšené z 220 na 265 px výšky (`tauri.conf.json`,
+  `ui/nahlad-generuj.py`), nech sa nový session riadok zmestí bez toho, aby
+  stlačil zoznam dropov na nič.
+- 6 nových jsdom testov (`ui/testy-mini-ziva-mapa.e2e.mjs`), zaradené do
+  `ui/package.json` → `test`.
+
+**Vedome NEurobené:** TLI 54b (6. stupeň rarity Supreme, `stacks/games/tli`
+engine) — iný systém, má vlastnú úlohu v `inbox/`.
+
 ## 0.20.9 — 19.10.2026 (TLI 56 — akceptačná kontrola: Current Inventory ako záložka, NET WORTH a Recent Runs prežívajú reštart)
 
 Úloha `2026-10-19-1740-mcp.md` (HNED, Opus). core `0.13.16`.

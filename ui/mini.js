@@ -34,22 +34,43 @@ function fe(h) {
     return h.toFixed(2) + " FE";
 }
 
-// Ziska cisty nazov zlozky z celej cesty zadanej hrou.
-// Hľadá sa posledný kus cesty a následne sa odstráni koncovka.
-function analyzujCestuMapy(cesta) {
-    if (!cesta) return "Neznáma mapa";
-    
-    // Ziskanie poslednej casti cesty
-    const casti = cesta.split("/");
-    const subor = casti[casti.length - 1];
-    
-    // Odstranenie vsetkeho za poslednou bodkou
-    const indexBodky = subor.lastIndexOf(".");
-    if (indexBodky > 0) {
-        return subor.substring(0, indexBodky);
+// TLI 55 — Richard 19.10.2026: nadpis loot overlaya počas mapy ukazoval
+// surové interné meno enginu („SD_DuiLongJuQiang211") namiesto čitateľného
+// mena mapy. Appka tento preklad UŽ MÁ pre hlavný dashboard (`nazovMapy` v
+// `ui/hlavne.js`) — tu je to ZÁMERNE rovnaká logika duplikovaná priamo do
+// tohto súboru (rovnaký vzor ako `cas()`/`fe()` vyššie, ktoré sú tiež
+// vlastnou kópiou v oboch oknách, nie zdieľaný modul): mini-panel je
+// samostatné Tauri okno s vlastným `<script>`, žiadny bundler medzi oknami
+// nič nezdieľa. `PREKLAD_MAPY` tu drž V ZHODE s `ui/hlavne.js` — pribudne-li
+// tam nová položka, pridaj ju aj sem.
+const PREKLAD_MAPY = {
+    yujinzhixibinansuo: "Ember's Rest",
+};
+
+/// Posledný kus cesty zóny bez prípony, napr. `XZ_ShouGuSiDi000`.
+function kodMapy(cesta) {
+    const kus = cesta.split("/").pop() || cesta;
+    return kus.split(".").pop() || kus;
+}
+
+/// `XZ_ShouGuSiDi000` → `Shou Gu Si Di`: odstráni 1–3-písmenový oblastný
+/// prefix a koncové číslo úrovne/inštancie, zvyšok rozdelí na slová podľa
+/// veľkých písmen. Keď je jadro v `PREKLAD_MAPY`, použije sa overené meno
+/// namiesto tohto odhadu.
+function citatelnyKodMapy(kod) {
+    const jadro = kod.replace(/^[A-Za-z]{1,3}_/, "").replace(/(_?\d+)+$/, "") || kod;
+    const preklad = PREKLAD_MAPY[jadro.toLowerCase()];
+    if (preklad) {
+        return preklad;
     }
-    
-    return subor;
+    return jadro.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/_/g, " ").trim() || kod;
+}
+
+// Interná cesta zóny je dlhá a čínska (pinyin) — do panela ide čitateľné
+// meno mapy, nikdy surová cesta (TLI 17/TLI 55).
+function nazovMapy(cesta) {
+    if (!cesta) return "Neznáma mapa";
+    return citatelnyKodMapy(kodMapy(cesta)) || "Neznáma mapa";
 }
 
 // ── „Čo padlo" (TLI 25) ───────────────────────────────────────────────────
@@ -163,58 +184,111 @@ function vykresliDropy(zivo, bezi) {
     obal.classList.remove("skryte");
 }
 
+// TLI 55 — živé tikanie ČASU/FE-h PO SEKUNDÁCH (presne ako TITrack), nielen
+// pri každom 2s polli backendu. `obnov()` nižšie nastaví/zmaže `zivaZakladna`
+// pri každom fetchi; `tiknutie()` medzitým dopočíta uplynuté ms z vlastného
+// `Date.now()` bez toho, aby čakala na ďalší `invoke`.
+let zivaZakladna = null; // { cistyZisk, trvanieMsVZakladni, ziskanaO } | null
+
+function vykresliHlavneCisla(trvanieMs, cistyZisk) {
+    const ziskEl = document.getElementById("mini-zisk");
+    const casEl = document.getElementById("mini-cas");
+    const zahEl = document.getElementById("mini-zah");
+
+    ziskEl.textContent = fe(cistyZisk);
+    if (cistyZisk > 0) {
+        ziskEl.className = "cislo zisk-kladny";
+    } else if (cistyZisk < 0) {
+        ziskEl.className = "cislo zisk-zaporny";
+    } else {
+        ziskEl.className = "cislo";
+    }
+
+    casEl.textContent = cas(trvanieMs);
+
+    // Vypocet FE za hodinu. Pripona "FE" sa tu UZ NEPISE — popisok nad
+    // cislom je "FE/h" a tri hodnoty s priponou sa do 260 px nezmestia.
+    if (trvanieMs > 0) {
+        const ziskZaHodinu = (cistyZisk * 3600000) / trvanieMs;
+        zahEl.textContent = fe(ziskZaHodinu).replace(" FE", "");
+    } else {
+        zahEl.textContent = "—";
+    }
+}
+
+// Dotikne čas/FE-h medzi dvoma pollami backendu — volá sa každú sekundu.
+function tiknutie() {
+    if (!zivaZakladna) return;
+    const uplynuteMs = Date.now() - zivaZakladna.ziskanaO;
+    const trvanieMs = zivaZakladna.trvanieMsVZakladni + Math.max(0, uplynuteMs);
+    vykresliHlavneCisla(trvanieMs, zivaZakladna.cistyZisk);
+}
+
+// TLI 55 bod 2 — session (od posledného „Reset Stats"): rovnaké čísla ako
+// RUNS/TOTAL TIME/FE-HOUR na hlavnom dashboarde (`Suhrn.celkom` z
+// `core/src/tracker/agregacie.rs`), len v mini-paneli nad hrou, presne ako to
+// ukazuje TITrack overlay. Nezávislé od toho, či práve beží mapa.
+function vykresliSession(p) {
+    const ziskEl = document.getElementById("mini-session-zisk");
+    const casEl = document.getElementById("mini-session-cas");
+    const zahEl = document.getElementById("mini-session-zah");
+    const celkom = p && p.prehlad && p.prehlad.celkom;
+
+    if (!celkom || celkom.pocet_map === 0) {
+        ziskEl.textContent = "—";
+        casEl.textContent = "—";
+        zahEl.textContent = "—";
+        return;
+    }
+
+    ziskEl.textContent = fe(celkom.cisty_zisk);
+    casEl.textContent = cas(celkom.cas_ms);
+    zahEl.textContent = celkom.cas_ms > 0
+        ? fe((celkom.cisty_zisk * 3600000) / celkom.cas_ms).replace(" FE", "")
+        : "—";
+}
+
 // Stiahne udaje z backandu a prekresli panel.
 async function obnov() {
     try {
         const p = await invoke("tracker_prehlad");
-        
+
         const panel = document.getElementById("mini");
         const mapaEl = document.getElementById("mini-mapa");
-        const ziskEl = document.getElementById("mini-zisk");
-        const casEl = document.getElementById("mini-cas");
-        const zahEl = document.getElementById("mini-zah");
 
-        // Ked nebezi mapa — čísla sú prázdne, ale „čo padlo" z POSLEDNEJ
-        // mapy ostáva (TLI 25): hráč sa práve vrátil do hubu a chce vidieť,
-        // čo si z mapy odniesol.
+        vykresliSession(p);
+
+        // Ked nebezi mapa — čísla ZOSTÁVAJÚ z POSLEDNEJ mapy, nie prázdne
+        // pomlčky (TLI 55 bod 1: „po skončení mapy ostane finálny čas
+        // poslednej mapy"), rovnaký princíp ako „čo padlo" nižšie (TLI 25):
+        // hráč sa práve vrátil do hubu a chce vidieť, ako mapa dopadla.
         if (!p || !p.zivo) {
+            zivaZakladna = null;
             panel.classList.add("necinny");
             mapaEl.textContent = "Žiadna mapa nebeží";
-            ziskEl.textContent = "—";
-            ziskEl.className = "cislo"; // Zrusime farebne triedy
-            casEl.textContent = "—";
-            zahEl.textContent = "—";
-            vykresliDropy(p && p.posledna_mapa, false);
+            const posledna = p && p.posledna_mapa;
+            if (posledna) {
+                vykresliHlavneCisla(posledna.trvanie_ms, posledna.cisty_zisk);
+            } else {
+                // Appka ešte NIKDY nevidela dokončenú mapu (čerstvá inštalácia) —
+                // „0 FE"/„0 s" by tvrdilo niečo, čo appka nevie, rovnaký rozdiel
+                // ako „bez ceny" vs. „0 FE" pri dropoch vyššie.
+                document.getElementById("mini-zisk").textContent = "—";
+                document.getElementById("mini-zisk").className = "cislo";
+                document.getElementById("mini-cas").textContent = "—";
+                document.getElementById("mini-zah").textContent = "—";
+            }
+            vykresliDropy(posledna, false);
             return;
         }
 
         // Ked mapa bezi, aktivujeme vzhlad a vyplnime data
         panel.classList.remove("necinny");
-        
+
         const zivo = p.zivo;
-        mapaEl.textContent = analyzujCestuMapy(zivo.zona);
-        
-        // Nastavenie cisteho zisku vratane farby textu
-        ziskEl.textContent = fe(zivo.cisty_zisk);
-        if (zivo.cisty_zisk > 0) {
-            ziskEl.className = "cislo zisk-kladny";
-        } else if (zivo.cisty_zisk < 0) {
-            ziskEl.className = "cislo zisk-zaporny";
-        } else {
-            ziskEl.className = "cislo";
-        }
-
-        // Nastavenie ziveho casu
-        casEl.textContent = cas(zivo.trvanie_ms);
-
-        // Vypocet FE za hodinu. Pripona "FE" sa tu UZ NEPISE — popisok nad
-        // cislom je "FE/h" a tri hodnoty s priponou sa do 260 px nezmestia.
-        if (zivo.trvanie_ms > 0) {
-            const ziskZaHodinu = (zivo.cisty_zisk * 3600000) / zivo.trvanie_ms;
-            zahEl.textContent = fe(ziskZaHodinu).replace(" FE", "");
-        } else {
-            zahEl.textContent = "—";
-        }
+        mapaEl.textContent = nazovMapy(zivo.zona);
+        zivaZakladna = { cistyZisk: zivo.cisty_zisk, trvanieMsVZakladni: zivo.trvanie_ms, ziskanaO: Date.now() };
+        vykresliHlavneCisla(zivo.trvanie_ms, zivo.cisty_zisk);
 
         vykresliDropy(zivo, true);
 
@@ -230,6 +304,9 @@ async function obnov() {
 document.addEventListener("DOMContentLoaded", () => {
     obnov();
     setInterval(obnov, 2000);
+    // TLI 55: samostatný 1s ticker na ČAS/FE-h medzi dvoma pollami vyššie —
+    // `obnov()` ostáva na 2s (nezvyšuje sa frekvencia IPC volaní do Rustu).
+    setInterval(tiknutie, 1000);
     if (window.__TAURI__.event) {
         window.__TAURI__.event.listen("tracker-zmena", () => obnov());
     }

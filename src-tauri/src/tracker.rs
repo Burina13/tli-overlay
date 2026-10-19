@@ -184,6 +184,20 @@ pub struct StavTrackera {
     /// cena naozaj zmenila. Footer dashboardu z toho ukazuje „ceny
     /// aktualizované HH:MM"; `None`, kým appka ešte ani raz kolo nedokončila.
     pub posledna_synchronizacia_cien: Option<u64>,
+    /// TLI 55 (zadanie `2026-10-19-1715-mcp.md`): skutočný (`unixovy_cas()`)
+    /// čas, kedy appka PRVÝKRÁT uvidela aktuálne bežiaci beh — `(beh.id, kedy)`.
+    /// `Beh::trvanie_ms()` vracia `None`/`0`, kým mapa beží (chýba `koniec`),
+    /// takže naň sa živý čas oprieť nedá. Riešenie zámerne NEPOUŽÍVA
+    /// `beh.zaciatok` (čas z HLAVIČKY LOGU — ten je lokálny, ale appka ho
+    /// vie porovnať len s `unixovy_cas()`, čo je skutočné UTC; rozdiel časových
+    /// pásiem by živý čas posunul o celé hodiny). Namiesto toho appka meria
+    /// VLASTNÝ wall-clock čas od chvíle, keď live čítanie logu Zónu
+    /// zaregistrovalo — presnosť na interval čítania (rádovo sekundy), čo
+    /// stačí na „tiká každú sekundu ako TITrack". Pri appke spustenej
+    /// uprostred už bežiacej mapy (dobiehanie logu) preto časovač začne od
+    /// momentu spustenia appky, nie od skutočného začiatku mapy — known
+    /// limitation, zdokumentované v `CHANGELOG.md`.
+    zivy_zaciatok_real: Option<(u64, u64)>,
 }
 
 impl Default for StavTrackera {
@@ -246,6 +260,7 @@ impl Default for StavTrackera {
             varovanie_uploadu: SledovacVarovania::novy(),
             varovanie_sortu: SledovacVarovania::novy(),
             posledna_synchronizacia_cien: None,
+            zivy_zaciatok_real: None,
         }
     }
 }
@@ -579,6 +594,19 @@ pub fn precitaj(stav: &mut StavTrackera, cesta: &Path) -> Result<usize, String> 
     }
     stav.behy.extend(uzavrete_behy);
 
+    // TLI 55: zachytí skutočný wall-clock čas, odkedy appka vidí AKTUÁLNE
+    // bežiaci (nehubový) beh — viď komentár pri `zivy_zaciatok_real` vyššie.
+    // Nastavuje sa len RAZ za beh (pri zmene `id`), nie pri každom volaní,
+    // inak by sa časovač pri každej dávke vrátil na nulu.
+    match stav.sledovac.aktualny() {
+        Some(b) if !b.je_hub => {
+            if stav.zivy_zaciatok_real.map(|(id, _)| id) != Some(b.id) {
+                stav.zivy_zaciatok_real = Some((b.id, teraz));
+            }
+        }
+        _ => stav.zivy_zaciatok_real = None,
+    }
+
     Ok(novych)
 }
 
@@ -884,7 +912,24 @@ pub fn prehlad_pre_ui(stav: &StavTrackera, zapnuty: bool, dan: bool, skryte_polo
             top_dropy: top_dropy(b, &stav.cennik, &nastavenie, TOP_DROPOV, teraz),
         })
     };
-    let zivo = stav.sledovac.aktualny().and_then(na_zivo);
+    // TLI 55: `na_zivo` cez `ocen_beh` berie `trvanie_ms` z `Beh::trvanie_ms()`,
+    // ktorý vráti `0`, kým mapa beží (chýba `koniec`) — presne preto mini-panel
+    // doteraz pri ŽIVEJ mape ukazoval ČAS aj FE/h ako „—", hoci ZISK (na
+    // trvaní nezávislý) bol vidieť správne. Pre PRÁVE bežiaci beh sa `0`
+    // nahradí odhadom zo skutočného wall-clock štartu (`zivy_zaciatok_real`).
+    // `posledna_mapa` nižšie túto náhradu nepotrebuje — tam ide o UŽ UZAVRETÝ
+    // beh so skutočným `koniec`, takže `trvanie_ms()` je presné z logu.
+    let zivo = stav.sledovac.aktualny().and_then(|b| {
+        let mut z = na_zivo(b)?;
+        if z.trvanie_ms <= 0 {
+            if let Some((id, zaciatok_real)) = stav.zivy_zaciatok_real {
+                if id == b.id {
+                    z.trvanie_ms = (teraz.saturating_sub(zaciatok_real) * 1000) as i64;
+                }
+            }
+        }
+        Some(z)
+    });
     // Posledná dokončená mapa — `behy` sú v poradí, v akom ich log priniesol,
     // takže posledný nehubový je ten, z ktorého hráč práve vyšiel.
     let posledna_mapa = stav.behy.iter().rev().find_map(na_zivo);
@@ -2286,5 +2331,99 @@ mod testy {
         stav.behy.push(prazdny_beh_pre_test("Mapa1"));
         stav.resetuj_zive_staty();
         assert!(stav.behy.is_empty());
+    }
+
+    // ─── TLI 55: živý čas a FE/h počas bežiacej mapy ────────────────────────
+
+    /// Reálna sekvencia riadkov z Richardovho servera (19.10.2026, mapa
+    /// `SD_DuiLongJuQiang211` zo screenshotu v zadaní `2026-10-19-1715-mcp.md`)
+    /// — otvorenie mapy chartom (`Spv3Open`) a prechod do nej (`LevelMgr@` →
+    /// `SceneLevelMgr@ OpenMainWorld END!`), bez uzavretia (mapa stále beží).
+    fn napis_vstup_do_mapy(cesta: &Path, zona: &str) {
+        pripis(cesta, "[2026.10.19-16.45.52:424][914]TLLua: Display: [Game] ItemChange@ ProtoName=Spv3Open start\n");
+        pripis(cesta, "[2026.10.19-16.45.52:424][914]TLLua: Display: [Game] ItemChange@ ProtoName=Spv3Open end\n");
+        pripis(cesta, "[2026.10.19-16.45.52:472][929]TLShipping: Display: [Game] LevelMgr@ LevelUid, LevelType, LevelId = 1091202 3 5026\n");
+        pripis(cesta, &format!(
+            "[2026.10.19-16.45.53:738][202]TLLua: Display: [Game] SceneLevelMgr@ OpenMainWorld END! InMainLevelPath = {zona}\n"
+        ));
+    }
+
+    #[test]
+    fn ziva_mapa_bez_konca_ukazuje_bezici_cas_namiesto_nuly() {
+        // Pred opravou: `Beh::trvanie_ms()` vracia `None`/`0`, kým mapa beží
+        // (chýba `koniec`) — presne to Richard nahlásil ako ČAS a FE/h „—"
+        // počas mapy, hoci ZISK (na trvaní nezávislý) bol vidieť správne.
+        let cesta = docasny_subor();
+        napis(&cesta, "");
+        napis_vstup_do_mapy(&cesta, "/Game/Art/Maps/01SD/SD_DuiLongJuQiang211/SD_DuiLongJuQiang211");
+
+        let mut stav = StavTrackera::default();
+        precitaj(&mut stav, &cesta).unwrap();
+
+        let zivo = prehlad_pre_ui(&stav, true, false, &[]).zivo.expect("mapa má bežať");
+        assert!(zivo.zona.contains("SD_DuiLongJuQiang211"));
+
+        // Simuluje plynutie 5 sekúnd BEZ nového čítania logu — presne to, čo
+        // by malo v appke robiť lokálne tikanie po sekundách medzi dvoma
+        // pollami backendu.
+        let id = stav.sledovac.aktualny().unwrap().id;
+        stav.zivy_zaciatok_real = Some((id, unixovy_cas().saturating_sub(5)));
+        let zivo2 = prehlad_pre_ui(&stav, true, false, &[]).zivo.expect("mapa stále beží");
+        assert!(zivo2.trvanie_ms >= 5000, "živý čas mal narásť na aspoň 5000 ms, je {}", zivo2.trvanie_ms);
+
+        let _ = std::fs::remove_file(&cesta);
+    }
+
+    #[test]
+    fn ziva_mapa_zaciatok_real_sa_nemeni_pri_dalsom_citani_tej_istej_mapy() {
+        // Keby sa `zivy_zaciatok_real` prepisoval pri KAŽDOM volaní `precitaj`
+        // (nielen pri zmene bežiaceho behu), časovač by sa vracal na nulu pri
+        // každom pricitaní nových riadkov tej istej ešte otvorenej mapy.
+        let cesta = docasny_subor();
+        napis(&cesta, "");
+        napis_vstup_do_mapy(&cesta, "/Game/Art/Maps/01SD/SD_DuiLongJuQiang211/SD_DuiLongJuQiang211");
+
+        let mut stav = StavTrackera::default();
+        precitaj(&mut stav, &cesta).unwrap();
+        let id = stav.sledovac.aktualny().unwrap().id;
+        // O čosi „staršie", aby sa dal odlíšiť od nového zachytenia. Hodnota
+        // sa drží v premennej (NIE prepočítava znova pri assercii) — dva
+        // samostatné volania `unixovy_cas()` oddelené reálnym behom testu by
+        // sa mohli (zriedka) líšiť o sekundu a test by bol krehký.
+        let ocakavany_cas = unixovy_cas().saturating_sub(42);
+        stav.zivy_zaciatok_real = Some((id, ocakavany_cas));
+
+        // Ďalší riadok (napr. drop) v TEJ ISTEJ, stále otvorenej mape.
+        pripis(&cesta, "[2026.10.19-16.46.10:001][914]TLLua: Display: [Game] BagMgr@:Modfy BagItem PageId = 100 SlotId=5 ConfigBaseId=12345 Num=1\n");
+        precitaj(&mut stav, &cesta).unwrap();
+
+        assert_eq!(
+            stav.zivy_zaciatok_real,
+            Some((id, ocakavany_cas)),
+            "zachytený začiatok sa nesmie posunúť, kým beží tá istá mapa"
+        );
+        let _ = std::fs::remove_file(&cesta);
+    }
+
+    #[test]
+    fn uzavreta_mapa_pouziva_skutocne_trvanie_z_logu_nie_zivy_odhad() {
+        // Uzavretý beh (má aj `koniec`) musí ďalej ukazovať presné trvanie
+        // z logu — živý odhad (`zivy_zaciatok_real`) je len náhrada PRE
+        // BEŽIACU mapu a nesmie prepísať už hotové číslo v `posledna_mapa`.
+        let cesta = docasny_subor();
+        napis(&cesta, "");
+        napis_vstup_do_mapy(&cesta, "/Game/Art/Maps/01SD/SD_GeBuLinShanZhai/SD_GeBuLinShanZhai");
+        // Návrat do hubu o 60 s neskôr uzavrie beh s presným `trvanie_ms`.
+        pripis(&cesta, "[2026.10.19-16.46.53:738][202]TLLua: Display: [Game] SceneLevelMgr@ OpenMainWorld END! InMainLevelPath = /Game/Art/Maps/Town/Town\n");
+
+        let mut stav = StavTrackera::default();
+        precitaj(&mut stav, &cesta).unwrap();
+
+        let p = prehlad_pre_ui(&stav, true, false, &[]);
+        assert!(p.zivo.is_none(), "v hube nemá bežať žiadna mapa");
+        let posledna = p.posledna_mapa.expect("posledná mapa musí ostať");
+        assert_eq!(posledna.trvanie_ms, 60_000, "trvanie uzavretej mapy sa počíta z logu (16:45:53 -> 16:46:53)");
+
+        let _ = std::fs::remove_file(&cesta);
     }
 }

@@ -169,6 +169,15 @@ body.rezim-upravy .mini {
     overflow: hidden;
 }
 
+/* TLI 55 bod 2 — session riadok (zdieľa grid/rozostup s `.spodny-riadok`
+   vyššie cez spoločnú triedu v HTML), len s oddeľovačom od riadku nad ním,
+   rovnaký vzor ako oddeľovač pred zoznamom dropov nižšie. */
+.session-riadok {
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px solid rgba(255, 255, 255, .12);
+}
+
 /* Obal pre jednotlivu dvojicu popisok+cislo */
 .blok-hodnoty {
     display: flex;
