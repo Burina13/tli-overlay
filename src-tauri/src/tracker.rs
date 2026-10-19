@@ -106,6 +106,16 @@ const DAVKA_B: u64 = 2 * 1024 * 1024;
 /// v appke a zavádzať to len pre toto jedno číslo by bolo neúmerné.
 pub const UPLOAD_VAROVANIE_PO_S: u64 = 15 * 60;
 
+/// TLI 61 (zadanie `2026-10-19-2241-mcp.md`): Richard 19.10.2026 ~21:40 —
+/// overlay mu ukazoval „SESSION ČAS 1173 m 41 s" (~19,5 h), hoci práve hral
+/// pár desiatok minút. Príčina: `stat_reset_unix` (vyššie, TLI 56) sa
+/// nastaví LEN ručným kliknutím na „Reset Stats" a od zavedenia spätného
+/// načítania behov z DB (TLI 56) sa `celkom` v `Prehlad` preto ticho sčítaval
+/// cez VIACERO dní a reštartov appky, kým naň hráč nekliklo — presne to, čo
+/// TITrack rieši automatickým štartom novej session po dlhšej nečinnosti.
+/// Prah 30 minút je priamo zo zadania.
+pub const SESSION_NECINNOST_S: u64 = 30 * 60;
+
 /// Bežné miesta, kde hra log píše, keď ju Steam knižnice (registry +
 /// `libraryfolders.vdf`) nenašli — non-Steam launcher (XD/Global) alebo
 /// nezvyčajná inštalácia. Zoznam je zámerne krátky a doplniteľný ručne
@@ -353,6 +363,41 @@ impl StavTrackera {
         }
     }
 
+    /// TLI 61: automatický náprotivok ručného „Reset Stats"/„Reset session".
+    /// Volá sa z `precitaj()` pri KAŽDOM tiku (teda aj keď appka beží, ale
+    /// hra práve nie — presne to je „pri štarte appky" aj „pri štarte hry"
+    /// naraz, bez toho, aby appka musela osobitne sledovať proces hry):
+    /// porovná „teraz" s `tracker_meta.posledna_aktivita_unix` (čas
+    /// POSLEDNÉHO reálneho nového obsahu v logu, nastavuje `precitaj` nižšie)
+    /// a keď je medzera väčšia než `SESSION_NECINNOST_S`, zavolá
+    /// `resetuj_zive_staty()` presne tak, ako keby hráč klikol na tlačidlo.
+    ///
+    /// `!self.behy.is_empty()` je poistka proti opakovanému resetu na každý
+    /// tik počas dlhšej nečinnosti (appka otvorená, hra zavretá): po prvom
+    /// automatickom resete je `behy` prázdne, takže ďalšie tiky už nemajú čo
+    /// čistiť a mlčia, kým nepribudne nová mapa.
+    fn over_automaticky_reset_session(&mut self, teraz: u64) {
+        let Some(conn) = self.db.as_ref() else { return };
+        let posledna_aktivita: Option<u64> = db::precitaj_meta(conn, "posledna_aktivita_unix")
+            .ok()
+            .flatten()
+            .and_then(|s| s.parse().ok());
+        let necinna_pridlho = match posledna_aktivita {
+            None => true,
+            Some(p) => teraz.saturating_sub(p) > SESSION_NECINNOST_S,
+        };
+        if necinna_pridlho && !self.behy.is_empty() {
+            self.resetuj_zive_staty();
+            crate::denik::zapis(
+                "session",
+                &format!(
+                    "automatický reset session — nečinnosť dlhšia než {} min",
+                    SESSION_NECINNOST_S / 60
+                ),
+            );
+        }
+    }
+
     /// TLI 22: zistí a VYNULUJE, či posledné `precitaj` uvidelo otvorenie
     /// obrazovky trhu — volajúci (vlákno na pozadí) má na `true` zareagovať
     /// práve raz, nie pri každom ďalšom tiku.
@@ -512,6 +557,10 @@ pub fn precitaj(stav: &mut StavTrackera, cesta: &Path) -> Result<usize, String> 
         stav.povodna_velkost_logu = Some(velkost);
     }
     let teraz = unixovy_cas();
+    // TLI 61: kontrola nečinnosti beží PRED early-returnom nižšie — má
+    // zafungovať aj vtedy, keď appka beží, ale log sa dlho nehol vôbec
+    // (hráč medzitým hru zavrel), nielen pri práve prichádzajúcich riadkoch.
+    stav.over_automaticky_reset_session(teraz);
     if stav.chvost.over_rotaciu(velkost) {
         // Hra pri reštarte premenovala/skrátila log — nová session, aj pre
         // pripomienku „Enable Log" (TLI 11d). Nový súbor je od pozície 0 už
@@ -548,6 +597,17 @@ pub fn precitaj(stav: &mut StavTrackera, cesta: &Path) -> Result<usize, String> 
         stav.povodna_velkost_logu.is_some_and(|p| stav.chvost.pozicia < p);
     let riadky = stav.chvost.priprav_riadky(&bajty);
     crate::stav::uloz_chvost(cesta, &stav.chvost);
+
+    // TLI 61: „posledná aktivita" smie napredovať LEN pri skutočne ŽIVOM
+    // obsahu, nie pri dobiehaní starej histórie po štarte appky (rovnaká
+    // podmienka ako `trh_otvoreny` vyššie) — inak by appka po dlhej
+    // nečinnosti pri prvom čítaní starého logu omylom nahlásila „práve teraz"
+    // a automatický reset by sa nikdy nespustil.
+    if !davka_je_zo_starej_historie {
+        if let Some(conn) = &stav.db {
+            let _ = db::nastav_meta(conn, "posledna_aktivita_unix", &teraz.to_string());
+        }
+    }
 
     let mut novych = 0;
     let mut uzavrete_behy = Vec::new();
@@ -713,6 +773,12 @@ pub struct PrehladProUi {
     /// čase hráča (`new Date(s * 1000).toLocaleTimeString()`); appka
     /// časové pásmo nikde inde neprevádza a nemá začínať práve tu.
     pub ceny_synchronizovane_o: Option<u64>,
+    /// TLI 61: unixový čas posledného (ručného alebo automatického) resetu
+    /// session (`tracker_meta.stat_reset_unix`) — `None`, kým appka ešte
+    /// nikdy nič nereportovala. Mini-panel aj hlavné okno z neho ukážu
+    /// „session od HH:MM" (rovnaký vzor prevodu na strane JS ako
+    /// `ceny_synchronizovane_o` vyššie).
+    pub session_od_unix: Option<u64>,
 }
 
 /// Jedna položka aktuálneho batohu pre záložku CURRENT INVENTORY (TLI 47).
@@ -973,6 +1039,11 @@ pub fn prehlad_pre_ui(stav: &StavTrackera, zapnuty: bool, dan: bool, skryte_polo
         materialy_sortovane,
         batoh_cache_cas,
         ceny_synchronizovane_o: stav.posledna_synchronizacia_cien,
+        session_od_unix: stav
+            .db
+            .as_ref()
+            .and_then(|c| db::precitaj_meta(c, "stat_reset_unix").ok().flatten())
+            .and_then(|s| s.parse().ok()),
     }
 }
 
@@ -2340,6 +2411,58 @@ mod testy {
         stav.db = None;
         stav.behy.push(prazdny_beh_pre_test("Mapa1"));
         stav.resetuj_zive_staty();
+        assert!(stav.behy.is_empty());
+    }
+
+    // ─── TLI 61: automatický reset session po 30 min nečinnosti ────────────
+
+    #[test]
+    fn automaticky_reset_sa_spusti_ked_posledna_aktivita_je_stara() {
+        let mut stav = StavTrackera::default();
+        stav.db = Some(db::otvor_v_pamati().unwrap());
+        stav.behy.push(prazdny_beh_pre_test("Mapa1"));
+        let conn = stav.db.as_ref().unwrap();
+        db::nastav_meta(conn, "posledna_aktivita_unix", "1000").unwrap();
+
+        stav.over_automaticky_reset_session(1000 + SESSION_NECINNOST_S + 1);
+
+        assert!(stav.behy.is_empty(), "po 30+ min nečinnosti sa živé behy majú vyprázdniť presne ako pri ručnom Reset Stats");
+        let conn = stav.db.as_ref().unwrap();
+        let marker = db::precitaj_meta(conn, "stat_reset_unix").unwrap();
+        assert!(marker.is_some(), "automatický reset musí zapísať stat_reset_unix rovnako ako ručný");
+    }
+
+    #[test]
+    fn automaticky_reset_sa_nespusti_pocas_suvislej_hry() {
+        let mut stav = StavTrackera::default();
+        stav.db = Some(db::otvor_v_pamati().unwrap());
+        stav.behy.push(prazdny_beh_pre_test("Mapa1"));
+        let conn = stav.db.as_ref().unwrap();
+        db::nastav_meta(conn, "posledna_aktivita_unix", "1000").unwrap();
+
+        // Len 5 minút od poslednej aktivity — session musí ostať netknutá.
+        stav.over_automaticky_reset_session(1000 + 300);
+
+        assert_eq!(stav.behy.len(), 1, "krátka medzera medzi tikmi nesmie vynulovať bežiacu session");
+    }
+
+    #[test]
+    fn automaticky_reset_bez_markera_v_db_prebehne_len_raz() {
+        // Čerstvá appka (nikdy nereportovala `posledna_aktivita_unix`) sa
+        // nemá správať ako nekonečná slučka resetov na každý tik — po prvom
+        // vyprázdnení `behy` je `necinna_pridlho && !self.behy.is_empty()`
+        // vždy false, kým nepribudne nová mapa.
+        let mut stav = StavTrackera::default();
+        stav.db = Some(db::otvor_v_pamati().unwrap());
+        stav.behy.push(prazdny_beh_pre_test("Mapa1"));
+
+        stav.over_automaticky_reset_session(50_000);
+        assert!(stav.behy.is_empty());
+
+        // Druhé volanie o pár sekúnd neskôr nemá čo robiť (žiadny panic,
+        // žiadny ďalší zápis potrebný) — len si overíme, že to naozaj nič
+        // nerozbije a `behy` ostáva prázdne.
+        stav.over_automaticky_reset_session(50_005);
         assert!(stav.behy.is_empty());
     }
 

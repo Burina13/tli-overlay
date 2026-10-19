@@ -87,6 +87,9 @@ const UKAZKA_TRACKER = {
   materialy_sortovane: true,
   // TLI 49 bod 2 — footer „ceny aktualizované HH:MM".
   ceny_synchronizovane_o: 1760866800,
+  // TLI 61 — „session od HH:MM" v mini-paneli (bez tohto by bol nový riadok
+  // na screenshote z CI prázdny).
+  session_od_unix: 1760864100,
 };
 
 // Mená položiek pre náhľad (TLI 20 bod 7). Náhľad beží z `file://`, kde

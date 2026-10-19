@@ -194,6 +194,7 @@ function vykresliHlavneCisla(trvanieMs, cistyZisk) {
     const ziskEl = document.getElementById("mini-zisk");
     const casEl = document.getElementById("mini-cas");
     const zahEl = document.getElementById("mini-zah");
+    const zaminEl = document.getElementById("mini-zamin");
 
     ziskEl.textContent = fe(cistyZisk);
     if (cistyZisk > 0) {
@@ -206,13 +207,17 @@ function vykresliHlavneCisla(trvanieMs, cistyZisk) {
 
     casEl.textContent = cas(trvanieMs);
 
-    // Vypocet FE za hodinu. Pripona "FE" sa tu UZ NEPISE — popisok nad
-    // cislom je "FE/h" a tri hodnoty s priponou sa do 260 px nezmestia.
+    // Vypocet FE za hodinu/minutu (TLI 61 — FE/min pribudlo vedľa FE/h).
+    // Pripona "FE" sa tu UZ NEPISE — popisok nad cislom hovorí jednotku a
+    // štyri hodnoty s príponou by sa do úzkeho panela nezmestili.
     if (trvanieMs > 0) {
         const ziskZaHodinu = (cistyZisk * 3600000) / trvanieMs;
         zahEl.textContent = fe(ziskZaHodinu).replace(" FE", "");
+        const ziskZaMinutu = (cistyZisk * 60000) / trvanieMs;
+        zaminEl.textContent = fe(ziskZaMinutu).replace(" FE", "");
     } else {
         zahEl.textContent = "—";
+        zaminEl.textContent = "—";
     }
 }
 
@@ -232,12 +237,25 @@ function vykresliSession(p) {
     const ziskEl = document.getElementById("mini-session-zisk");
     const casEl = document.getElementById("mini-session-cas");
     const zahEl = document.getElementById("mini-session-zah");
+    const zaminEl = document.getElementById("mini-session-zamin");
     const celkom = p && p.prehlad && p.prehlad.celkom;
+
+    // TLI 61 — „session od HH:MM" (z `tracker_meta.stat_reset_unix`, viď
+    // `session_od_unix` v `src-tauri/src/tracker.rs`). Appka prevádza na
+    // lokálny čas hráča rovnako ako `ceny_synchronizovane_o` v `ui/hlavne.js`
+    // — appka časové pásmo inde neprevádza, nemá začínať práve tu.
+    const odEl = document.getElementById("mini-session-od");
+    if (odEl) {
+        odEl.textContent = typeof p?.session_od_unix === "number"
+            ? "session od " + new Date(p.session_od_unix * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+            : "";
+    }
 
     if (!celkom || celkom.pocet_map === 0) {
         ziskEl.textContent = "—";
         casEl.textContent = "—";
         zahEl.textContent = "—";
+        zaminEl.textContent = "—";
         return;
     }
 
@@ -245,6 +263,9 @@ function vykresliSession(p) {
     casEl.textContent = cas(celkom.cas_ms);
     zahEl.textContent = celkom.cas_ms > 0
         ? fe((celkom.cisty_zisk * 3600000) / celkom.cas_ms).replace(" FE", "")
+        : "—";
+    zaminEl.textContent = celkom.cas_ms > 0
+        ? fe((celkom.cisty_zisk * 60000) / celkom.cas_ms).replace(" FE", "")
         : "—";
 }
 
@@ -298,12 +319,58 @@ async function obnov() {
     }
 }
 
+// TLI 61 — „⟲ Reset session" v pásiku úchytu. Podržanie `MINI_RESET_DRZAT_MS`
+// (nie klik, nie natívny `confirm()` ako pri „Reset Stats" v `ui/hlavne.js` —
+// dialóg nad hrou by appke zobral fokus) spustí ten istý príkaz
+// `tracker_reset_zive_staty`, aký volá hlavné okno — jedna backendová cesta,
+// obe okná z nej čítajú rovnaký `stav.behy`/`stat_reset_unix`.
+const MINI_RESET_DRZAT_MS = 1000;
+
+function nastavResetSession() {
+    const btn = document.getElementById("mini-reset-session");
+    if (!btn) return;
+    let timer = null;
+
+    const prestanDrzat = () => {
+        if (timer !== null) {
+            clearTimeout(timer);
+            timer = null;
+        }
+        btn.classList.remove("drzi");
+    };
+
+    btn.addEventListener("mousedown", (e) => {
+        // KĽÚČOVÉ: rodič `#mini-uchyt-presun` má vlastný `mousedown` na
+        // `okno.startDragging()` — bez zastavenia propagácie by podržanie
+        // tlačidla zároveň ťahalo celé okno mini-panela.
+        e.stopPropagation();
+        btn.classList.add("drzi");
+        timer = setTimeout(async () => {
+            prestanDrzat();
+            try {
+                await invoke("tracker_reset_zive_staty");
+                await obnov();
+            } catch (chyba) {
+                console.error("Reset session z overlaya zlyhal:", chyba);
+            }
+        }, MINI_RESET_DRZAT_MS);
+    });
+    btn.addEventListener("mouseup", (e) => {
+        e.stopPropagation();
+        prestanDrzat();
+    });
+    // Myš opustí tlačidlo (napr. hráč si to rozmyslí) — rovnaká poistka proti
+    // náhodnému zásahu ako pustenie tlačidla.
+    btn.addEventListener("mouseleave", prestanDrzat);
+}
+
 // Spustenie hned po natiahnuti stranky a cyklenie kazde 2 sekundy — to je
 // zalozka, zive citanie na pozadi (TLI 11c) posle udalost hned po novych
 // riadkoch a tá nizsie spusti prekreslenie okamzite.
 document.addEventListener("DOMContentLoaded", () => {
     obnov();
     setInterval(obnov, 2000);
+    nastavResetSession();
     // TLI 55: samostatný 1s ticker na ČAS/FE-h medzi dvoma pollami vyššie —
     // `obnov()` ostáva na 2s (nezvyšuje sa frekvencia IPC volaní do Rustu).
     setInterval(tiknutie, 1000);

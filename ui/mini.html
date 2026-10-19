@@ -12,7 +12,19 @@
         <!-- TLI 21 — viditeľné len v režime „Upraviť rozloženie"; TLI 50:
              samostatný horný pásik (nie absolútne položený CEZ obsah), aby
              sa neprekrýval s nadpisom mapy — vlastný riadok vo flex stĺpci. -->
-        <div id="mini-uchyt-presun" class="rozlozenie-uchyt">⠿ presuň</div>
+        <div id="mini-uchyt-presun" class="rozlozenie-uchyt">
+            <span id="mini-uchyt-text">⠿ presuň</span>
+            <!-- TLI 61 — reset session priamo na overlayi, bez Ctrl+F8.
+                 Podržanie 1 s (nie klik, nie dialóg) proti náhodnému zásahu;
+                 JS rieši mousedown/mouseup/mouseleave a MUSÍ zastaviť
+                 propagáciu na rodiča, inak by držanie tlačidla zároveň
+                 ťahalo celé okno (`startDragging` vyššie v `mini.js`). -->
+            <button type="button" id="mini-reset-session" class="mini-reset-btn"
+                    title="Podrž 1 s: vynuluje session zisk/čas/FE-h/FE-min (história máp v DB zostáva)">
+                <span class="vyplna"></span>
+                <span class="znak">⟲</span>
+            </button>
+        </div>
         <!-- TLI 50: obsah je teraz vo vlastnom obale pod pásikom, nech
              padding `.mini` nerobí pásiku medzery po stranách. -->
         <div class="mini-obsah">
@@ -36,23 +48,41 @@
                     <div class="popisok">FE/h</div>
                     <div class="cislo" id="mini-zah">—</div>
                 </div>
+
+                <!-- TLI 61 — FE/min vedľa FE/h (zadanie bod 1), rovnaký výpočet,
+                     len za minútu namiesto hodiny. -->
+                <div class="blok-hodnoty">
+                    <div class="popisok">FE/min</div>
+                    <div class="cislo" id="mini-zamin">—</div>
+                </div>
             </div>
 
-            <!-- TLI 55 bod 2 — session (od posledného „Reset Stats"): rovnaké
-                 súhrny ako RUNS/TOTAL TIME/FE-HOUR na hlavnom dashboarde,
-                 priamo v mini-paneli nad hrou, presne ako to má TITrack. -->
-            <div class="spodny-riadok session-riadok" id="mini-session">
-                <div class="blok-hodnoty">
-                    <div class="popisok">session zisk</div>
-                    <div class="cislo" id="mini-session-zisk">—</div>
-                </div>
-                <div class="blok-hodnoty">
-                    <div class="popisok">session čas</div>
-                    <div class="cislo" id="mini-session-cas">—</div>
-                </div>
-                <div class="blok-hodnoty">
-                    <div class="popisok">session FE/h</div>
-                    <div class="cislo" id="mini-session-zah">—</div>
+            <!-- TLI 55 bod 2 — session (od posledného „Reset Stats"/TLI 61
+                 „Reset session"): rovnaké súhrny ako RUNS/TOTAL TIME/FE-HOUR
+                 na hlavnom dashboarde, priamo v mini-paneli nad hrou, presne
+                 ako to má TITrack. -->
+            <div class="session-blok">
+                <!-- TLI 61 — „session od HH:MM": viditeľné potvrdenie po
+                     ručnom aj automatickom resete, že appka naozaj počíta
+                     odznova, nie len že číslo kleslo na nulu. -->
+                <div id="mini-session-od" class="session-od"></div>
+                <div class="spodny-riadok session-riadok" id="mini-session">
+                    <div class="blok-hodnoty">
+                        <div class="popisok">session zisk</div>
+                        <div class="cislo" id="mini-session-zisk">—</div>
+                    </div>
+                    <div class="blok-hodnoty">
+                        <div class="popisok">session čas</div>
+                        <div class="cislo" id="mini-session-cas">—</div>
+                    </div>
+                    <div class="blok-hodnoty">
+                        <div class="popisok">session FE/h</div>
+                        <div class="cislo" id="mini-session-zah">—</div>
+                    </div>
+                    <div class="blok-hodnoty">
+                        <div class="popisok">session FE/min</div>
+                        <div class="cislo" id="mini-session-zamin">—</div>
+                    </div>
                 </div>
             </div>
             <!-- TLI 25 — „čo padlo": top dropy aktuálnej (alebo poslednej) mapy

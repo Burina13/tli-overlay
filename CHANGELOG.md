@@ -2,6 +2,65 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.23.0 (core 0.13.20) — 19.10.2026 (TLI 61 — FE/min, Reset session na overlayi, automatický reset po nečinnosti)
+
+Úloha `2026-10-19-2241-mcp.md` (HNED, MALÁ, Opus, Gemini nesmel písať kód).
+Richard 19.10.2026 ~21:40: „potrebujem na overlayi aj FE/min a reset session,
+že ťuknem a začne odznova, lebo to ukazuje kokotiny." Na screenshote overlay
+ukazoval SESSION ČAS 1173 m 41 s (~19,5 h) — session sa evidentne počítala
+cez viac dní a reštartov appky, nie dnešné hranie.
+
+**Prečo vyšlo 1173 min (zadanie bod 4 — vyšetrenie).** `SESSION ČAS` už aj
+predtým počítal presne to, čo TITrack — súčet `trvanie_ms` len nehubových
+behov (`Prehlad.celkom.cas_ms` v `core/src/tracker/agregacie.rs`, hubové behy
+`ocen_beh` vracia `None`). Chyba teda nebola vo vzorci, ale v tom, že od TLI 56
+(spätné načítanie behov z lokálnej DB pri každom štarte appky) sa `celkom`
+sčítaval cez VŠETKY uložené mapy od posledného ručného kliknutia na „Reset
+Stats" — a to tlačidlo bolo len v hlavnom okne, žiadne pripomenutie ani
+automatika ho nespúšťali. Bez automatického resetu číslo rástlo donekonečna
+cez reštarty aj naprieč dňami.
+
+**Oprava — automatický reset po 30 min nečinnosti (bod 3).** Appka si
+v `tracker_meta.posledna_aktivita_unix` drží čas POSLEDNÉHO živého riadku
+v hernom logu (nie dobiehanie starej histórie po štarte appky — to sa
+nepočíta). Pri každom tiku čítania logu (`precitaj`, volá ho `tracker_prehlad`
+pri každom polli UI) appka porovná „teraz" s touto značkou — keď je medzera
+väčšia než 30 minút, zavolá presne tú istú funkciu ako ručné tlačidlo
+(`StavTrackera::resetuj_zive_staty`). Pokrýva to „štart appky" AJ „štart hry"
+naraz bez toho, aby appka musela osobitne sledovať proces hry: obe situácie sa
+prejavia ako dlhá medzera od poslednej živej aktivity. Poistka
+`!self.behy.is_empty()` zaručuje, že sa to nespustí opakovane na každý tik
+počas dlhšej nečinnosti (po prvom vyprázdnení už nie je čo čistiť).
+
+**Tlačidlo „⟲ Reset session" priamo na overlayi (bod 2).** V pásiku úchytu
+mini-panela (`ui/mini.html`/`ui/mini.js`), klikateľné bez Ctrl+F8 — rovnaký
+pásik, ktorý sa dá ťahať aj mimo režimu úpravy (TLI 48). Namiesto natívneho
+`confirm()` dialógu (ten by appke nad hrou zobral fokus) treba tlačidlo
+PODRŽAŤ 1 sekundu — vizuálna výplň ukáže postup, pustenie pred limitom nič
+nespraví. Volá ten istý príkaz `tracker_reset_zive_staty`, aký používa „Reset
+Stats" v hlavnom okne (bod 5 zadania — obe okná teda zdieľajú jednu
+backendovú cestu, nič sa neduplikuje). Po resete sa pod session riadkom ukáže
+„session od HH:MM" (nové pole `session_od_unix` v `PrehladProUi`, z
+`tracker_meta.stat_reset_unix`) — viditeľné potvrdenie, že appka naozaj počíta
+odznova.
+
+**FE/MIN vedľa FE/h (bod 1).** Pridané pre aktuálnu mapu aj pre session,
+rovnaký výpočet ako FE/h, len za minútu. Mini-panel je teraz 4-stĺpcový grid
+namiesto 3-stĺpcového (zisk/čas/FE-h/FE-min), rovnaké zalomenie pri úzkom
+okne ako doteraz.
+
+Testy: `src-tauri` nové jednotkové testy pre automatický reset
+(`tracker::testy::automaticky_reset_*`, `cargo check --tests` zelené — `cargo
+test` sa v `src-tauri/` na tomto hoste nespúšťa, len na Windows CI,
+[[tli-cargo-test-disk]]), `core` 462+4+8 testov bez zmeny (core sa v tomto
+tiketu nemenil), `ui` nový `testy-mini-reset-session.e2e.mjs` (6 testov: FE/min,
+„session od", podržanie/pustenie tlačidla, stopPropagation proti ťahaniu
+okna) + všetkých 105 pôvodných JS testov zelených.
+
+Vedome NEUROBENÉ: vlastné sledovanie OS procesu hry („štart hry" ako
+samostatná udalosť) — nahradené jednoduchším a spoľahlivejším sledovaním
+nečinnosti v logu, ktoré pokrýva rovnaký prípad bez ďalšieho natívneho API.
+
 ## 0.22.0 (core 0.13.20) — 19.10.2026 (TLI 60 — Frozen Canvas: automatické učenie na pozadí)
 
 Úloha `2026-10-19-2135-mcp-2.md` (HNED, Opus, Gemini nesmel písať kód).

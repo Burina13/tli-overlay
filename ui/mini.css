@@ -82,6 +82,7 @@ body.rezim-upravy .rozlozenie-uchyt {
     pointer-events: auto;
     align-items: center;
     justify-content: center;
+    gap: 6px;
     height: 16px;
     font-size: 10px;
     background: rgba(255, 150, 44, 0.35);
@@ -95,6 +96,46 @@ body.rezim-upravy .rozlozenie-uchyt {
 }
 body.rezim-upravy #mini-uchyt-presun {
     opacity: 1;
+}
+
+/* TLI 61 — tlačidlo „⟲ Reset session" priamo v pásiku úchytu. Vlastné
+   `pointer-events`/`cursor` (NIE `move` z rodiča) a mousedown so
+   `stopPropagation()` v JS, nech držanie tlačidla neťahá celé okno. */
+.mini-reset-btn {
+    all: unset;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    line-height: 1;
+    font-size: 11px;
+    cursor: pointer;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.25);
+    position: relative;
+    overflow: hidden;
+}
+.mini-reset-btn:hover {
+    background: rgba(0, 0, 0, 0.4);
+}
+/* Vizuálna spätná väzba počas 1s podržania (TLI 61) — výplň sprava
+   dorastie presne za `MINI_RESET_DRZAT_MS` z `mini.js`, nech hráč vidí,
+   že sa to naozaj počíta, nie že appka len ignoruje klik. */
+.mini-reset-btn .vyplna {
+    position: absolute;
+    inset: 0;
+    background: rgba(255, 90, 60, 0.75);
+    transform: scaleX(0);
+    transform-origin: left;
+    pointer-events: none;
+}
+.mini-reset-btn.drzi .vyplna {
+    transition: transform var(--mini-reset-drzat-s, 1s) linear;
+    transform: scaleX(1);
+}
+.mini-reset-btn .znak {
+    position: relative;
 }
 /* TLI 50 — rovnaký princíp ako pásik na presun vyššie: úchyt na zmenu
    veľkosti je odteraz tiež použiteľný VŽDY, nielen v režime úpravy (predtým
@@ -150,7 +191,10 @@ body.rezim-upravy .mini {
        šírky a dlhšia sa oreže vo svojom stĺpci namiesto toho, aby vytlačila
        susedov. */
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    /* TLI 61 — štvrtý stĺpec (FE/min) vedľa zisku/času/FE-h; rovnaký
+       `minmax(0, 1fr)` vzor ako predtým, len o jednu položku viac. Pri
+       úzkom paneli sa (rovnako ako doteraz) zalomí cez `flex-wrap` nižšie. */
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     align-items: flex-end;
     /* Bez medzery a bez `min-width: 0` sa tri hodnoty v 260 px zlejú do seba
        (prvý náhľad: „118 FE1 m 36 s4440"). */
@@ -170,12 +214,23 @@ body.rezim-upravy .mini {
 }
 
 /* TLI 55 bod 2 — session riadok (zdieľa grid/rozostup s `.spodny-riadok`
-   vyššie cez spoločnú triedu v HTML), len s oddeľovačom od riadku nad ním,
-   rovnaký vzor ako oddeľovač pred zoznamom dropov nižšie. */
-.session-riadok {
+   vyššie cez spoločnú triedu v HTML). Oddeľovač od riadku nad ním (rovnaký
+   vzor ako pred zoznamom dropov nižšie) je od TLI 61 na obale `.session-blok`,
+   nie priamo na `.session-riadok` — ten teraz zdieľa obal s `#mini-session-od`. */
+.session-blok {
     margin-top: 6px;
     padding-top: 6px;
     border-top: 1px solid rgba(255, 255, 255, .12);
+}
+
+/* TLI 61 — „session od HH:MM", tichá potvrdenka po resete. */
+.session-od {
+    font-size: 0.6rem;
+    opacity: 0.55;
+    margin-bottom: 3px;
+}
+.session-od:empty {
+    display: none;
 }
 
 /* Obal pre jednotlivu dvojicu popisok+cislo */
