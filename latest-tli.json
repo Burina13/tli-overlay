@@ -1,6 +1,6 @@
 {
-  "version": "0.20.3",
-  "notes": "TLI 51: opravené duplicitné počítanie položiek na interných (hráčovi neviditeľných) stránkach batohu 100-102 — hra pri triedení inventára vie tú istú položku preradiť do iného slotu a appka ju predtým počítala v starom aj novom slote naraz. CURRENT INVENTORY (stránka, ktorú appka hráčovi ukazuje) sa touto opravou nemení — bola a ostáva presne zhodná s TITrackom.",
-  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.20.3/Tvoj-Tatko-TLI-Overlay_0.20.3_x64_en-US.msi",
-  "msiSha256": "141d185b42fcad89faf02f69b2d5bb0d7ba15707ccd430179418ced1a2e9ebe3"
+  "version": "0.20.4",
+  "notes": "TLI 52 (časť 1/2): appka teraz sama kontroluje aktualizáciu hneď pri štarte a potom každých 30 minút (predtým vôbec, kontrola bola len ručná cez tlačidlo „Check for Updates“). Každá kontrola zapisuje riadok do lokálneho logu appky a footer ukazuje „posledná kontrola HH:MM“. Tichá inštalácia bez potvrdzovania (UAC) je ešte len pripravovaná — pozri CHANGELOG.",
+  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.20.4/Tvoj-Tatko-TLI-Overlay_0.20.4_x64_en-US.msi",
+  "msiSha256": "c47b0fffc4bbf7f470b75309d7c152798be4f02f065b8dd04d8b4ff1720a0154"
 }
