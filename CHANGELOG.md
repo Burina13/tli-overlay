@@ -2,6 +2,83 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.20.5 — 19.10.2026 (TLI 52, časť 2/2 — perUser NSIS inštalátor + kód na tichú aktualizáciu, zatiaľ VYPNUTÉ naživo)
+
+Úloha `2026-10-19-1408-agent.md` (HNED, self-queued pokračovanie časti 1/2,
+nedozorovaný beh). core 0.13.13→0.13.14.
+
+**Prieskum namiesto hádania (zadanie žiadalo overiť v dokumentácii nainštalovanej
+verzie, nie z pamäte).** Stiahnutý `installer.nsi` zo šablóny `tauri-bundler`
+presne v pripnutej verzii (`2.12.3`, z `Cargo.lock`) a zdroj oficiálneho
+`tauri-plugin-updater` (vetva `v2`) ukázali niečo podstatné: **Tauriho vlastná
+NSIS šablóna UŽ MÁ zabudovanú migráciu z WiX (MSI) inštalácie** — pri inštalácii
+hľadá v `HKLM\...\Uninstall` záznam so zhodným `DisplayName`+`Publisher`
+(u nás „Tvoj Tatko TLI Overlay"+„Tvoj Tatko" — presne naše hodnoty) a keď ho
+nájde, bezpodmienečne spustí jeho `UninstallString` (`msiexec /X{GUID}`) PRED
+vlastnou inštaláciou. Žiadny vlastný NSIS hook na migráciu teda netreba písať —
+je to presne scenár zo zadania (bod 3), len už hotový v knižnici. A oficiálny
+`tauri-plugin-updater` pri režime `Quiet` posiela NSIS inštalátoru presne
+`/S /UPDATE /R /ARGS ""` — `/S` = ticho bez okien, `/UPDATE` nemaže nastavenia
+appky, `/R /ARGS ""` appku po dokončení reštartuje. perUser (`installMode:
+currentUser`) inštalátor pritom žiada `RequestExecutionLevel user`, teda
+**žiadny UAC** — jediná výnimka je práve tá vstavaná migrácia zo starej
+perMachine MSI, ktorá spúšťa `msiexec` vyžadujúci admin práva, a teda UAC JEDEN
+RAZ pri prvom prechode. To je presne to, čo zadanie (bod 3) výslovne prijalo
+ako OK — a odvtedy (ďalšie aktualizácie už idú z perUser na perUser) žiadny
+ďalší UAC nepríde.
+
+**Čo je hotové:**
+- `tauri.conf.json`: `bundle.targets` rozšírené o `"nsis"` vedľa `"msi"`
+  (ten sa nemenil), `bundle.windows.nsis.installMode: "currentUser"`.
+- `core/src/aktualizacia.rs`: `Manifest` dostal dve nové VOLITEĽNÉ polia
+  (`installerUrl`/`installerSha256`, `#[serde(default)]`) — starý aj nový
+  manifest bez nich sa parsuje bez chyby (`stary_manifest_bez_installer_poli_
+  sa_precita`), `skontroluj_manifest` ich adresu overuje rovnako prísne ako
+  `msiUrl` (`manifest_s_cudzim_installerom_je_chyba`, rovnaká poistka ako pri
+  incidente A2Tools). Nová `over_sha256()` (crate `sha2`, čistý Rust, beží aj
+  v CI na Linuxe) overuje odtlačok stiahnutých bajtov. 4 nové core testy,
+  405→409 celkom, všetky zelené.
+- `src-tauri/src/klient.rs`: `stiahni_installer()` — stiahne `-setup.exe` ako
+  surové bajty (nie text), adresu si overuje rovnako ako `stiahni_manifest`.
+- `src-tauri/src/main.rs`: `pokus_o_tichu_aktualizaciu()` — keď manifest nesie
+  `installerUrl`+`installerSha256`, appka stiahne inštalátor, overí SHA256,
+  zapíše do `%TEMP%`, spustí ho s `/S /UPDATE /R /ARGS ""` a sama sa ukončí
+  (`app.exit(0)`). Keď polia chýbajú (dnešný živý manifest), funkcia sa vráti
+  hneď na prvom riadku bez akéhokoľvek I/O — appka sa správa presne ako
+  doteraz (odkaz na MSI vo footeri/Nastaveniach).
+- `.github/workflows/release.yml`: `cargo tauri build` teraz stavia OBA
+  targety, workflow premenuje/hashuje/pripína k releasu aj `-setup.exe` vedľa
+  `.msi` (premenovaný na „Release MSI + NSIS").
+
+**Čo je ZÁMERNE VYPNUTÉ a prečo.** Live `latest-tli.json` naďalej NEMÁ polia
+`installerUrl`/`installerSha256` — `pokus_o_tichu_aktualizaciu` sa preto u
+ŽIADNEHO dnes nainštalovaného klienta (vrátane tejto verzie, keby sa nasadila)
+nikdy nespustí. Dôvod je rovnaký, aký napísal Richard v zadaní (bod 5): toto je
+zmena na jeho DENNE POUŽÍVANOM nástroji a jej prvý skutočný beh (ten jeden UAC
+pri migrácii) sa má overiť OSOBNE na jeho reálnom PC, nie naslepo auto-updatom
+širokej skupine. `tli-v0.20.5` je preto bezpečný na vydanie — existujúci
+klienti uvidia novú verziu, kliknú „Check for Updates" a dostanú presne ten istý
+tok ako doteraz (MSI v prehliadači), pretože manifest ešte nič nové neponúka.
+NSIS `-setup.exe` je ale od tohto releasu k dispozícii ako asset na GitHube —
+Richard si ho môže sám stiahnuť a ručne vyskúšať na svojom stroji (čistá
+inštalácia aj migrácia z existujúcej `tli-v0.20.4` MSI).
+
+**Čo NIE je hotové a čaká na ďalší krok:**
+- CI build oboch targetov (krok 2 zo zadania) — spustený, výsledok zapísaný
+  nižšie/v `JOURNAL.md` podľa toho, čo stihol tento beh.
+- Automatizované overenie migrácie perMachine→perUser na Windows runneri
+  (vlastný workflow, inštalácia starej MSI → inštalácia novej NSIS → kontrola,
+  že stará zmizla a nová je v `HKCU`) — ak ho tento beh nestihol, je to ďalší
+  krok, nie dôvod needeploynúť 0.20.5 (ten je, ako vyššie, bez rizika).
+- Krok 5 zo zadania: OSOBNÉ overenie na Richardovom PC. Toto sa nedá spraviť
+  z CT 111 ani z CI — čaká to na Richarda a na rozhodnutie, kedy (a či vôbec
+  automaticky) sa `installerUrl` doplní do živého `latest-tli.json`.
+- Bod 7 zo zadania (auto-ceny, overenie proti reálnemu logu) — nezmenilo sa
+  oproti 0.20.4: stále čaká, kým Richard pošle obsah `tli-overlay.log`.
+- `installer-hooks.nsh` sa NEPÍSAL — po prieskume vyššie by bol zbytočný
+  (migrácia je už vstavaná), a písať vlastný hook len preto, že to zadanie
+  navrhovalo ako možnosť, by bol kód navyše bez dôvodu.
+
 ## 0.20.4 — 19.10.2026 (TLI 52, časť 1/2 — periodická kontrola aktualizácie, loguje a ukazuje posledný výsledok)
 
 Úloha `2026-10-19-1321-mcp.md` (HNED), nedozorovaný beh. core sa nemenilo

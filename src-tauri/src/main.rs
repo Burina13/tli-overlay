@@ -2859,6 +2859,86 @@ fn spusti_aktualizacia_vlakno(app: AppHandle) {
     });
 }
 
+/// TLI 52, časť 2/2 — jadro Richardovej pôvodnej žiadosti („self-update musí
+/// fungovať bez UAC, potichu, aj keď appka beží celý deň"). Spustí sa VÝHRADNE
+/// vtedy, keď manifest ponúka `installerUrl`/`installerSha256` (NSIS
+/// `-setup.exe`) — starý manifest aj appky, ktoré tieto polia nepoznajú, sa
+/// touto vetvou vôbec neprejdú a appka sa správa presne ako doteraz (odkaz na
+/// MSI, ručné stiahnutie). **Toto je zámerná poistka, nie dočasný stav:** do
+/// živého `latest-tli.json` sa `installerUrl` nedopĺňa, kým krok 3 zo zadania
+/// (migrácia z perMachine MSI na perUser NSIS) nie je osobne overený na
+/// Richardovom reálnom PC — pozri CHANGELOG k tejto verzii.
+///
+/// Vracia `true`, len keď sa inštalátor naozaj podarilo spustiť (appka sa v
+/// tom prípade sama ukončí, `app.exit(0)` nižšie) — volajúci s návratovou
+/// hodnotou ďalej nič nerobí, len to umožňuje test bez skutočného Windows
+/// procesu (vracia `false`, keď polia chýbajú, ešte pred akýmkoľvek I/O).
+#[cfg(windows)]
+fn pokus_o_tichu_aktualizaciu(app: &AppHandle, manifest: &tli_overlay_core::aktualizacia::Manifest) -> bool {
+    let (Some(url), Some(sha)) = (&manifest.installer_url, &manifest.installer_sha256) else {
+        return false;
+    };
+
+    denik::zapis("update", &format!("tichá inštalácia {}: sťahujem {url}", manifest.version));
+
+    let bajty = match klient::stiahni_installer(url) {
+        Ok(b) => b,
+        Err(chyba) => {
+            denik::zapis("update", &format!("tichá inštalácia zlyhala (stiahnutie): {chyba}"));
+            return false;
+        }
+    };
+
+    if !tli_overlay_core::aktualizacia::over_sha256(&bajty, sha) {
+        denik::zapis(
+            "update",
+            "tichá inštalácia PRESKOČENÁ: SHA256 stiahnutého inštalátora nesedí s manifestom",
+        );
+        return false;
+    }
+
+    let cesta = std::env::temp_dir().join(format!("tli-overlay-update-{}.exe", manifest.version));
+    if let Err(chyba) = std::fs::write(&cesta, &bajty) {
+        denik::zapis("update", &format!("tichá inštalácia zlyhala (zápis na disk): {chyba}"));
+        return false;
+    }
+
+    // Presne tie isté argumenty, aké posiela oficiálny `tauri-plugin-updater`
+    // pri `WindowsUpdateInstallMode::Quiet` — overené priamo v nainštalovanej
+    // verzii `tauri-bundler` 2.12.3 (`installer.nsi` zo šablóny) a v zdroji
+    // pluginu (`crates/.../updater.rs::updater_parameters`), nie z pamäte:
+    // `/S` = úplne ticho bez okien, `/UPDATE` = nemaž nastavenia hráča,
+    // `/R /ARGS ""` = appku po dokončení znova spusti. perUser (`installMode:
+    // currentUser`) inštalátor pritom NEŽIADA UAC vôbec — jediná výnimka je
+    // JEDNORAZOVÁ migrácia zo starej perMachine MSI, ktorú rieši VSTAVANÁ
+    // logika šablóny NSIS (porovnáva `DisplayName`+`Publisher` v
+    // `HKLM\...\Uninstall` s našimi a spustí `msiexec /X{GUID}` zo starej
+    // `UninstallString`) — nie vlastný kód tejto appky. Tá jedna UAC výzva je
+    // presne to, čo zadanie výslovne akceptovalo ako OK (CHANGELOG, bod 3).
+    match std::process::Command::new(&cesta)
+        .args(["/S", "/UPDATE", "/R", "/ARGS", ""])
+        .spawn()
+    {
+        Ok(_) => {
+            denik::zapis(
+                "update",
+                &format!("tichá inštalácia {} spustená, appka sa ukončuje", manifest.version),
+            );
+            app.exit(0);
+            true
+        }
+        Err(chyba) => {
+            denik::zapis("update", &format!("tichá inštalácia zlyhala (spustenie inštalátora): {chyba}"));
+            false
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn pokus_o_tichu_aktualizaciu(_app: &AppHandle, _manifest: &tli_overlay_core::aktualizacia::Manifest) -> bool {
+    false
+}
+
 /// Jedno miesto, kadiaľ prechádza KAŽDÁ kontrola aktualizácie (periodická aj
 /// ručná) — zapíše riadok `[update]` do `tli-overlay.log` s nájdenou verziou
 /// alebo chybou, uloží výsledok do `Stav` (aby ho footer okna `hlavne` vedel
@@ -2881,6 +2961,7 @@ fn vykonaj_kontrolu_aktualizacie(app: &AppHandle) -> KontrolaAktualizacie {
                     env!("CARGO_PKG_VERSION")
                 ),
             );
+            pokus_o_tichu_aktualizaciu(app, &manifest);
             KontrolaAktualizacie {
                 cas,
                 najdena_verzia: Some(manifest.version),

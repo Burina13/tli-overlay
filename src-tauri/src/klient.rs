@@ -202,6 +202,40 @@ pub fn stiahni_manifest() -> Result<String, String> {
     }
 }
 
+/// Stiahne NSIS `-setup.exe` pre tichú aktualizáciu (TLI 52, časť 2/2) — surové
+/// bajty, nie text. Adresu si volajúci overuje VOPRED cez
+/// `aktualizacia::je_povolena_adresa` (rovnako ako pri `stiahni_manifest`),
+/// SHA256 bajtov sa porovnáva až po stiahnutí (`aktualizacia::over_sha256`),
+/// lebo obsah ani veľkosť vopred nepoznáme. Limit 200 MB je len poistka proti
+/// nezmyselne veľkej odpovedi — náš inštalátor má rádovo desiatky MB.
+pub fn stiahni_installer(url: &str) -> Result<Vec<u8>, String> {
+    use std::io::Read;
+
+    if !aktualizacia::je_povolena_adresa(url) {
+        return Err("Nepovolená adresa inštalátora pre aktualizácie.".to_string());
+    }
+
+    let odpoved = ureq::get(url)
+        .timeout(std::time::Duration::from_secs(180))
+        .call();
+
+    match odpoved {
+        Ok(res) => {
+            let mut bajty = Vec::new();
+            res.into_reader()
+                .take(200 * 1024 * 1024)
+                .read_to_end(&mut bajty)
+                .map_err(|e| format!("Nepodarilo sa stiahnuť inštalátor: {e}"))?;
+            Ok(bajty)
+        }
+        Err(ureq::Error::Status(kod, odpoved)) => {
+            let telo = odpoved.into_string().unwrap_or_default();
+            Err(api::sprava_chyby(kod, &telo))
+        }
+        Err(ina) => Err(api::sprava_siete(&ina.to_string())),
+    }
+}
+
 /// Stiahne celý sprievodca Erika 1 zo servera (TLI 11, krok 4).
 pub fn stiahni_guide(
     n: &Nastavenia,
