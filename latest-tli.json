@@ -1,6 +1,6 @@
 {
-  "version": "0.20.4",
-  "notes": "TLI 52 (časť 1/2): appka teraz sama kontroluje aktualizáciu hneď pri štarte a potom každých 30 minút (predtým vôbec, kontrola bola len ručná cez tlačidlo „Check for Updates“). Každá kontrola zapisuje riadok do lokálneho logu appky a footer ukazuje „posledná kontrola HH:MM“. Tichá inštalácia bez potvrdzovania (UAC) je ešte len pripravovaná — pozri CHANGELOG.",
-  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.20.4/Tvoj-Tatko-TLI-Overlay_0.20.4_x64_en-US.msi",
-  "msiSha256": "c47b0fffc4bbf7f470b75309d7c152798be4f02f065b8dd04d8b4ff1720a0154"
+  "version": "0.20.5",
+  "notes": "TLI 52 (časť 2/2): pripravený perUser inštalátor (NSIS) vedľa doterajšieho MSI — zatiaľ len príprava, tichá aktualizácia bez potvrdzovania (UAC) sa ešte NESPÚŠŤA automaticky, kým ju Richard osobne neoverí. Update sa teda správa úplne rovnako ako doteraz: klikneš „Check for Updates“, appka ťa odkáže na MSI na stiahnutie. Pozri CHANGELOG.",
+  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.20.5/Tvoj-Tatko-TLI-Overlay_0.20.5_x64_en-US.msi",
+  "msiSha256": "c90e4d6c876c448e31780ee47917ade33f4f5bf2c4be46671550974d6a792fcf"
 }
