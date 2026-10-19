@@ -1,6 +1,6 @@
 {
-  "version": "0.21.0",
-  "notes": "TLI 55: loot overlay počas mapy teraz ukazuje živý ČAS a FE/h (predtým '—', kým mapa bežala) a pod nimi aj súhrn za celú session (zisk/čas/FE-h), presne ako TITrack. Názov mapy v nadpise je preložený, už nie surové interné meno enginu. Pozri CHANGELOG.",
-  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.21.0/Tvoj-Tatko-TLI-Overlay_0.21.0_x64_en-US.msi",
-  "msiSha256": "dc7272dcf7caadfe05d90b0c0774542fd6cb2e6c552e50744840e92d001c075e"
+  "version": "0.21.1",
+  "notes": "TLI 54b: farby a mená rarít v paneli appky rozšírené na 6 stupňov (pridaný Červený/Supreme medzi Oranžový a Chromatický) — potvrdené, že živá hra má 6 stupňov rarity, nie 5. Server-side zmena je na tli.tvojtatko.sk, appka len dobieha farby. Pozri CHANGELOG.",
+  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.21.1/Tvoj-Tatko-TLI-Overlay_0.21.1_x64_en-US.msi",
+  "msiSha256": "e359e774f9af4588ff801536c9d0d9aa176753627a61eecd881f8d1cd0a91569"
 }
