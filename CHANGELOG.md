@@ -2,6 +2,37 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.20.8 — 19.10.2026 (TLI 53 časť 2/N doplnok — zmenšené ikony, CI overenie štartu padalo)
+
+Úloha `2026-10-19-1537-agent.md` (to isté zadanie, bezprostredné pokračovanie
+0.20.7). core bez zmeny.
+
+**Skutočný nájdený regres, nie kozmetika.** `tli-v0.20.7` (nižšie) pridal
+30 MB ikon (256×256 px originály z TITracku) a MSI vyrástlo
+6,3 MB → 36,4 MB. `verify-install.yml` nad `tli-v0.20.7` **DVAKRÁT za sebou
+zlyhal** na kroku „Appka sa po inštalácii naozaj spustí" — appka sa
+nainštalovala aj spustila (log mal `[start] … spustené`), ale do 10 s
+nestihla dokončiť registráciu klávesových skratiek (`registrácia OK` sa
+v denníku vôbec neobjavilo). Appka nemá konzolu (`windows_subsystem =
+"windows"`), takže presnú príčinu (pravdepodobne čas na rozbalenie/
+spracovanie oveľa väčšieho vstavaného balíka assetov vo `WebView2` pred
+tým, než `setup()` vôbec začne) sa nedalo vidieť priamo — zmenšenie
+payloadu je ale lacnejšia a bezpečnejšia oprava než hĺbať v internom
+mechanizme Tauri bundlera.
+
+**Oprava:** appka ikony nikdy nekreslí väčšie než 18×18 px (CSS
+`.economy-ikona`/`.inventar-ikona`/`.odznak-ikona`/`.dropy .ikona`) — 256 px
+zdroj bol teda ~14× väčší, než appka vôbec kedy zobrazí. Všetkých 1 859
+súborov v `ui/ikony/polozky/` prevzorkovaných na **48×48 px** (2,67×
+rezerva nad 18 px pre HiDPI, nie 1:1) cez Pillow (`Image.LANCZOS` +
+WEBP kvalita 85) — vizuálne nerozoznateľné pri skutočnej veľkosti
+zobrazenia, súbory **30,0 MB → 3,66 MB** (takmer 8×). MSI by sa touto
+zmenou malo vrátiť na rádovo jednotky MB nad pôvodných 6,3 MB, nie
+desiatky.
+
+`verify-install.yml` spustený znova nad `tli-v0.20.8` po tejto oprave —
+výsledok v `JOURNAL.md` 19.10.2026.
+
 ## 0.20.7 — 19.10.2026 (TLI 53 časť 2/N — offline ikony položiek, oprava skutočnej CSP chyby)
 
 Úloha `2026-10-19-1537-agent.md` (HNED, self-queued pokračovanie TLI 53 časti
