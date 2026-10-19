@@ -10,6 +10,10 @@ on:
         description: "Tag releasu, ktorého MSI sa má overiť"
         required: true
         default: "tli-v0.1.0"
+      stara_verzia:
+        description: "Tag STARÉHO releasu pre job `migracia` (musí byť NIŽŠÍ než `tag`, inak NSIS migrácia nemá čo robiť — rovnaká verzia sa „migruje“ na samu seba a test by prešiel naprázdno). Predvolené tli-v0.20.4 = posledný čisto-MSI release pred NSIS (TLI 52)."
+        required: false
+        default: "tli-v0.20.4"
 
 jobs:
   migracia:
@@ -26,36 +30,47 @@ jobs:
     name: Migrácia stará MSI → nová NSIS (TLI 52 poistka)
     runs-on: windows-latest
     steps:
-      - name: Stiahnuť MSI, NSIS setup.exe a kontrolné súčty
+      - name: Stiahnuť STARÚ MSI (iný, nižší tag), NOVÝ NSIS setup.exe a kontrolné súčty
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           $tag = "${{ inputs.tag }}"
+          $staryTag = "${{ inputs.stara_verzia }}"
+          if ($staryTag -eq $tag) {
+            throw "stara_verzia ($staryTag) sa rovná tag ($tag) — migrácia na rovnakú verziu nič neoverí (NSIS šablóna nemá dôvod meniť nič), zvoľ nižší stara_verzia"
+          }
           $hlavicky = @{
             Authorization = "Bearer $env:GH_TOKEN"
             Accept        = "application/vnd.github+json"
           }
-          $rel = Invoke-RestMethod "https://api.github.com/repos/Burina13/tli-overlay/releases/tags/$tag" -Headers $hlavicky
-          $msi = $rel.assets | Where-Object name -like "*.msi" | Select-Object -First 1
-          $nsis = $rel.assets | Where-Object name -like "*-setup.exe" | Select-Object -First 1
-          $sums = $rel.assets | Where-Object name -eq "SHA256SUMS.txt" | Select-Object -First 1
-          if (-not $msi) { throw "release $tag nemá .msi asset" }
+          $relNova = Invoke-RestMethod "https://api.github.com/repos/Burina13/tli-overlay/releases/tags/$tag" -Headers $hlavicky
+          $relStara = Invoke-RestMethod "https://api.github.com/repos/Burina13/tli-overlay/releases/tags/$staryTag" -Headers $hlavicky
+
+          $msi = $relStara.assets | Where-Object name -like "*.msi" | Select-Object -First 1
+          $nsis = $relNova.assets | Where-Object name -like "*-setup.exe" | Select-Object -First 1
+          $sumsStara = $relStara.assets | Where-Object name -eq "SHA256SUMS.txt" | Select-Object -First 1
+          $sumsNova = $relNova.assets | Where-Object name -eq "SHA256SUMS.txt" | Select-Object -First 1
+          if (-not $msi) { throw "release $staryTag (stara_verzia) nemá .msi asset" }
           if (-not $nsis) { throw "release $tag nemá *-setup.exe asset — tento tag ešte nestaval NSIS target (TLI 52)" }
           Invoke-WebRequest $msi.browser_download_url -OutFile stara.msi
           Invoke-WebRequest $nsis.browser_download_url -OutFile novy-setup.exe
-          Invoke-WebRequest $sums.browser_download_url -OutFile SHA256SUMS.txt
+          Invoke-WebRequest $sumsStara.browser_download_url -OutFile SHA256SUMS-stara.txt
+          Invoke-WebRequest $sumsNova.browser_download_url -OutFile SHA256SUMS-nova.txt
 
-          foreach ($pair in @(@{subor="stara.msi"; nazov=$msi.name}, @{subor="novy-setup.exe"; nazov=$nsis.name})) {
-            $riadok = (Get-Content SHA256SUMS.txt) | Where-Object { $_ -match [regex]::Escape($pair.nazov) }
-            if (-not $riadok) { throw "SHA256SUMS.txt neobsahuje riadok pre $($pair.nazov)" }
+          foreach ($pair in @(@{subor="stara.msi"; nazov=$msi.name; sums="SHA256SUMS-stara.txt"},
+                               @{subor="novy-setup.exe"; nazov=$nsis.name; sums="SHA256SUMS-nova.txt"})) {
+            $riadok = (Get-Content $pair.sums) | Where-Object { $_ -match [regex]::Escape($pair.nazov) }
+            if (-not $riadok) { throw "$($pair.sums) neobsahuje riadok pre $($pair.nazov)" }
             $ocakavany = ($riadok -split '\s+')[0]
             $skutocny = (Get-FileHash $pair.subor -Algorithm SHA256).Hash.ToLower()
             if ($ocakavany -ne $skutocny) { throw "SHA256 nesedí pre $($pair.nazov): $skutocny vs $ocakavany" }
           }
           $verzia = $tag -replace '^tli-v', ''
-          Write-Host "tag=$tag verzia=$verzia"
+          $staraVerzia = $staryTag -replace '^tli-v', ''
+          Write-Host "stara_verzia=$staryTag ($staraVerzia) -> tag=$tag ($verzia)"
           "VERZIA=$verzia" >> $env:GITHUB_ENV
+          "STARA_VERZIA=$staraVerzia" >> $env:GITHUB_ENV
 
       - name: Nainštalovať STARÚ MSI (simuluje existujúceho hráča pred migráciou)
         shell: pwsh
@@ -68,7 +83,10 @@ jobs:
                                      "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*" `
                                      -ErrorAction SilentlyContinue | Where-Object DisplayName -eq "Tvoj Tatko TLI Overlay"
           if (-not $zaznam) { throw "stará MSI nie je v HKLM Uninstall — predpoklad testu neplatí" }
-          Write-Host "stará MSI nainštalovaná, HKLM Uninstall záznam existuje"
+          if ($zaznam.DisplayVersion -ne $env:STARA_VERZIA) {
+            throw "nainštalovaná stará MSI má verziu $($zaznam.DisplayVersion), čakala sa $env:STARA_VERZIA — stiahol sa zlý asset"
+          }
+          Write-Host "stará MSI ($($zaznam.DisplayVersion)) nainštalovaná, HKLM Uninstall záznam existuje"
 
       - name: Vložiť marker do %APPDATA% (nastavenia/logy, ktoré MUSIA prežiť)
         shell: pwsh
