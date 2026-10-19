@@ -15,10 +15,10 @@
 (function (globalny) {
     "use strict";
 
-    // Farby rarít — tie isté ako na webe (TLI 9b: 5 stupňov White..Chromatic,
-    // nie 6 — predtým Normal..Rainbow).
-    var TIER_FARBA = ["#d1d5db", "#60a5fa", "#c084fc", "#fb923c", "#ff0055"];
-    var TIER_SK = ["Biely", "Modrý", "Fialový", "Oranžový", "Chromatický"];
+    // Farby rarít — tie isté ako na webe (TLI 54b, 19.10.2026: 6 stupňov
+    // White..Supreme..Chromatic — revízia TLI 9b, pozri tartarus-pravidla.md).
+    var TIER_FARBA = ["#d1d5db", "#60a5fa", "#c084fc", "#fb923c", "#e8303f", "#ff0055"];
+    var TIER_SK = ["Biely", "Modrý", "Fialový", "Oranžový", "Červený", "Chromatický"];
     var BEAST_SK = { mammoth: "Mamut", lion: "Lev", wolf: "Vlk", rat: "Potkan" };
 
     // Portréty štyroch väzňov — zjednodušené oproti webu (panel ich kreslí

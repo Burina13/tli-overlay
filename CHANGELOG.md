@@ -2,6 +2,29 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.21.1 — 19.10.2026 (TLI 54b — Supreme potvrdené: 6. stupeň rarity, nie 5)
+
+Úloha `2026-10-19-1731-agent.md` (HNED, self-queued pokračovanie TLI 54). Core
+sa nemenil (`0.13.16`) — čisto UI zmena.
+
+TLI 9/9b (15.10.2026) zlúčilo stupne Supreme a Rainbow do jedného najvyššieho
+„chromatic" na základe preview videa spred štartu sezóny. Táto úloha overila
+hypotézu na ĎALŠOM materiáli (561 uložených analýz z CT 114 za 16.–19.10.2026,
+nielen na pôvodnej snímke TLI 54) a potvrdila, že živá hra má 6 stupňov:
+Richardove reálne screenshoty ukazujú VÝRAZNE ČERVENÚ (crimson) auru väzňa na
+viacerých samostatných snímkach (3 session cez 2 dni), vizuálne jasne
+odlišnú od oranžovej (Orange/Legendary) aj od skutočnej dúhovej animácie
+Chromatic (panel „Chromatic Prisoner"). Engine navyše vlastným pravidlom
+garantuje, že skutočný najvyšší stupeň nikdy nezostáva na doske — čokoľvek
+tam sedí hodiny, nemôže byť Chromatic, musí byť stupeň medzi Orange a
+Chromatic. Plný dôkaz: `docs/fakty/hry/torchlight-infinite/tartarus-pravidla.md`
+(ops repo) § Aktualizácia 19.10.2026 (TLI 54b).
+
+**`ui/ikony.js`:** `TIER_FARBA`/`TIER_SK` rozšírené na 6 položiek (pridaná
+položka „Červený"/`#e8303f` medzi Oranžový a Chromatický). Server-side
+(engine, `tli-web`) migrácia je v `ops` repe, nie tu — tento release len
+zosúlaďuje farby/mená v paneli appky s novým 6-stupňovým modelom.
+
 ## 0.21.0 — 19.10.2026 (TLI 55 — loot overlay počas mapy: živý ČAS/FE-h, session súhrn, preklad názvu mapy)
 
 Úloha `2026-10-19-1715-mcp.md` (HNED, zaradené za TLI 53/56). Core sa nemenil
