@@ -2,6 +2,34 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## core 0.13.19 — 19.10.2026 (TLI 59a — solver „adjacent" prenesený do core Rust, ZATIAĽ BEZ RELEASU appky)
+
+Úloha `2026-10-19-2135-mcp.md` (HNED, Opus, Gemini nesmel písať kód, limit 45 min).
+Zadanie malo 4 body (lokálne rozpoznanie mriežky+OCR+template matching, port
+solvera, prepnutie lokálne/server, overenie presnosti na reálnych snímkach) —
+do 45 min sa zmestil len bod 2, zvyšok (bod 1, 3, 4) pokračuje ako **TLI 59b**
+(self-queued, pozri `ROZPRACOVANE` v `STAV.md` repa `ops`).
+
+**Čo pribudlo:** `core/src/canvas.rs` (dátový model plátna — `CanvasStav`,
+`Bunka`, `SlotRuky`, `CielMiesania`, `Paint`, `volne_susedne_bunky`) a
+`core/src/canvas_solver.rs` (`navrhni_kroky`) — riadok-po-riadku port
+`canvas_model.py`/`canvas_solver.py` z `stacks/games/tli/engine` (repo `ops`).
+Implementovaný je len smer `adjacent` (jediný overený), presne ako v Pythone.
+12 nových testov na TOM ISTOM fixture ako `testy-canvas-solver.py` (reálny
+screenshot 15.10.2026) + ručne porovnaný JSON výstup oboch solverov na
+rovnakom vstupe — kroky, poradie, texty `dovod` aj `istota` vyšli identicky.
+
+**ZÁMERNE BEZ appka release a BEZ appka version bumpu (`0.21.3` ostáva).**
+Modul nemá volajúceho v `src-tauri/` — lokálne rozpoznanie mriežky/ruky (bod 1
+zadania), ktoré by `CanvasStav` napĺňalo, ešte neexistuje (čaká na TLI 59b).
+Vydať appku s mŕtvym, nikým nevolaným kódom by znamenalo CI/MSI/redeploy bez
+jedinej zmeny pre hráča — rovnaký dôvod, prečo TLI 5 krok 1 (server endpoint
+`/api/sablony`) tiež nešiel von appka-releasom. Release príde s TLI 59b, keď
+bude mať appka čo lokálne spočítať. `cargo test` v `core/` (435/435 OK vrátane
+2 existujúcich e2e sád), `cargo check` v `src-tauri/` čisto (bez nových
+warningov). Žiadna správa do `#torchlight` — tá podľa zadania patrí k reálne
+nameranému zrýchleniu rady, ktoré ešte nie je dosiahnuté.
+
 ## 0.21.3 — 19.10.2026 (TLI 58 — rada zhasne až po kliku myšou, nie po čase)
 
 Úloha `2026-10-19-2134-mcp.md` (HNED, 30 min). Core `0.13.17` → `0.13.18`

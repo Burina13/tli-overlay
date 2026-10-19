@@ -7,6 +7,8 @@
 
 pub mod api;
 pub mod aktualizacia;
+pub mod canvas;
+pub mod canvas_solver;
 pub mod denik;
 pub mod nastavenia;
 pub mod obraz;
