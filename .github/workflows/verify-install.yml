@@ -116,6 +116,25 @@ jobs:
           Start-Sleep -Seconds 5
           Get-Process -Name "Tvoj Tatko TLI Overlay" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 
+      - name: Diagnostika (vždy, aj keď ďalší krok zlyhá — čo presne NSIS spravil)
+        shell: pwsh
+        if: always()
+        run: |
+          Write-Host "--- HKLM Uninstall (náš produkt) ---"
+          Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*",
+                            "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*" `
+                            -ErrorAction SilentlyContinue | Where-Object DisplayName -eq "Tvoj Tatko TLI Overlay" |
+            Format-List DisplayName, DisplayVersion, InstallLocation, UninstallString, InstallDate | Out-String | Write-Host
+          Write-Host "--- HKCU Uninstall (náš produkt) ---"
+          Get-ItemProperty "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*" -ErrorAction SilentlyContinue |
+            Where-Object DisplayName -eq "Tvoj Tatko TLI Overlay" |
+            Format-List DisplayName, DisplayVersion, InstallLocation, UninstallString, InstallDate | Out-String | Write-Host
+          Write-Host "--- $env:LOCALAPPDATA hľadanie exe ---"
+          Get-ChildItem -Path $env:LOCALAPPDATA -Recurse -Filter "Tvoj Tatko TLI Overlay.exe" -ErrorAction SilentlyContinue |
+            Select-Object FullName, @{n="Verzia";e={$_.VersionInfo.ProductVersion}} | Format-Table | Out-String | Write-Host
+          Write-Host "--- C:\Program Files\Tvoj Tatko TLI Overlay ---"
+          Get-ChildItem "C:\Program Files\Tvoj Tatko TLI Overlay" -ErrorAction SilentlyContinue | Format-Table Name, LastWriteTime | Out-String | Write-Host
+
       - name: Stará MSI zmizla z HKLM Uninstall (vstavaná migrácia NSIS šablóny)
         shell: pwsh
         run: |
