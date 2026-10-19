@@ -7,6 +7,8 @@ mod guide;
 mod klient;
 mod okna;
 #[cfg(windows)]
+mod ocr;
+#[cfg(windows)]
 mod okno;
 #[cfg(windows)]
 mod snimka;

@@ -72,6 +72,49 @@ pub fn percento_odlisnych_pixelov(pred: &[u8], po: &[u8], prah: u8) -> Option<f6
     Some(pocet_odlisnych as f64 / pred.len() as f64)
 }
 
+/// Vyreže z celistvého RGB poľa (3 bajty/pixel, zhora nadol) obdĺžnik zadaný
+/// v normalizovaných Box01 súradniciach (0..1 vzhľadom na celý obrázok) —
+/// rovnaký tvar, aký vracia `canvas_rozlozenie::platno_bunka_box01`/
+/// `ruka_slot_box01`. Používa sa pred OCR (TLI 59b časť 2, bod 1): OCR nad
+/// malým výrezom panelu je rýchlejšie a presnejšie než nad celou snímkou.
+///
+/// Vracia `None`, keď je vstupné pole menšie než `sirka`×`vyska`×3 (poškodená
+/// snímka) alebo keď by výsledný výrez mal nulovú šírku/výšku (napr. `oblast`
+/// leží celá mimo obrázka).
+pub fn orez_box01(rgb: &[u8], sirka: u32, vyska: u32, oblast: crate::suradnice::Pole) -> Option<(Vec<u8>, u32, u32)> {
+    if sirka == 0 || vyska == 0 || rgb.len() < (sirka as usize * vyska as usize * 3) {
+        return None;
+    }
+
+    // Zámerne sa nezaokrúhľuje smerom von (napr. `ceil` na pravý okraj) — pri
+    // zápornom alebo prebytočnom `oblast` by to vecne znamenalo žiadosť o
+    // pixel mimo obrázka, čo `min`/`max` nižšie aj tak orezáva na platný rozsah.
+    let x0 = ((oblast.x * sirka as f64) as i64).clamp(0, sirka as i64) as u32;
+    let y0 = ((oblast.y * vyska as f64) as i64).clamp(0, vyska as i64) as u32;
+    let x1 = (((oblast.x + oblast.w) * sirka as f64) as i64).clamp(0, sirka as i64) as u32;
+    let y1 = (((oblast.y + oblast.h) * vyska as f64) as i64).clamp(0, vyska as i64) as u32;
+
+    if x1 <= x0 || y1 <= y0 {
+        return None;
+    }
+
+    let nova_sirka = x1 - x0;
+    let nova_vyska = y1 - y0;
+    let mut vyrez = vec![0u8; (nova_sirka * nova_vyska * 3) as usize];
+
+    let riadok_zdroj_bajty = sirka as usize * 3;
+    let riadok_ciel_bajty = nova_sirka as usize * 3;
+
+    for riadok in 0..nova_vyska as usize {
+        let zdroj_offset = (y0 as usize + riadok) * riadok_zdroj_bajty + x0 as usize * 3;
+        let ciel_offset = riadok * riadok_ciel_bajty;
+        vyrez[ciel_offset..ciel_offset + riadok_ciel_bajty]
+            .copy_from_slice(&rgb[zdroj_offset..zdroj_offset + riadok_ciel_bajty]);
+    }
+
+    Some((vyrez, nova_sirka, nova_vyska))
+}
+
 #[cfg(test)]
 mod testy {
     use super::*;
@@ -158,5 +201,50 @@ mod testy {
             255, 0, 0,   255, 255, 255, // povodny riadok 1 presunuty hore
             0, 0, 255,   0, 255, 0, // povodny riadok 0 presunuty dole
         ]);
+    }
+
+    fn pole(x: f64, y: f64, w: f64, h: f64) -> crate::suradnice::Pole {
+        crate::suradnice::Pole { index: 0, x, y, w, h }
+    }
+
+    #[test]
+    fn test_orez_box01_presny_pravy_dolny_kvadrant() {
+        // 4x4 obrázok, 3 bajty/pixel, hodnota bajtu = (riadok*4 + stĺpec)
+        let mut rgb = vec![0u8; 4 * 4 * 3];
+        for riadok in 0..4u32 {
+            for stlpec in 0..4u32 {
+                let i = ((riadok * 4 + stlpec) * 3) as usize;
+                let hodnota = (riadok * 4 + stlpec) as u8;
+                rgb[i] = hodnota;
+                rgb[i + 1] = hodnota;
+                rgb[i + 2] = hodnota;
+            }
+        }
+
+        let (vyrez, sirka, vyska) = orez_box01(&rgb, 4, 4, pole(0.5, 0.5, 0.5, 0.5)).unwrap();
+        assert_eq!((sirka, vyska), (2, 2));
+        // Pravý dolný kvadrant 4x4 obrázka sú pixely (2,2),(3,2),(2,3),(3,3) = hodnoty 10,11,14,15
+        assert_eq!(vyrez, vec![10, 10, 10, 11, 11, 11, 14, 14, 14, 15, 15, 15]);
+    }
+
+    #[test]
+    fn test_orez_box01_cela_snimka() {
+        let rgb: Vec<u8> = (0..(3 * 3 * 3)).map(|i| i as u8).collect();
+        let (vyrez, sirka, vyska) = orez_box01(&rgb, 3, 3, pole(0.0, 0.0, 1.0, 1.0)).unwrap();
+        assert_eq!((sirka, vyska), (3, 3));
+        assert_eq!(vyrez, rgb);
+    }
+
+    #[test]
+    fn test_orez_box01_mimo_obrazka_vracia_none() {
+        let rgb = vec![0u8; 4 * 4 * 3];
+        assert_eq!(orez_box01(&rgb, 4, 4, pole(1.5, 1.5, 0.2, 0.2)), None);
+        assert_eq!(orez_box01(&rgb, 4, 4, pole(0.5, 0.5, 0.0, 0.0)), None);
+    }
+
+    #[test]
+    fn test_orez_box01_prilis_mala_vstupna_snimka_vracia_none() {
+        let rgb = vec![0u8; 10]; // menej než 4*4*3
+        assert_eq!(orez_box01(&rgb, 4, 4, pole(0.0, 0.0, 1.0, 1.0)), None);
     }
 }

@@ -2,6 +2,50 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## core 0.13.22 — 20.10.2026 (TLI 59b, časť 2a: OCR scaffold + parsovanie textu cieľa/max levelu, bez appka releasu)
+
+Úloha `2026-10-20-0005-agent.md` (HNED, self-queued pokračovanie TLI 59b
+časti 1). Pôvodné zadanie žiadalo bod 1 „OCR (`Windows.Media.Ocr`) + parsuj
+text cieľa a max levelu". Táto čiastková úloha rieši len bod 1 — body 2–5
+(rozpoznanie obsahu bunky, template matching, prepínač lokálne/server,
+overenie presnosti) sú príliš veľký kus na jeden beh a sú self-queued ako
+TLI 59b2b, presne ako zadanie samo predpokladalo.
+
+**Nový modul `core/src/canvas_ocr.rs`** — `parsuj_ciel_text(text) ->
+Option<CielMiesania>` a `parsuj_max_level(text) -> Option<i64>`, čistý Rust
+bez WinRT, **skutočne otestovaný na CT 111** nad vzormi textu odpísanými
+priamo zo zadania TLI 59 („Fill a Adjacent Cell with a Monster Paint (0/3)",
+„Current Max Paint Level7" — OCR bez medzery pred číslom je bežný artefakt,
+keď je číslo v hre vo vlastnom farebnom rámiku hneď vedľa nápisu). Smer
+(`ciel.smer`) sa odvodzuje LEN z overenej vety „Fill a `<X>` Cell …" — iný
+tvar necháva smer zámerne prázdny (`""`) namiesto uhádnutia, solver prázdny
+smer bezpečne odmietne. `kluc_riadok`/`kluc_stlpec` sa z textu neodvodia
+nikdy (vizuálna vlastnosť bunky, rieši TLI 59b2b) a vždy vrátia `None`.
+17 nových testov.
+
+**Nový `core::obraz::orez_box01`** — čisté (bez Windows) vyrezanie Box01
+obdĺžnika z RGB bufferu, používa rovnaký `Pole` tvar ako
+`canvas_rozlozenie.rs`. Pripravené pre OCR len nad malým výrezom panelu, až
+raz bude jeho geometria zmeraná (zatiaľ nie je — pozri `ocr.rs` nižšie).
+5 nových testov. **`core` 491/491 testov zelených.**
+
+**Nový `src-tauri/src/ocr.rs` (`#[cfg(windows)]`)** — `rozpoznaj_text`/
+`rozpoznaj_text_oblasti` nad `Windows::Media::Ocr::OcrEngine`
+(`TryCreateFromUserProfileLanguages` → `RecognizeAsync` → blokujúce `.get()`
+→ `.Text()`), vstup je `SoftwareBitmap` zostavený z RGB cez `DataWriter`/
+`IBuffer` (`Storage_Streams`). Nové featury kraty `windows`: `Media_Ocr`,
+`Graphics_Imaging`, `Storage_Streams`. **API overené priamo zo zdroja
+vygenerovaných bindingov `windows` 0.58.0** (nie z pamäte — poučenie z
+TLI 40), ale **tento súbor sa na Linuxe nedá skompilovať ani spustiť** — je
+celý za `#[cfg(windows)]`, overí ho až Windows CI (`Testy` workflow).
+`cargo check` na `src-tauri` na CT 111 prebehol čisto (modul je mimo
+Linux-cieľa, rovnaké zámerné rozhodnutie ako `canvas.rs`/`canvas_rozlozenie.rs`
+predtým). **Modul zatiaľ nemá volajúceho** (rovnako ako `canvas.rs` v
+TLI 59a) — `rozpoznaj_text` OCRuje zatiaľ celú snímku (funkčne správne,
+`canvas_ocr` si vzor nájde kdekoľvek v texte), presná geometria panelu
+cieľa/max levelu (analogická `canvas_rozlozenie.rs` pre mriežku) ešte nie je
+zmeraná a je súčasťou TLI 59b2b.
+
 ## core 0.13.21 — 20.10.2026 (TLI 59b, časť 1: pevná geometria mriežky Frozen Canvasu, bez appka releasu)
 
 Úloha `2026-10-19-2244-agent.md` (HNED, self-queued pokračovanie TLI 59a).

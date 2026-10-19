@@ -43,6 +43,14 @@ windows = { version = "=0.58.0", features = [
   # hráč klikol myšou (skrytie rady až po kliku, nie po čase).
   "Win32_UI_Input_KeyboardAndMouse",
   "Win32_System_Threading",
+  # TLI 59b časť 2 — `Windows::Media::Ocr` na čítanie textu cieľa miešania
+  # a `Current Max Paint Level` z obrazovky Frozen Canvasu (`src/ocr.rs`).
+  # `SoftwareBitmap` (Graphics_Imaging) je vstup OCR enginu, `DataWriter`/
+  # `IBuffer` (Storage_Streams) je jediná cesta, ako doň dostať surové RGB
+  # bajty zo `snimka::Snimka` bez prechodu cez súbor na disku.
+  "Media_Ocr",
+  "Graphics_Imaging",
+  "Storage_Streams",
 ] }
 # Čítanie Steam inštalácie z registra (TLI 11c) — len Windows, appka aj tak
 # beží len tam.
