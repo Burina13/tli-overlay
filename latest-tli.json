@@ -1,6 +1,6 @@
 {
-  "version": "0.20.0",
-  "notes": "TLI 47: upload logu overený end-to-end (nebol pokazený, len predošlé analýzy čítali starý priečinok) + viditeľný stav v pätičke dashboardu; CURRENT INVENTORY hotové (nová tabuľka batohu s hľadaním/triedením/Hide, NET WORTH zo skutočnej hodnoty batohu + zisku); pätička varuje, keď sa log neposiela alebo appka ešte nevidela Sort. Toast nad hrou pre tieto upozornenia, ťahateľný loot overlay a plný Economy pohľad prídu v ďalšej časti.",
-  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.20.0/Tvoj-Tatko-TLI-Overlay_0.20.0_x64_en-US.msi",
-  "msiSha256": "a7387c41a58fb7f14d5481ab1eef7d58ebe74c1fcff67c858282cd0a69c25bd3"
+  "version": "0.20.1",
+  "notes": "TLI 48: opravený bug z 19.10. (appka pri štarte omylom odfotila celú obrazovku namiesto trhu); upozornenia „Log sa neposiela na server“ a „Sortni inventár“ chodia odteraz aj ako toast priamo nad hru, nielen v pätičke; loot overlay (mini-panel) je ťahateľný za horný pásik bez Ctrl+F8 a pamätá si polohu; Economy je teraz plný prehliadač cien (meno, ikona, zdroj, zmena za 24 h, hľadanie, filter, triedenie).",
+  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.20.1/Tvoj-Tatko-TLI-Overlay_0.20.1_x64_en-US.msi",
+  "msiSha256": "0b564b33e6302283e935675935eb5700a1265e6f8a7b5f3581610915ea2f8a2a"
 }
