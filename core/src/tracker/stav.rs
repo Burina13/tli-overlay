@@ -14,6 +14,12 @@ const MENA_FE: &str = "100300";
 /// nehrozí teda, že by sa sem omylom priplietli veci zo skladu.
 pub const STRANKA_BATOHU_OSTATNE: u32 = 103;
 
+/// `InitBagData` riadky tej istej stránky do seba zlejú do jednej DÁVKY, keď
+/// medzi nimi neprešlo viac než tento prah — zhodné s TITrackovým
+/// `_init_batch_threshold_seconds = 2.0` (`titrack.collector.collector`),
+/// aby appka nad TÝM ISTÝM logom hranicu dávky videla rovnako (TLI 51).
+const PRAH_DAVKY_INIT_MS: i64 = 2_000;
+
 /// Zaradenie zmeny batohu podľa toho, PREČO nastala.
 /// `Ostatne` je predvolená hodnota zámerne: mimo bloku `ItemChange@` nevieme,
 /// prečo sa batoh zmenil, a tipovať „drop" by nafúklo zisk.
@@ -274,6 +280,16 @@ pub struct NalezCeny {
 #[derive(Debug, Default)]
 pub struct Sledovac {
     batoh: BTreeMap<(u32, u32), (u32, i64)>,
+    /// Stránka posledného spracovaného `InitBagData` riadku — spolu s
+    /// `posledny_init_cas` určuje, či ďalší taký riadok patrí do TEJ ISTEJ
+    /// dávky (pozri `PRAH_DAVKY_INIT_MS`). Hra pri triedení inventára vydá
+    /// kompletný nový dump stránky s inak prečíslovanými slotmi; bez tohto
+    /// rozlíšenia by stará (už nepoužívaná) slotová dvojica `(stránka, slot)`
+    /// v `batoh` ostala navždy a `batoh_stranka` by rovnakú položku počítala
+    /// dvakrát — v starom aj novom slote (TLI 51).
+    posledny_init_stranka: Option<u32>,
+    /// Čas posledného `InitBagData` riadku (pozri `posledny_init_stranka`).
+    posledny_init_cas: Option<Cas>,
     aktualny_dovod: Dovod,
     aktualny_beh: Option<Beh>,
     dalsi_id_behu: u64,
@@ -440,6 +456,21 @@ impl Sledovac {
             }
             Udalost::Batoh(zmena) => {
                 if zmena.je_init {
+                    let nova_davka = self.posledny_init_stranka != Some(zmena.stranka)
+                        || match (cas, self.posledny_init_cas) {
+                            (Some(t), Some(posledny)) => t.rozdiel_ms(&posledny) > PRAH_DAVKY_INIT_MS,
+                            _ => false,
+                        };
+                    if nova_davka {
+                        // Nová dávka tejto stránky: staré sloty, čo sa do nej
+                        // nedostali (hra ich pri triedení presunula inde),
+                        // zmiznú — presne ako `clear_page_slot_states` v
+                        // TITracku (TLI 51).
+                        self.batoh.retain(|&(s, _), _| s != zmena.stranka);
+                    }
+                    self.posledny_init_stranka = Some(zmena.stranka);
+                    self.posledny_init_cas = cas;
+
                     self.batoh
                         .insert((zmena.stranka, zmena.slot), (zmena.polozka, zmena.num));
                 } else {
@@ -1580,5 +1611,124 @@ mod testy {
         let kampan = sledovac.aktualny().unwrap();
         assert!(!kampan.otvorenie_bez_spotreby);
         assert_eq!(kampan.podpis_vstupov(), "bez-vstupu");
+    }
+
+    // ─── TLI 51 (19.10.2026): duplicitné položky na NEEXPONOVANÝCH stránkach
+    // batohu 100-102 (overenie proti TITracku, TLI 49 bod 3) ──
+    //
+    // Riadky nižšie sú doslovný výpis z Richardovho reálneho `UE_game.log`
+    // (CT 114, `/srv/games/tli/tracker/362294563374891019/logy/UE_game.log`,
+    // 19.10.2026 ~07:50) — hra periodicky vydáva KOMPLETNÝ nový dump každej
+    // stránky batohu (napr. pri triedení inventára) a medzi dvoma takými
+    // dumpmi tej istej stránky vie tú istú položku preradiť do INÉHO slotu.
+    // Appka pred opravou držala `self.batoh` navždy kumulatívne (slot sa
+    // zmazal, len keď prišiel explicitný `RemoveBagItem`/`Modfy Num=0`) —
+    // položka tak ostala naraz v STAROM aj NOVOM slote a `batoh_stranka`
+    // ju započítala dvakrát. Oprava: `InitBagData` riadok inej stránky než
+    // bola tá PREDOŠLÁ (presne podľa TITrackovho `_last_init_page`/
+    // `_last_init_time`, `collector.py:_handle_bag_event`) vyčistí všetky
+    // staré sloty tej stránky predtým, než sa doň zapíše nová hodnota.
+
+    #[test]
+    fn tli51_novy_init_inej_stranky_vycisti_stare_sloty_predoslej_stranky() {
+        let mut sledovac = Sledovac::novy();
+
+        // Prvý dump: položka 8125 (Hound's Fangs) v slote 42 stránky 101.
+        sledovac.riadok(&riadok_s_casom(7, 50, 45,
+            "BagMgr@:InitBagData PageId = 101 SlotId = 42 ConfigBaseId = 8125 Num = 1"));
+
+        // Dump pokračuje na INÚ stránku (102) — presne tu TITrack aj appka
+        // (po oprave) zaznamenajú zmenu „posledná dávková stránka".
+        sledovac.riadok(&riadok_s_casom(7, 50, 45,
+            "BagMgr@:InitBagData PageId = 102 SlotId = 1 ConfigBaseId = 100300 Num = 61"));
+
+        // O sekundu neskôr: ĎALŠÍ kompletný dump stránky 101, tá istá
+        // položka 8125 je teraz v INOM slote (10). Bez opravy by appka mala
+        // 8125 v OBOCH slotoch naraz (42 aj 10) = počet 2 namiesto 1.
+        sledovac.riadok(&riadok_s_casom(7, 50, 46,
+            "BagMgr@:InitBagData PageId = 101 SlotId = 10 ConfigBaseId = 8125 Num = 1"));
+
+        let batoh101 = sledovac.batoh_stranka(101);
+        assert_eq!(
+            batoh101.get(&8125),
+            Some(&1),
+            "8125 sa nesmie počítať dvakrát v starom (42) aj novom (10) slote (TLI 51)"
+        );
+    }
+
+    #[test]
+    fn tli51_viacero_polozok_na_tej_istej_stranke_sa_prerada_naraz() {
+        // Rovnaký vzor ako vyššie, ale TRI položky na stránke 102 naraz —
+        // presne zistenie z TLI 49 bodu 3 (appka 4/4/420, TITrack 2/2/210).
+        let mut sledovac = Sledovac::novy();
+
+        sledovac.riadok(&riadok_s_casom(7, 50, 45,
+            "BagMgr@:InitBagData PageId = 102 SlotId = 39 ConfigBaseId = 382192 Num = 2"));
+        sledovac.riadok(&riadok_s_casom(7, 50, 45,
+            "BagMgr@:InitBagData PageId = 102 SlotId = 40 ConfigBaseId = 380201 Num = 2"));
+        sledovac.riadok(&riadok_s_casom(7, 50, 45,
+            "BagMgr@:InitBagData PageId = 102 SlotId = 41 ConfigBaseId = 502100 Num = 210"));
+
+        // Dump odbehne na inú stránku a vráti sa — presne ako v reálnom logu
+        // (medzitým prebehol dump stránky 100/101/103).
+        sledovac.riadok(&riadok_s_casom(7, 50, 46,
+            "BagMgr@:InitBagData PageId = 103 SlotId = 1 ConfigBaseId = 430000 Num = 11"));
+
+        // Nový dump stránky 102: tie isté tri položky, ale v iných slotoch.
+        sledovac.riadok(&riadok_s_casom(7, 50, 47,
+            "BagMgr@:InitBagData PageId = 102 SlotId = 36 ConfigBaseId = 382192 Num = 2"));
+        sledovac.riadok(&riadok_s_casom(7, 50, 47,
+            "BagMgr@:InitBagData PageId = 102 SlotId = 37 ConfigBaseId = 380201 Num = 2"));
+        sledovac.riadok(&riadok_s_casom(7, 50, 47,
+            "BagMgr@:InitBagData PageId = 102 SlotId = 38 ConfigBaseId = 502100 Num = 210"));
+
+        let batoh102 = sledovac.batoh_stranka(102);
+        assert_eq!(batoh102.get(&382192), Some(&2));
+        assert_eq!(batoh102.get(&380201), Some(&2));
+        assert_eq!(batoh102.get(&502100), Some(&210));
+    }
+
+    #[test]
+    fn tli51_opakovany_init_tej_istej_stranky_v_tej_istej_davke_sa_nemaze() {
+        // Kontrolný prípad k obom vyšším: keď dva `InitBagData` riadky tej
+        // istej stránky prídu TESNE PO SEBE (do 2 s, žiadna iná stránka
+        // medzi nimi — presne ako dump1→dump2 v reálnom logu, kde sa 380201
+        // ešte NEPRERADIL), nesmie sa nič vyčistiť — druhý riadok len
+        // potvrdí tú istú hodnotu v tom istom slote.
+        let mut sledovac = Sledovac::novy();
+        sledovac.riadok(&riadok_s_casom(7, 50, 45,
+            "BagMgr@:InitBagData PageId = 102 SlotId = 40 ConfigBaseId = 380201 Num = 2"));
+        sledovac.riadok(&riadok_s_casom(7, 50, 46,
+            "BagMgr@:InitBagData PageId = 102 SlotId = 40 ConfigBaseId = 380201 Num = 2"));
+
+        let batoh102 = sledovac.batoh_stranka(102);
+        assert_eq!(batoh102.get(&380201), Some(&2));
+        assert_eq!(batoh102.len(), 1);
+    }
+
+    #[test]
+    fn tli51_current_inventory_stranka_103_ostava_nezmenena() {
+        // TLI 51 bod 5: oprava sa týka LEN interného stavu stránok 100-102 —
+        // CURRENT INVENTORY (103), ktoré appka hráčovi UKAZUJE, musí naďalej
+        // sčítavať viacero slotov tej istej položky presne ako predtým
+        // (test_batoh_stranka_scita_viac_slotov_tej_istej_polozky vyššie).
+        // Oba riadky patria do TEJ ISTEJ dávky stránky 103 (ako v reálnom
+        // dumpe — jedna stránka sa vypíše vcelku, nie preložená inou), takže
+        // sa navzájom nevyčistia.
+        let mut sledovac = Sledovac::novy();
+        sledovac.riadok(&riadok_s_casom(7, 50, 45,
+            "BagMgr@:InitBagData PageId = 103 SlotId = 8 ConfigBaseId = 400021 Num = 9"));
+        sledovac.riadok(&riadok_s_casom(7, 50, 45,
+            "BagMgr@:InitBagData PageId = 103 SlotId = 9 ConfigBaseId = 400014 Num = 12"));
+
+        // Dump pokračuje na ĎALŠIU stránku (101) — nesmie sa tým spätne
+        // dotknúť už zapísanej stránky 103.
+        sledovac.riadok(&riadok_s_casom(7, 50, 46,
+            "BagMgr@:InitBagData PageId = 101 SlotId = 1 ConfigBaseId = 3970660 Num = 1"));
+
+        let batoh103 = sledovac.batoh_stranka(103);
+        assert_eq!(batoh103.get(&400021), Some(&9));
+        assert_eq!(batoh103.get(&400014), Some(&12));
+        assert_eq!(batoh103.len(), 2);
     }
 }

@@ -2,6 +2,49 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.20.3 — 19.10.2026 (TLI 51 — oprava duplicitných položiek na neexponovaných stránkach batohu)
+
+Úloha `2026-10-19-1123-agent.md` (HNED, dokončenie zistenia z TLI 49 bodu 3).
+core 0.13.12→0.13.13 (len core, appka/UI sa nemenili).
+
+**Príčina.** Hra pri triedení inventára vydá kompletný nový dump celej
+stránky batohu (`BagMgr@:InitBagData`) a tá istá položka v ňom môže dostať
+INÝ `SlotId` než mala predtým. Appka doteraz držala `self.batoh` ako trvalú
+mapu `(stránka, slot) → položka`, ktorú mazal len explicitný
+`RemoveBagItem`/`Modfy Num=0` — pri preradení do iného slotu preto stará
+dvojica `(stránka, starý_slot)` ostala navždy a `batoh_stranka()` tú istú
+položku započítala dvakrát (starý aj nový slot). Zistené pri overení proti
+TITracku nad Richardovým reálnym logom (TLI 49 bod 3): `8125` (2 namiesto
+1), `380201` a `382192` (4 namiesto 2), `502100` (420 namiesto 210) — všetko
+na stránkach 101/102, ktoré appka hráčovi nikdy neukazuje (len interný stav).
+
+**Oprava** (`core/src/tracker/stav.rs`) replikuje presne TITrackovu logiku
+(`titrack.collector.collector:_handle_bag_event`, MIT): appka si pamätá
+stránku a čas POSLEDNÉHO spracovaného `InitBagData` riadku; keď ďalší taký
+riadok patrí INEJ stránke (alebo tej istej po >2 s medzere — zhodné
+s TITrackovým `_init_batch_threshold_seconds`), všetky staré sloty TEJ
+stránky sa pred zápisom novej dávky vyčistia. Opakované `InitBagData`
+riadky tej istej stránky v tesnom slede (do 2 s, bez inej stránky medzi
+nimi — bežný priebeh jedného dumpu) sa nedotknú ničoho.
+
+**Overenie:** nezávislé spustenie skutočného zdrojového kódu TITracku
+(`astockman99/TITrack`, klon z GitHubu) nad TÝM ISTÝM 91 MB logom
+(780 550 riadkov, rovnaký úsek ako TLI 49) potvrdilo presnú zhodu so
+stránkou po oprave — 8125=1, 380201=2, 382192=2, 502100=210, a CELÉ stránky
+101 (40/40 položiek) aj 102 (39/39) sa teraz zhodujú s TITrackom **bezo
+zvyšku**, nielen pri týchto štyroch položkách. **Stránka 103 (CURRENT
+INVENTORY, jediná viditeľná v UI) ostala bezo zmeny** (35/35, 0 rozdielov,
+rovnako pred aj po oprave) — porovnané priamo proti pôvodnému JSON výstupu
+diagnostického nástroja `core/examples/tli_over_titrack.rs` spred opravy.
+Stránka 100 (výstroj) sa s TITrackom nezhoduje zámerne a bez súvisu s touto
+opravou — TITrack stránku Gear vedome vynecháva z trackovania celú
+(`InventoryPage.GEAR`/`EXCLUDED_PAGES`, „prices too dependent on affixes"),
+appka ju interne sleduje ďalej, ale nikde ju nevystavuje.
+4 nové unit testy v `core/src/tracker/stav.rs` (`tli51_*`) s doslovnými
+riadkami z Richardovho logu — všetky 405 existujúcich testov `core/`
+(401 unit + 4+8 e2e) prešli bez zmeny. `src-tauri` len `cargo check`
+(bez `cargo test` — disk rootfs CT 111).
+
 ## 0.20.2 — 19.10.2026 (TLI 49 — kategórie v Economy, čerstvosť cien všade, overenie proti TITracku)
 
 Úloha `2026-10-19-1011-mcp.md` (HNED, dokončenie zvyšku TLI 48). core
