@@ -12,6 +12,7 @@ mod okno;
 mod snimka;
 mod stav;
 mod tracker;
+mod zber_canvas;
 
 use serde_json::json;
 use stav::{KontrolaAktualizacie, RezimUpravyKontext, Stav};
@@ -923,7 +924,7 @@ pub(crate) fn krok_cakania_na_klik(faza: FazaKliku, stlacene: bool) -> (FazaKlik
 /// neodchytáva a nič nemení, takže klik ide do hry ďalej bez zmeny (zadanie:
 /// „hook nič neblokuje").
 #[cfg(windows)]
-fn tlacidlo_mysi_dole() -> bool {
+pub(crate) fn tlacidlo_mysi_dole() -> bool {
     use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON, VK_RBUTTON};
     // Vysoký bit = klávesa/tlačidlo je PRÁVE dole. Nízky bit („stlačené od
     // posledného volania") sa zámerne nepoužíva — ten si Windows nuluje pri
@@ -938,7 +939,7 @@ fn tlacidlo_mysi_dole() -> bool {
 /// Mimo Windowsu sa klik nedá zistiť — overlay tam aj tak nebeží, appka sa
 /// na Linuxe kompiluje len kvôli testom a `cargo check` v CI.
 #[cfg(not(windows))]
-fn tlacidlo_mysi_dole() -> bool {
+pub(crate) fn tlacidlo_mysi_dole() -> bool {
     false
 }
 
@@ -2141,6 +2142,8 @@ fn uloz_prepinac(
             "ceny_sync" => n.ceny_sync = zapnuty,
             "upload_logov" => n.upload_logov = zapnuty,
             "ceny_obrazovka_zapnute" => n.ceny_obrazovka_zapnute = zapnuty,
+            // TLI 60 — automatické učenie Frozen Canvasu na pozadí.
+            "ucenie_canvas_zapnute" => n.ucenie_canvas_zapnute = zapnuty,
             ine => return Err(format!("Neznámy prepínač: {ine}")),
         }
         n.normalizuj();
@@ -3390,6 +3393,12 @@ fn main() {
             // TLI 52 bod 2: kontrola aktualizácie hneď pri štarte a potom
             // á 30 min — appka predtým kontrolu nespúšťala sama vôbec.
             spusti_aktualizacia_vlakno(handle.clone());
+
+            // TLI 60: automatické učenie Frozen Canvasu na pozadí — klik myšou
+            // nad otvoreným Canvasom odfotí okno hry a snímka ide frontou na
+            // server. Vlákna bežia vždy; samotný prepínač sa číta pri každom
+            // kliku, takže zapnutie/vypnutie v Nastaveniach nepotrebuje reštart.
+            zber_canvas::spusti(handle.clone());
 
             if let Some(overlay) = app.get_webview_window(OVERLAY) {
                 let _ = overlay.set_ignore_cursor_events(true);

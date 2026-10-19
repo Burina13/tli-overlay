@@ -2,6 +2,67 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.22.0 (core 0.13.20) — 19.10.2026 (TLI 60 — Frozen Canvas: automatické učenie na pozadí)
+
+Úloha `2026-10-19-2135-mcp-2.md` (HNED, Opus, Gemini nesmel písať kód).
+Richard 19.10.2026: „kľudne nech si všetko, čo spravím, fotí a na pozadí pošle
+agentovi na učenie, a na konci dňa nech sa naučí."
+
+**Čo appka odteraz robí sama.** Keď je v hre otvorený Frozen Canvas, po KAŽDOM
+kliku myšou odfotí okno hry (300 ms po kliku), snímku odloží do fronty na disku
+a na pozadí ju pošle na `?modul=canvas&zber=1`. Nič neukazuje, na nič nečaká,
+nijako nezdrží hráča — jediná stopa je denník appky. Prepínač **„Učenie Canvas
+na pozadí"** v Nastaveniach je **predvolene ZAPNUTÝ** (zadanie) a je to **iné
+pole než „Zber dát"** (`zber_dat_zapnute`), ktorý ostáva ručný, predvolene
+vypnutý a mení, čo appka vykreslí v rade. Dve nezávislé veci, nezlievajú sa.
+
+**Ako appka pozná, že je Canvas otvorený, keď TLI 59 ešte nie je hotová.**
+Zadanie pripúšťalo oboje — „podľa mriežky z TLI 59, **prípadne podľa pomeru
+farieb**". Lokálne rozpoznanie mriežky (TLI 59b) ešte neexistuje, takže je to
+pomer farieb: `core/src/canvas_detekcia.rs` vzorkuje 192×108 bodov a počíta dve
+veličiny — podiel „ľadových" bodov v celom okne a podiel modrastých bodov vo
+výreze, kde na Canvase leží mriežka 6×6. **Prahy nie sú odhad:** odmerali sa na
+309 reálnych snímkach z `/srv/games/tli/analyzy` (17 Canvas, 292 ostatných).
+Canvas má `ladovy` ≥ 0,102 a `mriezka_modra` ≥ 0,797; zo zvyšných 292 snímok má
+pri modrej mriežke `ladovy` nanajvýš 0,021 a pri ľadovom nádychu `mriezka_modra`
+nanajvýš 0,123. Prahy 0,07 a 0,65 ležia hlboko v tej medzere a **obe podmienky
+musia platiť naraz** — samotná modrá by chytila obrazovku odmien, samotný ľadový
+nádych zasa zasneženú mapu. Na tej sade: **17/17 správne, 0/292 falošne kladných.**
+Šesť vzoriek (vrátane oboch najtesnejších protipríkladov) je v `core/testy-data/`
+ako surové RGB a testy v CI počítajú tie isté čísla.
+
+**Čo appka zámerne NEFOTÍ** — keď je prepínač vypnutý; keď je vyčerpaný denný
+strop 500 snímok; častejšie než raz za 250 ms v Canvase a raz za 2 s mimo neho
+(aby sa pri klikaní v boji nefotilo pri každom kliku); **keď okno hry nie je
+v popredí** (inak by snímka zachytila prehliadač alebo rozhovor, ktorý má hráč
+cez hru); a keď nad hrou práve svieti vlastný panel appky alebo beží ručná
+analýza (na snímke by bola rada, nie čistá obrazovka).
+
+**Fronta.** Zmenšený JPEG 1280 px / q75 (menej než 1920 pri ručnej analýze —
+tieto snímky idú do nočného učenia, nie do vision modelu na radu). Súbory ležia
+v `canvas-zber/` vedľa nastavení, zapisujú sa cez `.tmp` + premenovanie a
+odosielajú sa v poradí vzniku. Keď server nie je dostupný, odstup rastie 5 s →
+10 s → … → 5 min a snímky čakajú ďalej. **Nič sa nemaže:** pri 1000 čakajúcich
+sa len prestane pridávať; jediný súbor, ktorý zo spoolu mizne, je ten, ktorý
+server práve prijal a trvalo archivoval.
+
+**Čo pribudlo v kóde:** `core/src/canvas_detekcia.rs` (detekcia + 9 testov nad
+reálnymi vzorkami), `core/src/zber_fronta.rs` (denný strop s prechodom cez
+polnoc, odstupy, exponenciálny retry, mená súborov — 13 testov),
+`src-tauri/src/zber_canvas.rs` (dve vlákna: sledovač kliku a odosielač),
+`klient::posli_canvas_zber`, nastavenie `ucenie_canvas_zapnute`,
+`Nastavenia::adresa_analyza_canvas_zber()`, prepínač v `ui/nastavenia.html/js`
+a `ui/testy-nastavenia-ucenie-canvas.e2e.mjs` (4 jsdom testy — predvolené
+zapnutie musí prežiť aj staré `nastavenia.json` bez toho poľa).
+
+**Serverová strana (repo `ops`, nie tu):** `/api/analyza?modul=canvas&zber=1`
+bol pripravený už 19.10. večer; `scripts/games/tli-canvas-ucenie.py` odvodzuje
+pravidlá aj pre ostatné smery miešania a súhrn chodí do `#torchlight` ráno.
+
+**Rollback:** prepínač „Učenie Canvas na pozadí" v Nastaveniach (vypnutie
+zastaví fotenie aj odosielanie okamžite, fronta na disku ostane) alebo
+predchádzajúci release `tli-v0.21.3`.
+
 ## core 0.13.19 — 19.10.2026 (TLI 59a — solver „adjacent" prenesený do core Rust, ZATIAĽ BEZ RELEASU appky)
 
 Úloha `2026-10-19-2135-mcp.md` (HNED, Opus, Gemini nesmel písať kód, limit 45 min).

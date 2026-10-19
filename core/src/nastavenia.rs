@@ -117,6 +117,19 @@ pub struct Nastavenia {
     /// (`src-tauri/src/main.rs::konfliktne_moduly`), nie tu — táto štruktúra
     /// o ostatných dvoch poliach nič nevie.
     pub hotkey_trh: String,
+    /// Automatické učenie Frozen Canvasu na pozadí (TLI 60,
+    /// `2026-10-19-2135-mcp-2.md`). Keď je zapnuté a appka na obrazovke
+    /// rozpozná otvorený Frozen Canvas, po KAŽDOM kliku myšou odfotí okno
+    /// hry a na pozadí snímku pošle na server na učenie (`?modul=canvas&zber=1`).
+    /// Richardovi sa pritom NIČ neukazuje a na nič sa nečaká — je to zber
+    /// podkladov pre nočné učenie solvera, nie rada.
+    ///
+    /// **Predvolene ZAPNUTÉ** — priamo zo zadania Richarda 19.10.2026:
+    /// „kľudne nech si všetko, čo spravím, fotí a na pozadí pošle agentovi
+    /// na učenie". To ho odlišuje od `zber_dat_zapnute` vyššie, ktorý je
+    /// RUČNÝ (klávesa pre Canvas), predvolene vypnutý a navyše mení, čo appka
+    /// ukáže v paneli rady. Sú to dve nezávislé veci a nesmú sa zliať.
+    pub ucenie_canvas_zapnute: bool,
     /// CURRENT INVENTORY (TLI 47, `2026-10-19-0744-mcp.md` bod 2) — zoznam
     /// `ConfigBaseId`, ktoré hráč tlačidlom „Hide" schoval zo zoznamu na
     /// predaj (napr. veci, čo si chce nechať, nie predať). Appka nič
@@ -136,6 +149,7 @@ impl Default for Nastavenia {
             proces_hry: "Torchlight Infinite, Torchlight".to_string(),
             zvuk: false,
             zber_dat_zapnute: false,
+            ucenie_canvas_zapnute: true,
             tema: "svetla".to_string(),
             cesta_logu: String::new(),
             tracker_zapnuty: true,
@@ -200,6 +214,14 @@ impl Nastavenia {
     /// Frozen Canvas (TLI 4b) — ten istý endpoint, iný modul.
     pub fn adresa_analyza_canvas(&self) -> String {
         self.adresa("/api/analyza?modul=canvas")
+    }
+
+    /// Automatický zber na učenie (TLI 60) — ten istý endpoint ako
+    /// `adresa_analyza_canvas`, navyše `zber=1`. Server si tým označí riadok
+    /// ako „prišlo to samo z pozadia", nie z hráčovho stlačenia klávesy
+    /// (`stacks/games/tli-web/app.py`, `vysledok["zber"]`).
+    pub fn adresa_analyza_canvas_zber(&self) -> String {
+        self.adresa("/api/analyza?modul=canvas&zber=1")
     }
 
     /// Ceny z obrazovky trhu (TLI 22) — ten istý endpoint, iný modul.
@@ -373,6 +395,41 @@ mod testy {
     fn zber_dat_zapnute_je_predvolene_vypnute() {
         let n = Nastavenia::default();
         assert!(!n.zber_dat_zapnute);
+    }
+
+    #[test]
+    fn ucenie_canvas_je_predvolene_zapnute_a_je_to_ine_pole_nez_zber_dat() {
+        // TLI 60: automatický zber na pozadí je predvolene ZAPNUTÝ (zadanie
+        // Richarda), RUČNÝ zber klávesou ostáva predvolene vypnutý. Keby sa
+        // tie dve polia niekedy zliali, prestane platiť jedno alebo druhé.
+        let n = Nastavenia::default();
+        assert!(n.ucenie_canvas_zapnute);
+        assert!(!n.zber_dat_zapnute);
+    }
+
+    #[test]
+    fn stary_json_bez_ucenia_canvas_sa_nacita_so_zapnutym_predvolenim() {
+        // Hráč, ktorý appku používa od TLI 50, nemá toto pole v súbore —
+        // `#[serde(default)]` mu ho musí doplniť ako zapnuté, inak by sa
+        // zber u nikoho okrem čerstvých inštalácií nerozbehol.
+        let n = Nastavenia::z_jsonu(r#"{"kluc":"abc","zber_dat_zapnute":true}"#);
+        assert!(n.ucenie_canvas_zapnute);
+        assert!(n.zber_dat_zapnute);
+    }
+
+    #[test]
+    fn ucenie_canvas_sa_da_vypnut_a_prezije_round_trip() {
+        let mut n = Nastavenia::default();
+        n.ucenie_canvas_zapnute = false;
+        let n2 = Nastavenia::z_jsonu(&n.do_jsonu());
+        assert!(!n2.ucenie_canvas_zapnute);
+    }
+
+    #[test]
+    fn adresa_zberu_nesie_modul_aj_priznak_zber() {
+        let n = Nastavenia::default();
+        assert_eq!(n.adresa_analyza_canvas_zber(),
+                   "https://tli.tvojtatko.sk/api/analyza?modul=canvas&zber=1");
     }
 
     #[test]

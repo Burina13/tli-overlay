@@ -18,6 +18,7 @@ const inpAutoskrytie = document.getElementById("inp-autoskrytie");
 const inpSkrytieRezim = document.getElementById("inp-skrytie-rezim");
 const inpZvuk = document.getElementById("inp-zvuk");
 const inpZberDat = document.getElementById("inp-zber-dat");
+const inpUcenieCanvas = document.getElementById("inp-ucenie-canvas");
 
 const btnUkazatKluc = document.getElementById("btn-ukazat-kluc");
 const btnTest = document.getElementById("btn-test");
@@ -240,6 +241,11 @@ document.addEventListener("DOMContentLoaded", async () => {
         zosuladSkrytieRezim();
         inpZvuk.checked = !!nastavenia.zvuk;
         inpZberDat.checked = !!nastavenia.zber_dat_zapnute;
+        // TLI 60: predvolené je ZAPNUTÉ, takže `undefined` (staré nastavenia
+        // bez tohto poľa) sa musí správať ako `true` — rovnako ako
+        // `#[serde(default)]` na strane Rustu. Obyčajné `!!` by hráčovi
+        // pri prvom otvorení Nastavení zber potichu vyplo.
+        inpUcenieCanvas.checked = nastavenia.ucenie_canvas_zapnute !== false;
         const priehladnost = nastavenia.rozlozenie && nastavenia.rozlozenie.priehladnost;
         inpPriehladnost.value = typeof priehladnost === "number" ? priehladnost : 1;
 
@@ -323,7 +329,8 @@ formular.addEventListener("submit", async (e) => {
         autoskrytie_s: parseInt(inpAutoskrytie.value, 10) || 0,
         skryt_radu_klikom: inpSkrytieRezim.value !== "cas",
         zvuk: inpZvuk.checked,
-        zber_dat_zapnute: inpZberDat.checked
+        zber_dat_zapnute: inpZberDat.checked,
+        ucenie_canvas_zapnute: inpUcenieCanvas.checked
     };
 
     try {

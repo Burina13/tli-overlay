@@ -115,6 +115,32 @@ pub fn posli_analyzu_canvas(n: &Nastavenia, jpeg: Vec<u8>) -> Result<VysledokCan
     }
 }
 
+/// Automatický zber na učenie (TLI 60) — snímka ide na ten istý endpoint ako
+/// Frozen Canvas, len s `zber=1`, a odpoveď servera nás NEZAUJÍMA. Appka
+/// hráčovi nič neukazuje, takže netreba parsovať ani solverom navrhnuté kroky;
+/// stačí vedieť, či server snímku prijal (aby sa dala vyhodiť z fronty), alebo
+/// nie (aby sa skúsila znova).
+///
+/// Kratší timeout než pri ručnej analýze (60 s) je zámer: na pozadí nikto
+/// nečaká, a keď server odpovedá pomaly, je lepšie sa k snímke vrátiť neskôr
+/// než držať spojenie a blokovať zvyšok fronty.
+pub fn posli_canvas_zber(n: &Nastavenia, jpeg: Vec<u8>) -> Result<(), String> {
+    let odpoved = ureq::post(&n.adresa_analyza_canvas_zber())
+        .set("Authorization", &format!("Bearer {}", n.kluc))
+        .set("Content-Type", "image/jpeg")
+        .timeout(std::time::Duration::from_secs(30))
+        .send_bytes(&jpeg);
+
+    match odpoved {
+        Ok(_) => Ok(()),
+        Err(ureq::Error::Status(kod, odpoved)) => {
+            let telo = odpoved.into_string().unwrap_or_default();
+            Err(api::sprava_chyby(kod, &telo))
+        }
+        Err(ina) => Err(api::sprava_siete(&ina.to_string())),
+    }
+}
+
 /// Rovnaké ako `posli_analyzu`, len pre ceny z obrazovky trhu (TLI 22) — iný
 /// endpoint (`?modul=ceny`) a iný tvar odpovede (meno položky + ceny, žiadne
 /// súradnice — nič sa nekreslí nad hrou).
