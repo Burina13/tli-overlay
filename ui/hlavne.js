@@ -87,6 +87,11 @@ const PREKLAD_MAPY = {
 // holé `#400021` namiesto mien.
 let MENA_POLOZIEK = window.__MENA_POLOZIEK__ || {};
 
+// Odkiaľ brať ikony položiek (TLI 48 bod 3, rovnaký zdroj ako mini-panel,
+// `ui/mini.js`) — z NÁŠHO servera (`/ikony/polozka/<id>`), nie z cudzieho CDN.
+// `null`, kým sa nenačítajú Nastavenia — dovtedy appka Economy ukáže bez ikon.
+let ZAKLAD_IKON = null;
+
 // `typeof fetch` sa kontroluje zámerne: v jsdom teste (`ui/testy-zalozky.e2e.mjs`)
 // `fetch` neexistuje a holé volanie by zhodilo CELÝ skript pri načítaní —
 // teda aj všetko ostatné v okne.
@@ -443,6 +448,113 @@ document.querySelector("#tabulka-inventar tbody").addEventListener("click", asyn
         console.error(err);
     }
 });
+
+// ─── Economy (TLI 48 bod 3) — plný prehliadač cien ─────────────────────────
+// Appka NEPOZNÁ skutočné herné kategórie položiek (seed mien má zámerne len
+// dvojice id→meno, žiadny typ — `ui/polozky-seed-en.json` § meta.poznamka),
+// takže filter tu ponúka len zdroj ceny a textové hľadanie podľa mena.
+let ECONOMY_DATA = [];
+let economyHladanie = "";
+let economyZdroj = "";
+let economyTriedenie = "cena"; // "cena" | "zmena" | "vek"
+let economyTrieditVzostupne = false;
+
+const ZDROJ_POPIS = {
+    vlastny_trh: "Vlastný trh",
+    obrazovka: "Obrazovka trhu",
+    partia: "Partia",
+    titrack: "titrack.ninja",
+    rucne: "Ručne",
+};
+
+function economyIkona(id) {
+    if (!ZAKLAD_IKON) return "";
+    return `<img class="economy-ikona" loading="lazy" alt="" src="${ZAKLAD_IKON}/ikony/polozka/${id}" onerror="this.remove()">`;
+}
+
+function economyZmenaText(percent) {
+    if (typeof percent !== "number" || !isFinite(percent)) {
+        return '<span class="odznak odznak-bez-ceny">—</span>';
+    }
+    const trieda = percent > 0 ? "hodnota-kladna" : percent < 0 ? "hodnota-zaporna" : "";
+    const znamienko = percent > 0 ? "+" : "";
+    return `<span class="${trieda}">${znamienko}${percent.toFixed(1)} %</span>`;
+}
+
+function vykresliEconomy() {
+    const telo = document.getElementById("tabulka-economy-telo");
+    const hladane = economyHladanie.trim().toLowerCase();
+
+    let zoznam = ECONOMY_DATA;
+    if (economyZdroj) {
+        zoznam = zoznam.filter((r) => r.zdroj === economyZdroj);
+    }
+    if (hladane) {
+        zoznam = zoznam.filter((r) => nazovPolozky(r.polozka).toLowerCase().includes(hladane));
+    }
+
+    zoznam = zoznam.slice().sort((a, b) => {
+        let rozdiel;
+        if (economyTriedenie === "zmena") {
+            // Položky bez zmeny (`null`) idú vždy na koniec, nezávisle od smeru triedenia.
+            if (a.zmena_24h_percent == null) return 1;
+            if (b.zmena_24h_percent == null) return -1;
+            rozdiel = a.zmena_24h_percent - b.zmena_24h_percent;
+        } else if (economyTriedenie === "vek") {
+            rozdiel = a.vek_s - b.vek_s;
+        } else {
+            rozdiel = a.cena_fe - b.cena_fe;
+        }
+        return economyTrieditVzostupne ? rozdiel : -rozdiel;
+    });
+
+    document.getElementById("economy-pocet").textContent =
+        `${zoznam.length} z ${ECONOMY_DATA.length} známych cien`;
+    document.getElementById("economy-prazdne").classList.toggle("skryte", ECONOMY_DATA.length > 0);
+    document.getElementById("tabulka-economy").classList.toggle("skryte", ECONOMY_DATA.length === 0);
+
+    telo.innerHTML = zoznam
+        .map((r) => `<tr>
+            <td>${economyIkona(r.polozka)}${nazovPolozky(r.polozka)}</td>
+            <td>${ZDROJ_POPIS[r.zdroj] || r.zdroj}</td>
+            <td class="cislo">${fe(r.cena_fe)}</td>
+            <td class="cislo">${economyZmenaText(r.zmena_24h_percent)}</td>
+            <td class="cislo">${vekText(r.vek_s)}</td>
+        </tr>`)
+        .join("");
+}
+
+async function economyNacitaj() {
+    try {
+        ECONOMY_DATA = (await invoke("tracker_economy")) || [];
+    } catch (e) {
+        console.error("Chyba pri načítaní Economy:", e);
+        ECONOMY_DATA = [];
+    }
+    vykresliEconomy();
+}
+
+document.getElementById("economy-hladanie").addEventListener("input", (e) => {
+    economyHladanie = e.target.value;
+    vykresliEconomy();
+});
+document.getElementById("economy-zdroj").addEventListener("change", (e) => {
+    economyZdroj = e.target.value;
+    vykresliEconomy();
+});
+document.querySelectorAll("#tabulka-economy .economy-triedit").forEach((th) => {
+    th.addEventListener("click", () => {
+        const stlpec = th.dataset.stlpec;
+        if (economyTriedenie === stlpec) {
+            economyTrieditVzostupne = !economyTrieditVzostupne;
+        } else {
+            economyTriedenie = stlpec;
+            economyTrieditVzostupne = false;
+        }
+        vykresliEconomy();
+    });
+});
+document.getElementById("btn-nav-economy").addEventListener("click", () => economyNacitaj());
 
 // Delegovaný listener (tabuľka sa prekresľuje á 3 s, takže sa pripája raz na
 // tbody, nie na každý riadok pri každom obnovení).
@@ -1081,7 +1193,7 @@ function skocNaZalozkuA(panel, cielId) {
 }
 
 document.getElementById("btn-nav-overlay").addEventListener("click", () => skocNaZalozkuA("panel-solvery"));
-document.getElementById("btn-nav-economy").addEventListener("click", () => skocNaZalozkuA("panel-tracker", "skupina-economy"));
+document.getElementById("btn-nav-economy").addEventListener("click", () => skocNaZalozkuA("panel-economy"));
 document.getElementById("btn-nav-cloudsync").addEventListener("click", () => skocNaZalozkuA("panel-tracker", "skupina-cloudsync"));
 document.getElementById("btn-nav-nastavenia").addEventListener("click", () => skocNaZalozkuA("panel-nastavenia"));
 
@@ -1157,6 +1269,9 @@ document.addEventListener("DOMContentLoaded", async () => {
         chkUpload.checked = nastavenia.upload_logov !== false;
         // A pre ceny z obrazovky trhu (TLI 22) — tiež predvolene zapnuté.
         chkCenyObrazovka.checked = nastavenia.ceny_obrazovka_zapnute !== false;
+        if (nastavenia.url_servera) {
+            ZAKLAD_IKON = String(nastavenia.url_servera).replace(/\/+$/, "");
+        }
         ukazStavSyncu(chkSync.checked ? "Posiela sa automaticky každé tri minúty."
                                       : "Partii sa neposiela nič.", false);
         ukazStavUploadu(chkUpload.checked ? "Nahráva sa automaticky na pozadí."
@@ -1169,6 +1284,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     await nacitajGuide();
     await analyzaHladaj();
     await taktikyNacitaj();
+    await economyNacitaj();
 
     await obnovTracker();
     // Takt 3 s je len záložka — živé čítanie na pozadí (notify + 1s polling,

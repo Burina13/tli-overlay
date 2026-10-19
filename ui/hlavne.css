@@ -860,3 +860,18 @@ tr.riadok-rozbalenia td {
 .pita-bod-bezi {
     background-color: var(--farba-zisk);
 }
+
+/* Economy (TLI 48 bod 3) — plný prehliadač cien. */
+.economy-triedit {
+    cursor: pointer;
+    user-select: none;
+}
+
+.economy-ikona {
+    width: 18px;
+    height: 18px;
+    border-radius: 3px;
+    object-fit: contain;
+    vertical-align: middle;
+    margin-right: 6px;
+}

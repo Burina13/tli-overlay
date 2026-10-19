@@ -248,8 +248,16 @@ document.addEventListener("DOMContentLoaded", () => {
         const uchytPresun = document.getElementById("mini-uchyt-presun");
         const uchytVelkost = document.getElementById("mini-uchyt-velkost");
         if (uchytPresun) {
+            // TLI 48 bod 2: pásik je ťahateľný AJ MIMO režimu úpravy (CSS vyššie
+            // mu dovoľuje `pointer-events` vždy) — appka preto novú polohu musí
+            // uložiť SAMA hneď po presune, nie až cez `rezim_upravy_ulozit_panel`
+            // (ten beží len pri Ctrl+F8 Esc/Enter). `startDragging()` sa vracia
+            // (resolvne), až keď hráč pustí tlačidlo — presne vtedy je nová
+            // poloha konečná.
             uchytPresun.addEventListener("mousedown", () => {
-                okno.startDragging().catch((e) => console.error("Presun mini-panela zlyhal:", e));
+                okno.startDragging()
+                    .then(() => invoke("mini_ulozit_polohu"))
+                    .catch((e) => console.error("Presun mini-panela zlyhal:", e));
             });
         }
         if (uchytVelkost) {

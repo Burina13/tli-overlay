@@ -2,6 +2,70 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.20.1 — 19.10.2026 (TLI 48 — toasty nad hrou, ťahateľný loot overlay, Economy, oprava auto-cien)
+
+Úloha `2026-10-19-0838-mcp.md` (HNED, dokončenie zvyšku TLI 47/doplnku
+`0744-mcp`), nedozorovaný beh. core 0.13.10→0.13.11.
+
+**Bod 4 — bug z logu 19.10. opravený.** Appka pri štarte vedela sama spustiť
+„Ceny" (zdroj=auto) nad CELOU OBRAZOVKOU a skončiť s „Na trhu sa nenašla žiadna
+čitateľná cena". Príčina: `AuctionHouseShowItemGoodV2 Run` sa v logu hľadalo
+ako jednoduchá textová zhoda na KAŽDOM riadku, aj pri prvom dočítaní (dobiehaní)
+starého, už dávno zavretého výskytu z históriou logu — appka si to vyložila
+ako „trh je PRÁVE TERAZ otvorený" a odfotila, čo práve bolo na obrazovke
+(typicky plochu/dashboard appky samotnej). Oprava: `StavTrackera` si pri
+otvorení cesty (aj po rotácii) zapamätá hranicu „odtiaľto je to už naozaj
+nové" (`povodna_velkost_logu`) — riadky z dávky, ktorá ešte len dobieha starý
+obsah, sa už NEPOČÍTAJÚ za živé otvorenie trhu. +3 testy
+(`src-tauri::tracker`).
+
+**Bod 1 — upozornenia PRIAMO NAD HROU, nie len v pätičke dashboardu.**
+Pätička (TLI 47) už vedela rozlíšiť tri stavy, ale na toast nad hrou sa
+dostala len polovica („Zapni Enable Log" mala vlastný stavový automat od
+TLI 11d odjakživa). Nové: „Log sa neposiela na server" a „Sortni inventár v
+hre" teraz appka posiela aj ako toast priamo nad hru, nie len do schovanej
+záložky. Nový, zámerne JEDNODUCHŠÍ mechanizmus než `SledovacPripomienky`
+(`core::tracker::varovania::SledovacVarovania`) — opakovaný toast namiesto
+presného stavového automatu: appka ho obnovuje á 25 s, kým podmienka trvá, a
+keď sa vyrieši, prestane ho obnovovať — toast zmizne sám najneskôr do 35 s.
+Zdieľa jedno okno s ostatnými toastmi (ceny/Enable Log), „novší vyhráva",
+rovnaký vzor ako doteraz. core +6 testov.
+
+**Bod 2 — loot overlay (mini-panel) ťahateľný BEZ Ctrl+F8.** Horný pásik
+(`#mini-uchyt-presun`) je odteraz interaktívny aj mimo režimu úpravy — jemne
+priehľadný, plne viditeľný pri hoveri/editácii. Keďže Windows/Tauri vie
+`ignore_cursor_events` len pre CELÉ okno, appka na pozadí sleduje `GetCursorPos`
+(25×/s) a prepína klikateľnosť LEN keď je kurzor nad pásikom — klik kdekoľvek
+inde na paneli prechádza ďalej do hry. Poloha sa po potiahnutí ukladá SAMA
+(nový príkaz `mini_ulozit_polohu`, rovnaká matematika ako
+`rezim_upravy_ulozit_panel`) — per-monitor, rovnako ako doteraz cez Ctrl+F8.
+**Nedá sa overiť bez skutočnej hry na Windowse** — CI len skompiluje
+`#[cfg(windows)]` vetvu, interaktívne správanie (cítenie ťahania, žiadne
+kradnutie focusu hre) musí potvrdiť Richard.
+
+**Bod 3 — Economy: plný prehliadač cien** namiesto odkazu na existujúci
+prepínač. Nová záložka v hlavnej navigácii (vedľa Guide), nový príkaz
+`tracker_economy` (`core::tracker::economy_prehlad`): meno + ikona (rovnaký
+zdroj ako mini-panel), zdroj ceny (vlastný trh/obrazovka/partia/titrack.ninja/
+ručne), **zmena za 24 h** (nová DB funkcia `db::ceny_pred` — appka si už aj
+tak ukladá históriu cien, len to doteraz nikto nepotreboval vyčítať), vek,
+hľadanie podľa mena, filter podľa zdroja, triedenie kliknutím na hlavičku.
+**„Kategórie" NIE SÚ implementované** — appka nepozná skutočné herné typy
+položiek (`ui/polozky-seed-en.json` § meta.poznamka: seed mien zámerne prevzal
+LEN dvojice id→meno, žiadne typy), nie je to medzera v kóde ale chýbajúca
+dátová základňa; zapísané do `BACKLOG.md`. core +2 testy, UI +3 jsdom testy.
+
+**Bod 5 — E2E voči Richardovým dátam: ČIASTOČNÉ.** Server má jeho reálne logy
+(372 behov zo 17.–18.10., TLI 47) a appka nad nimi počíta Current Inventory/
+Net Worth rovnakou cestou, akú si tento beh overil novými testami — ale
+porovnanie s TITrack referenciou na Richardovom PC (`G:\Môj disk\claude\tli\
+TITrack`) vie spraviť len Richard sám, agent k tomu počítaču prístup nemá.
+Zapísané do `BACKLOG.md`.
+
+Core 401+ testov, UI jsdom 69 testov (+3). `cargo check --tests` zelené pre
+`core` aj `src-tauri` na Linuxe (CT 111, rootfs 15 GB — `target/` vždy
+zmazané hneď po behu). Nič sa nemazalo, baaza ani aion2 sa nedotkli.
+
 ## 0.20.0 — 19.10.2026 (TLI 47, 2/2 — CURRENT INVENTORY + upozornenia v pätičke)
 
 Úloha `2026-10-19-0744-mcp.md` (doplnok k `2026-10-19-0731-mcp.md`), nedozorovaný

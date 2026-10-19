@@ -145,8 +145,18 @@ const ODPOVEDE = {
   nacitaj_nastavenia: { hotkey: "F8", hotkey_canvas: "F9", hotkey_trh: "F10", tema: "svetla",
                         mini_overlay: true, tracker_sync: false,
                         ceny_sync: true, upload_logov: true, ceny_obrazovka_zapnute: true,
-                        cesta_logu: CESTA_LOGU_UKAZKA },
+                        cesta_logu: CESTA_LOGU_UKAZKA, url_servera: "https://tli.tvojtatko.sk" },
   tracker_prehlad: UKAZKA_TRACKER,
+  // Economy (TLI 48 bod 3) — plný prehliadač cien. Zámerne rôzne zdroje aj
+  // znamienka „zmena 24h" (kladné/záporné/chýbajúce), nech je na screenshote
+  // z CI vidieť všetky tri stavy, nie len ten pekný.
+  tracker_economy: [
+    { polozka: 400021, cena_fe: 140.0, zdroj: "vlastny_trh", vek_s: 240, zmena_24h_percent: 12.5 },
+    { polozka: 140005, cena_fe: 2.4, zdroj: "titrack", vek_s: 1800, zmena_24h_percent: -8.1 },
+    { polozka: 5080, cena_fe: 0.73, zdroj: "partia", vek_s: 9000, zmena_24h_percent: 0 },
+    { polozka: 100300, cena_fe: 1.0, zdroj: "obrazovka", vek_s: 300, zmena_24h_percent: null },
+    { polozka: 999999, cena_fe: 0.05, zdroj: "rucne", vek_s: 172800, zmena_24h_percent: null },
+  ],
   tracker_csv: "id;mapa\n1;YunDuanLvZhou\n",
   guide_data: UKAZKA_GUIDE,
   guide_sync: UKAZKA_GUIDE,

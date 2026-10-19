@@ -1632,6 +1632,16 @@ fn tracker_prehlad(
     Ok(tracker::prehlad_pre_ui(&t, true, n.tracker_dan, &n.batoh_skryte_polozky))
 }
 
+/// Plný zoznam cien pre pohľad „Economy" (TLI 48 bod 3) — na rozdiel od
+/// `tracker_prehlad` nečíta log nanovo (to robí vlákno na pozadí,
+/// `tracker::spusti_vlakno`), len vráti aktuálny stav cenníka a jeho históriu
+/// z lokálnej DB.
+#[tauri::command]
+fn tracker_economy(tracker: tauri::State<tracker::Tracker>) -> Vec<tracker::RiadokEconomy> {
+    let t = tracker.0.lock().unwrap();
+    tracker::economy_prehlad(&t, tracker::unixovy_cas())
+}
+
 /// Export histórie máp do CSV. Vracia obsah súboru — uloženie rieši UI.
 #[tauri::command]
 fn tracker_csv(
@@ -2138,6 +2148,76 @@ fn okno_hry_pre_rozlozenie(_app: &AppHandle) -> Option<OknoFyz> {
     None
 }
 
+/// TLI 48 bod 2 — výška horného pásika mini-panela v LOGICKÝCH pixeloch.
+/// MUSÍ sedieť s `#mini-uchyt-presun { height: … }` v `ui/mini.css` — appka
+/// touto hodnotou (prenásobenou `scale_factor()`) rozhoduje, kde presne nad
+/// panelom má prestať byť klikateľná cez hru a začať brať myš pre seba.
+const MINI_PASIK_VYSKA_LOGICKA: f64 = 18.0;
+
+/// Jediný spôsob, ako na Windows urobiť JEDNU časť okna (horný pásik)
+/// klikateľnú a zvyšok priechodný pre myš (click-through) NARAZ: Tauri aj OS
+/// pod ním poznajú `ignore_cursor_events` len pre CELÉ okno, nie pre
+/// podoblasť. Appka preto na pozadí sleduje skutočnú polohu kurzora
+/// (`GetCursorPos`, obrazovkové/fyzické súradnice — rovnaký súradnicový
+/// priestor ako `outer_position()`) a porovnáva ju s aktuálnym obdĺžnikom
+/// pásika; len keď je nad ním, prepne okno na klikateľné, inak ho nechá
+/// priechodné pre myš (klik ide ďalej do hry). V režime úpravy (Ctrl+F8) je
+/// `mini` beztak celé klikateľné (`zapni_rezim_upravy`/`ukonci_rezim_upravy`)
+/// — vlákno sa doňho vtedy nemieša, aby si navzájom neprepisovali
+/// `ignore_cursor_events`.
+///
+/// 40 ms (25×/s) je dosť rýchlo, aby prechod cez hranicu pásika nebolo vidieť
+/// ako záseknutie kurzora, a dosť lacné (jedno porovnanie čísel + jedno
+/// `GetCursorPos`) na to, aby bežalo nepretržite na pozadí.
+#[cfg(windows)]
+fn spusti_mini_presun_vlakno(app: AppHandle) {
+    use windows::Win32::Foundation::POINT;
+    use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
+
+    std::thread::spawn(move || {
+        let mut klikatelne = false;
+        loop {
+            std::thread::sleep(Duration::from_millis(40));
+
+            if *app.state::<Stav>().rezim_upravy.lock().unwrap() {
+                continue;
+            }
+            let Some(okno) = app.get_webview_window(MINI) else { continue };
+            let Ok(viditelne) = okno.is_visible() else { continue };
+            if !viditelne {
+                if klikatelne {
+                    let _ = okno.set_ignore_cursor_events(true);
+                    klikatelne = false;
+                }
+                continue;
+            }
+            let (Ok(pos), Ok(size), Ok(mierka)) =
+                (okno.outer_position(), okno.outer_size(), okno.scale_factor())
+            else {
+                continue;
+            };
+            let vyska_pasika = (MINI_PASIK_VYSKA_LOGICKA * mierka).round() as i32;
+
+            let mut bod = POINT::default();
+            if unsafe { GetCursorPos(&mut bod) }.is_err() {
+                continue;
+            }
+            let nad_pasikom = bod.x >= pos.x
+                && bod.x < pos.x + size.width as i32
+                && bod.y >= pos.y
+                && bod.y < pos.y + vyska_pasika;
+
+            if nad_pasikom != klikatelne {
+                let _ = okno.set_ignore_cursor_events(!nad_pasikom);
+                klikatelne = nad_pasikom;
+            }
+        }
+    });
+}
+
+#[cfg(not(windows))]
+fn spusti_mini_presun_vlakno(_app: AppHandle) {}
+
 /// Celý primárny monitor vyjadrený ako `OknoFyz` — fallback pre „Upraviť
 /// rozloženie" (TLI 26, bod 2), keď sa okno hry nenašlo. Rovnaký zdroj
 /// pravdy („primárny monitor od OS"), aký appka už používa v `ukaz_chybu`
@@ -2532,6 +2612,45 @@ fn rezim_upravy_ulozit_panel(app: AppHandle, x: f64, y: f64, w: f64, h: f64) -> 
     Ok(())
 }
 
+/// TLI 48 bod 2 — uloženie novej polohy mini-panela PO presune mimo režimu
+/// úpravy (pásik je odteraz ťahateľný aj bez Ctrl+F8). JS zavolá tento príkaz
+/// hneď po tom, čo `startDragging()` resolvne (teda hráč pustil tlačidlo).
+///
+/// Rovnaká matematika ako `rezim_upravy_ulozit_panel` pre mini/pripomienku,
+/// len bez `RezimUpravyKontext` — ten tu nie je (žiaden režim úpravy nebeží),
+/// takže sa okno hry aj monitor zisťujú ČERSTVO, rovnako ako pri `nastav_mini`.
+/// Keď sa okno hry práve nenájde (hráč medzitým prepol do menu a späť),
+/// appka ticho nič neuloží — poloha v pamäti okna ostáva, len sa nezapíše na
+/// disk; ďalší úspešný presun to dobehne.
+#[tauri::command]
+fn mini_ulozit_polohu(app: AppHandle) -> Result<(), String> {
+    let Some(okno_hry) = okno_hry_pre_rozlozenie(&app) else {
+        return Ok(());
+    };
+    let Some(okno) = app.get_webview_window(MINI) else {
+        return Ok(());
+    };
+    let (Ok(pos), Ok(size)) = (okno.outer_position(), okno.outer_size()) else {
+        return Ok(());
+    };
+    let sig = monitor_signatura_app(&app, &okno_hry);
+    let css_fyz = suradnice::ObdlznikCss {
+        x: (pos.x - okno_hry.x) as f64,
+        y: (pos.y - okno_hry.y) as f64,
+        w: size.width as f64,
+        h: size.height as f64,
+    };
+    let p = suradnice::css_na_box01(&css_fyz, &okno_hry, 1.0);
+
+    let stav = app.state::<Stav>();
+    let mut n = stav.nastavenia.lock().unwrap();
+    n.rozlozenie.uloz_polohu(PANEL_MINI, &sig, Obdlznik01 { x: p.x, y: p.y, w: p.w, h: p.h });
+    n.normalizuj();
+    let kopia = n.clone();
+    drop(n);
+    stav::uloz(&kopia)
+}
+
 /// Posuvník priehľadnosti v Nastaveniach — jedna hodnota pre všetky tri
 /// panely (0.3–1.0), uplatní sa hneď, aj mimo režimu úpravy.
 #[tauri::command]
@@ -2838,6 +2957,7 @@ fn main() {
             verzia,
             skontroluj_aktualizaciu,
             tracker_prehlad,
+            tracker_economy,
             tracker_csv,
             tracker_reset_zive_staty,
             tracker_prepni_skrytu_polozku,
@@ -2870,6 +2990,7 @@ fn main() {
             rezim_upravy_je_aktivny,
             rezim_upravy_obnov_predvolene,
             rezim_upravy_ulozit_panel,
+            mini_ulozit_polohu,
             uloz_priehladnost,
             otvor_priecinok_logov,
             hotkey_upozornenia,
@@ -2931,6 +3052,11 @@ fn main() {
             // Tracker (TLI 11c): číta log na pozadí nezávisle od toho, či je
             // niektoré okno otvorené, aby appka fungovala aj schovaná v tray.
             tracker::spusti_vlakno(handle.clone());
+
+            // TLI 48 bod 2: horný pásik mini-panela je ťahateľný aj mimo
+            // režimu úpravy — vlákno nižšie je na to potrebné (bod 2 nižšie
+            // pri definícii funkcie vysvetľuje prečo).
+            spusti_mini_presun_vlakno(handle.clone());
 
             if let Some(overlay) = app.get_webview_window(OVERLAY) {
                 let _ = overlay.set_ignore_cursor_events(true);

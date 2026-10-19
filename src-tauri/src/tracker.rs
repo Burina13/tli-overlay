@@ -32,6 +32,7 @@ use tli_overlay_core::tracker::pripomienka::{klasifikuj, SledovacPripomienky};
 use tli_overlay_core::tracker::stav::{Beh, Sledovac, STRANKA_BATOHU_OSTATNE};
 use tli_overlay_core::tracker::steam;
 use tli_overlay_core::tracker::trh::je_otvorenie_trhu;
+use tli_overlay_core::tracker::varovania::SledovacVarovania;
 
 use crate::stav::Stav;
 
@@ -97,6 +98,14 @@ fn uloz_beh_do_db(stav: &mut StavTrackera, beh: &Beh) {
 /// stomegový a natiahnuť ho celý do pamäte by appku na pár sekúnd zmrazilo.
 const DAVKA_B: u64 = 2 * 1024 * 1024;
 
+/// Po koľkých sekundách ticha (pri bežiacej hre) appka ukáže „Log sa
+/// neposiela na server" — rovnaká hranica ako `UPLOAD_VAROVANIE_PO_S`
+/// v `ui/hlavne.js` (pätička dashboardu), len na strane Rustu pre toast nad
+/// hrou (TLI 48 bod 1a). Dve nezávislé miesta s rovnakou hodnotou, nie jeden
+/// zdieľaný zdroj — JS a Rust si medzi sebou konštanty neposielajú nikde inde
+/// v appke a zavádzať to len pre toto jedno číslo by bolo neúmerné.
+pub const UPLOAD_VAROVANIE_PO_S: u64 = 15 * 60;
+
 /// Bežné miesta, kde hra log píše, keď ju Steam knižnice (registry +
 /// `libraryfolders.vdf`) nenašli — non-Steam launcher (XD/Global) alebo
 /// nezvyčajná inštalácia. Zoznam je zámerne krátky a doplniteľný ručne
@@ -158,6 +167,18 @@ pub struct StavTrackera {
     /// `odober_trh_otvoreny()` premení na jednu analýzu `Modul::Ceny` —
     /// rovnaký vzor ako `pripomienka.odober_udalosti()` vyššie.
     trh_otvoreny: bool,
+    /// TLI 48 bod 4: veľkosť logu v momente, keď appka cestu k nemu otvorila
+    /// (nanovo, alebo po rotácii) — teda hranica medzi „starým obsahom, ktorý
+    /// appka len DOBIEHA" a „naozaj novými riadkami, ktoré hra píše PRÁVE
+    /// TERAZ". `None`, kým appka ešte neotvorila žiadny log.
+    povodna_velkost_logu: Option<u64>,
+    /// TLI 48 bod 1a/1c: opakované toasty „Log sa neposiela na server" a
+    /// „Sortni inventár" — rovnaký stav, ktorý už vidí pätička dashboardu
+    /// (`vykresliPatickaUploadu`/`vykresliVyzvuNaSort` v `ui/hlavne.js`), len
+    /// navyše posielaný nad hru. Dve samostatné inštancie, nech obnovovanie
+    /// jednej nereštartuje časovanie druhej.
+    pub varovanie_uploadu: SledovacVarovania,
+    pub varovanie_sortu: SledovacVarovania,
 }
 
 impl Default for StavTrackera {
@@ -190,6 +211,9 @@ impl Default for StavTrackera {
             posledna_kontrola_uploadu: None,
             posledna_chyba_uploadu: None,
             trh_otvoreny: false,
+            povodna_velkost_logu: None,
+            varovanie_uploadu: SledovacVarovania::novy(),
+            varovanie_sortu: SledovacVarovania::novy(),
         }
     }
 }
@@ -408,12 +432,21 @@ pub fn precitaj(stav: &mut StavTrackera, cesta: &Path) -> Result<usize, String> 
         let chvost = crate::stav::nacitaj_chvost(cesta);
         *stav = StavTrackera { cesta: Some(cesta.to_path_buf()), chvost, ..Default::default() };
         stav.pripomienka.nastav_zapnute(pripominat);
+        // TLI 48 bod 4: hranica „odtiaľto je to naozaj NOVÉ" sa kreslí HNEĎ
+        // pri otvorení cesty — všetko, čo appka ešte len DOBIEHA (`chvost.
+        // pozicia` pri prvom otvorení môže byť aj 0, teda celý stomegový
+        // log), sa nesmie správať ako práve prebiehajúca udalosť.
+        stav.povodna_velkost_logu = Some(velkost);
     }
     let teraz = unixovy_cas();
     if stav.chvost.over_rotaciu(velkost) {
         // Hra pri reštarte premenovala/skrátila log — nová session, aj pre
-        // pripomienku „Enable Log" (TLI 11d).
+        // pripomienku „Enable Log" (TLI 11d). Nový súbor je od pozície 0 už
+        // naozaj živý (hra ho práve píše po reštarte), hranica sa preto
+        // posúva na začiatok, nie na jeho aktuálnu (medzičasom narastenú)
+        // veľkosť.
         stav.pripomienka.nova_session(teraz);
+        stav.povodna_velkost_logu = Some(0);
     }
     if velkost == stav.chvost.pozicia {
         return Ok(0);
@@ -431,6 +464,15 @@ pub fn precitaj(stav: &mut StavTrackera, cesta: &Path) -> Result<usize, String> 
         .map_err(|e| format!("log sa nedá prečítať: {e}"))?;
     bajty.truncate(precitane);
 
+    // TLI 48 bod 4 (pokr.): pozícia PRED touto dávkou rozhoduje za celú dávku
+    // naraz — keď appka ešte dobieha starý obsah, ani jeden riadok z nej sa
+    // nepočíta za „živé" otvorenie trhu, aj keby sa `AuctionHouseShowItemGoodV2
+    // Run` v nej našlo (zvyčajne s hodinovým/denným odstupom starý záznam,
+    // dávno zavretý — appka naň pri štarte reagovala snímkou CELEJ obrazovky
+    // a hlásením „Na trhu sa nenašla žiadna čitateľná cena", nahlásil Richard
+    // 19.10.2026).
+    let davka_je_zo_starej_historie =
+        stav.povodna_velkost_logu.is_some_and(|p| stav.chvost.pozicia < p);
     let riadky = stav.chvost.priprav_riadky(&bajty);
     crate::stav::uloz_chvost(cesta, &stav.chvost);
 
@@ -438,7 +480,7 @@ pub fn precitaj(stav: &mut StavTrackera, cesta: &Path) -> Result<usize, String> 
     let mut uzavrete_behy = Vec::new();
     for riadok in &riadky {
         stav.pripomienka.spracuj_riadok(teraz, klasifikuj(riadok));
-        if je_otvorenie_trhu(riadok) {
+        if !davka_je_zo_starej_historie && je_otvorenie_trhu(riadok) {
             stav.trh_otvoreny = true;
         }
         if let Some(beh) = stav.sledovac.riadok(riadok) {
@@ -724,6 +766,54 @@ pub fn prehlad_pre_ui(stav: &StavTrackera, zapnuty: bool, dan: bool, skryte_polo
         batoh,
         net_worth_fe,
     }
+}
+
+/// Jeden riadok pohľadu „Economy" (TLI 48 bod 3) — plný prehliadač cien.
+/// Meno aj ikonu položky appka dopĺňa v JS z `polozky-seed-en.json`/`/ikony/
+/// polozka/<id>` (rovnaký zdroj, aký už používa mini-panel) — Rust posiela
+/// len to, čo z cenníka a lokálnej DB naozaj vie.
+#[derive(Debug, Clone, Serialize)]
+pub struct RiadokEconomy {
+    pub polozka: u32,
+    pub cena_fe: f64,
+    pub zdroj: String,
+    pub vek_s: u64,
+    /// Zmena ceny za posledných 24 h v percentách. `None`, keď appka položku
+    /// pred 24 h ešte nepoznala (iná informácia než „0 % zmena").
+    pub zmena_24h_percent: Option<f64>,
+}
+
+/// Plný zoznam cien pre „Economy" (TLI 48 bod 3) — na rozdiel od
+/// `prehlad_pre_ui` (ktorý posiela len vek cien pre položky V BATOHU/behoch)
+/// toto je CELÝ cenník, zoradený podľa ID položky (`Cennik::vsetky`). Appka
+/// NEPOZNÁ skutočné herné kategórie položiek (seed mien pri vzniku zámerne
+/// prevzal len dvojice id→meno, nie typy — `ui/polozky-seed-en.json`
+/// `meta.poznamka`), preto táto funkcia kategórie neposiela a JS filter
+/// v Economy pracuje len podľa zdroja a textového hľadania.
+pub fn economy_prehlad(stav: &StavTrackera, teraz: u64) -> Vec<RiadokEconomy> {
+    let hranica_24h = teraz.saturating_sub(24 * 3600) as i64;
+    let ceny_pred_24h = stav
+        .db
+        .as_ref()
+        .and_then(|c| db::ceny_pred(c, hranica_24h).ok())
+        .unwrap_or_default();
+
+    stav.cennik
+        .vsetky()
+        .into_iter()
+        .map(|cena| {
+            let zmena_24h_percent = ceny_pred_24h.get(&cena.polozka).and_then(|&stara| {
+                (stara.abs() > f64::EPSILON).then(|| (cena.fe - stara) / stara * 100.0)
+            });
+            RiadokEconomy {
+                polozka: cena.polozka,
+                cena_fe: cena.fe,
+                zdroj: cena.zdroj.kod().to_string(),
+                vek_s: teraz.saturating_sub(cena.kedy),
+                zmena_24h_percent,
+            }
+        })
+        .collect()
 }
 
 /// CSV s jedným riadkom na mapu — presne to, čo sa dá otvoriť v tabuľkovom
@@ -1186,10 +1276,16 @@ pub fn spusti_vlakno(app: AppHandle) {
         loop {
             // Daň (`tracker_dan`) sa uplatňuje až pri zostavovaní prehľadu pre
             // UI (`prehlad_pre_ui`), tu sa zámerne nepoužíva.
-            let (zapnuty, rucna, pripominat, ceny_obrazovka_zapnute) = {
+            let (zapnuty, rucna, pripominat, ceny_obrazovka_zapnute, upload_logov) = {
                 let stav = app.state::<Stav>();
                 let n = stav.nastavenia.lock().unwrap();
-                (n.tracker_zapnuty, n.cesta_logu.clone(), n.pripominat_enable_log, n.ceny_obrazovka_zapnute)
+                (
+                    n.tracker_zapnuty,
+                    n.cesta_logu.clone(),
+                    n.pripominat_enable_log,
+                    n.ceny_obrazovka_zapnute,
+                    n.upload_logov,
+                )
             };
 
             let cesta = if zapnuty { najdi_log(&rucna) } else { None };
@@ -1235,7 +1331,7 @@ pub fn spusti_vlakno(app: AppHandle) {
             if zapnuty {
                 if let Some(cesta) = cesta {
                     let tracker = app.state::<Tracker>();
-                    let (novych, pripomienka_udalosti, trh_otvoreny) = {
+                    let (novych, pripomienka_udalosti, trh_otvoreny, ukaz_upload, ukaz_sort) = {
                         let mut t = tracker.0.lock().unwrap();
                         t.pripomienka.nastav_zapnute(pripominat);
                         let vysledok = precitaj(&mut t, &cesta);
@@ -1249,17 +1345,61 @@ pub fn spusti_vlakno(app: AppHandle) {
                         if vysledok.is_ok() {
                             t.chyba = None;
                         }
+                        let teraz = unixovy_cas();
                         // Tik beží KAŽDÚ iteráciu (á najviac 1 s), nezávisle od toho,
                         // či `precitaj` našlo nové bajty — lehota sa počíta aj vtedy,
                         // keď sa v logu nedeje ÚPLNE NIČ.
-                        t.pripomienka.tik(unixovy_cas());
-                        (novych, t.pripomienka.odober_udalosti(), t.odober_trh_otvoreny())
+                        t.pripomienka.tik(teraz);
+
+                        // TLI 48 bod 1a/1c — rovnaký stav ako pätička dashboardu
+                        // (`vykresliPatickaUploadu`/`vykresliVyzvuNaSort`), len
+                        // navyše ako opakovaný toast nad hrou.
+                        let hra_bezi = t.sledovac.aktualny().is_some();
+                        let upload_problem = upload_logov
+                            && (t.posledna_chyba_uploadu.is_some()
+                                || (hra_bezi
+                                    && t.posledna_kontrola_uploadu.is_some_and(|posledny| {
+                                        teraz.saturating_sub(posledny) > UPLOAD_VAROVANIE_PO_S
+                                    })));
+                        let sort_problem = (hra_bezi || !t.behy.is_empty())
+                            && t.sledovac.batoh_stranka(STRANKA_BATOHU_OSTATNE).is_empty();
+                        let ukaz_upload = t.varovanie_uploadu.vyhodnot(teraz, upload_problem);
+                        let ukaz_sort = t.varovanie_sortu.vyhodnot(teraz, sort_problem);
+
+                        (
+                            novych,
+                            t.pripomienka.odober_udalosti(),
+                            t.odober_trh_otvoreny(),
+                            ukaz_upload,
+                            ukaz_sort,
+                        )
                     };
                     if novych > 0 {
                         let _ = app.emit(UDALOST_ZMENA, novych);
                     }
                     for udalost in pripomienka_udalosti {
                         oznam_pripomienku(&app, udalost);
+                    }
+                    // Obe sú nezávislé od Enable-Log toastu vyššie aj od seba
+                    // navzájom — zdieľajú jedno okno (`ukaz_pripomienku_toast`,
+                    // „novší toast vyhráva"), rovnaký vzor ako ceny/chyba/info.
+                    // Dĺžka presahuje `OPAKOVAT_PO_S`, aby stihla ďalšie obnovenie
+                    // skôr, než by sama zhasla.
+                    if ukaz_sort {
+                        crate::ukaz_pripomienku_toast(
+                            &app,
+                            "Sortni inventár v hre",
+                            "upozornenie",
+                            tli_overlay_core::tracker::varovania::OPAKOVAT_PO_S + 10,
+                        );
+                    }
+                    if ukaz_upload {
+                        crate::ukaz_pripomienku_toast(
+                            &app,
+                            "Log sa neposiela na server",
+                            "upozornenie",
+                            tli_overlay_core::tracker::varovania::OPAKOVAT_PO_S + 10,
+                        );
                     }
 
                     // TLI 22: appka SAMA odfotí a pošle, len čo log ukáže otvorenie
@@ -1437,6 +1577,121 @@ mod testy {
             "nová session (po rotácii) má svoju vlastnú čerstvú lehotu, nemá si pamätať starú značku"
         );
         let _ = std::fs::remove_file(&cesta);
+    }
+
+    // ─── TLI 48 bod 4 — auto-trigger ceny len z NOVÝCH riadkov, nie z histórie ──
+
+    #[test]
+    fn historicke_otvorenie_trhu_pri_prvom_citani_nenastavi_trh_otvoreny() {
+        // Presne nahlásený bug (19.10.2026): appka sa spustí, log na disku už
+        // obsahuje staré (dávno zavreté) otvorenie trhu — to sa pri prvom
+        // dočítaní NESMIE brať ako práve prebiehajúca udalosť.
+        let cesta = docasny_subor();
+        napis(
+            &cesta,
+            "[2026.10.14-22.23.45:283][305]TLLua: Display: [Game] AuctionHouseShowItemGoodV2 Run\n",
+        );
+
+        let mut stav = StavTrackera::default();
+        precitaj(&mut stav, &cesta).unwrap();
+
+        assert!(!stav.odober_trh_otvoreny(), "historický riadok z prvého čítania sa nemá počítať");
+        let _ = std::fs::remove_file(&cesta);
+    }
+
+    #[test]
+    fn otvorenie_trhu_pridane_po_prvom_citani_je_naozaj_zive() {
+        let cesta = docasny_subor();
+        napis(&cesta, "nič užitočné tu nie je, len výplň.\n");
+
+        let mut stav = StavTrackera::default();
+        precitaj(&mut stav, &cesta).unwrap(); // appka "dobehla" existujúci obsah
+
+        pripis(
+            &cesta,
+            "[2026.10.19-08.00.00:000][1]TLLua: Display: [Game] AuctionHouseShowItemGoodV2 Run\n",
+        );
+        precitaj(&mut stav, &cesta).unwrap();
+
+        assert!(stav.odober_trh_otvoreny(), "riadok pridaný PO otvorení appky je živá udalosť");
+        let _ = std::fs::remove_file(&cesta);
+    }
+
+    #[test]
+    fn rotacia_logu_posunie_hranicu_na_zaciatok_noveho_suboru() {
+        // Po reštarte hry je nový (menší) súbor od prvého riadku živý —
+        // appka naň nemá čakať, kým "dobehne" jeho vlastnú (novú) veľkosť.
+        let cesta = docasny_subor();
+        napis(&cesta, &"vyplnovy riadok dlhsi nez novy subor\n".repeat(5));
+
+        let mut stav = StavTrackera::default();
+        precitaj(&mut stav, &cesta).unwrap();
+
+        napis(
+            &cesta,
+            "[2026.10.19-08.00.00:000][1]TLLua: Display: [Game] AuctionHouseShowItemGoodV2 Run\n",
+        );
+        precitaj(&mut stav, &cesta).unwrap();
+
+        assert!(stav.odober_trh_otvoreny(), "riadok hneď v novom (rotovanom) súbore je živý");
+        let _ = std::fs::remove_file(&cesta);
+    }
+
+    // ─── TLI 48 bod 3 — Economy: plný prehliadač cien ──────────────────────
+
+    #[test]
+    fn economy_prehlad_vracia_cenu_zdroj_vek_a_zmenu_24h() {
+        use tli_overlay_core::tracker::ceny::{Cena, Zdroj};
+
+        let mut stav = StavTrackera::default();
+        let conn = db::otvor_v_pamati().unwrap();
+        let teraz = 100_000u64;
+        db::uloz_cenu(
+            &conn,
+            &ZaznamCeny {
+                polozka: 1001,
+                cena_fe: 10.0,
+                median_fe: None,
+                pocet_ponuk: None,
+                sezona: None,
+                zdroj: "vlastny_trh".into(),
+                cas: None,
+                zapisane: (teraz - 25 * 3600) as i64,
+            },
+        )
+        .unwrap();
+        stav.db = Some(conn);
+        stav.cennik.vloz_v_case(
+            Cena { polozka: 1001, fe: 12.0, zdroj: Zdroj::Titrack, kedy: teraz, median: None, pocet_ponuk: 0, zdrojov: 1 },
+            teraz,
+        );
+
+        let riadky = economy_prehlad(&stav, teraz);
+        assert_eq!(riadky.len(), 1);
+        let r = &riadky[0];
+        assert_eq!(r.polozka, 1001);
+        assert_eq!(r.cena_fe, 12.0);
+        assert_eq!(r.zdroj, "titrack");
+        assert_eq!(r.vek_s, 0);
+        let zmena = r.zmena_24h_percent.expect("historická cena existuje, zmena sa má vypočítať");
+        assert!((zmena - 20.0).abs() < 0.001, "(12-10)/10*100 = 20%, bolo {zmena}");
+    }
+
+    #[test]
+    fn economy_prehlad_bez_historie_nema_zmenu_24h() {
+        use tli_overlay_core::tracker::ceny::{Cena, Zdroj};
+
+        let mut stav = StavTrackera::default();
+        stav.db = Some(db::otvor_v_pamati().unwrap());
+        let teraz = 100_000u64;
+        stav.cennik.vloz_v_case(
+            Cena { polozka: 2002, fe: 5.0, zdroj: Zdroj::VlastnyTrh, kedy: teraz, median: None, pocet_ponuk: 0, zdrojov: 1 },
+            teraz,
+        );
+
+        let riadky = economy_prehlad(&stav, teraz);
+        assert_eq!(riadky.len(), 1);
+        assert_eq!(riadky[0].zmena_24h_percent, None, "appka pred 24 h položku ešte nepoznala");
     }
 
     #[test]

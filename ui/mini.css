@@ -45,7 +45,16 @@ body.rezim-upravy .rozlozenie-uchyt {
     display: flex;
     pointer-events: auto;
 }
+/* TLI 48 bod 2 — horný pásik je ťahateľný AJ MIMO režimu úpravy (bez
+   Ctrl+F8), presne ako handle v TITrack overlayi: ID selektor má vyššiu
+   špecifickosť než všeobecné `.rozlozenie-uchyt` vyššie, takže toto `display`/
+   `pointer-events` platí VŽDY, nielen keď je na `body` trieda `rezim-upravy`.
+   Mimo editácie je len jemne priehľadný (nech neruší pohľad na hru), v nej
+   ostáva plne viditeľný ako doteraz. Úchyt na zmenu veľkosti
+   (`#mini-uchyt-velkost`) sa NEMENÍ — ten zostáva viazaný len na editáciu. */
 #mini-uchyt-presun {
+    display: flex;
+    pointer-events: auto;
     top: 0;
     left: 0;
     right: 0;
@@ -56,6 +65,14 @@ body.rezim-upravy .rozlozenie-uchyt {
     background: rgba(255, 150, 44, 0.35);
     border-radius: 8px 8px 0 0;
     cursor: move;
+    opacity: 0.35;
+    transition: opacity 0.15s ease;
+}
+#mini-uchyt-presun:hover {
+    opacity: 0.85;
+}
+body.rezim-upravy #mini-uchyt-presun {
+    opacity: 1;
 }
 #mini-uchyt-velkost {
     right: 1px;

@@ -1,6 +1,6 @@
 [package]
 name = "tli-overlay-core"
-version = "0.13.10"
+version = "0.13.11"
 edition = "2021"
 
 [workspace]

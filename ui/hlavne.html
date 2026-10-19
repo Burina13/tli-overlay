@@ -69,6 +69,7 @@
         <button type="button" class="zalozka" data-panel="panel-solvery">Solvery</button>
         <button type="button" class="zalozka" data-panel="panel-analyza">Analýza</button>
         <button type="button" class="zalozka" data-panel="panel-guide">Guide</button>
+        <button type="button" class="zalozka" data-panel="panel-economy">Economy</button>
         <button type="button" class="zalozka" data-panel="panel-nastavenia">Nastavenia</button>
     </nav>
 
@@ -383,6 +384,50 @@
                 <button type="button" class="btn-vedlajsi" id="btn-guide-kopiruj">Skopírovať</button>
                 <button type="button" class="btn-vedlajsi" id="btn-guide-zavri-odkaz">Zavrieť</button>
             </div>
+        </section>
+
+        <!-- Economy (TLI 48 bod 3) — plný prehliadač cien: kombinuje lokálny
+             cenník (vlastné vyhľadania, obrazovka trhu) aj to, čo appka dostala
+             od partie a z titrack.ninja (`Zdroj::Partia`/`Zdroj::Titrack`,
+             viď `core/src/tracker/ceny.rs`). Appka NEPOZNÁ skutočné herné
+             kategórie položiek (seed mien má zámerne len dvojice id→meno,
+             `ui/polozky-seed-en.json` § meta.poznamka) — filter preto ponúka
+             len zdroj ceny a textové hľadanie, nie herné kategórie. -->
+        <section id="panel-economy" class="panel skryte">
+            <h2>Economy</h2>
+            <p class="vysvetlivka">
+                Ceny, ktoré appka pozná — vlastné vyhľadania, obrazovka trhu,
+                partia aj titrack.ninja. Nastavenie zdieľania je v záložke
+                Tracker („Zdieľať ceny s partiou“).
+            </p>
+            <div class="riadok-akcii">
+                <input type="text" id="economy-hladanie" placeholder="Hľadať položku…">
+                <select id="economy-zdroj">
+                    <option value="">Všetky zdroje</option>
+                    <option value="vlastny_trh">Vlastný trh</option>
+                    <option value="obrazovka">Obrazovka trhu</option>
+                    <option value="partia">Partia</option>
+                    <option value="titrack">titrack.ninja</option>
+                    <option value="rucne">Ručne</option>
+                </select>
+                <span class="vek-ceny" id="economy-pocet"></span>
+            </div>
+            <table class="tabulka" id="tabulka-economy">
+                <thead>
+                    <tr>
+                        <th>Položka</th>
+                        <th>Zdroj</th>
+                        <th class="cislo economy-triedit" data-stlpec="cena">Cena (FE)</th>
+                        <th class="cislo economy-triedit" data-stlpec="zmena">Zmena 24h</th>
+                        <th class="cislo economy-triedit" data-stlpec="vek">Vek</th>
+                    </tr>
+                </thead>
+                <tbody id="tabulka-economy-telo"></tbody>
+            </table>
+            <p class="prazdne" id="economy-prazdne">
+                Appka zatiaľ nepozná žiadnu cenu — vyhľadaj niečo na Exchange
+                alebo zapni zdieľanie cien s partiou v záložke Tracker.
+            </p>
         </section>
 
         <section id="panel-nastavenia" class="panel skryte">

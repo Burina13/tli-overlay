@@ -591,6 +591,35 @@ pub fn nacitaj_cennik(conn: &Connection) -> rusqlite::Result<Cennik> {
     Ok(cennik)
 }
 
+/// TLI 48 bod 3 (Economy — „zmena 24h"): pre každú položku nájde jej
+/// najnovšiu cenu zapísanú NAJNESKÔR v okamihu `hranica_zapisane` (teda
+/// „aká bola cena pred 24 h", nie presne o 24 h staršia — appka zapisuje
+/// ceny nepravidelne, presný okamih by takmer nikdy netrafil). Rovnaká
+/// `MAX(zapisane)` konštrukcia ako `nacitaj_cennik`, len s `WHERE` navyše.
+/// Položka, ktorú appka pred `hranica_zapisane` ešte nepoznala, sa v mape
+/// jednoducho nenachádza — volajúci to zobrazí ako „—", nie ako 0% zmenu.
+pub fn ceny_pred(conn: &Connection, hranica_zapisane: i64) -> rusqlite::Result<std::collections::BTreeMap<u32, f64>> {
+    let mut dotaz = conn.prepare(
+        "SELECT c.config_base_id, c.cena_fe
+           FROM ceny c
+           JOIN (SELECT config_base_id, MAX(zapisane) AS max_z
+                   FROM ceny
+                  WHERE zapisane <= ?1
+                  GROUP BY config_base_id) n
+             ON n.config_base_id = c.config_base_id AND n.max_z = c.zapisane
+          GROUP BY c.config_base_id",
+    )?;
+    let riadky = dotaz.query_map([hranica_zapisane], |r| {
+        Ok((r.get::<_, i64>(0)? as u32, r.get::<_, f64>(1)?))
+    })?;
+    let mut mapa = std::collections::BTreeMap::new();
+    for riadok in riadky {
+        let (polozka, cena) = riadok?;
+        mapa.insert(polozka, cena);
+    }
+    Ok(mapa)
+}
+
 /// Prepočíta hodnoty jedného už uloženého behu podľa zadaného cenníka a zapíše
 /// ich do `behy` (TLI 20, druhý prechod spätného importu).
 ///
@@ -1336,6 +1365,21 @@ mod testy {
 
         assert_eq!(pocet_cien_z_obrazovky_od(&conn, 1000).unwrap(), 2);
         assert_eq!(pocet_cien_z_obrazovky_od(&conn, 0).unwrap(), 3);
+    }
+
+    #[test]
+    fn ceny_pred_vrati_poslednu_cenu_najneskor_v_hranici() {
+        // TLI 48 bod 3 (Economy — „zmena 24h"): položka 1 má tri ceny v čase,
+        // položka 2 má cenu LEN po hranici (teda appka ju vtedy ešte nepoznala).
+        let conn = otvor_v_pamati().unwrap();
+        uloz_cenu(&conn, &ZaznamCeny { polozka: 1, cena_fe: 10.0, median_fe: None, pocet_ponuk: None, sezona: None, zdroj: "vlastny_trh".into(), cas: None, zapisane: 1000 }).unwrap();
+        uloz_cenu(&conn, &ZaznamCeny { polozka: 1, cena_fe: 12.0, median_fe: None, pocet_ponuk: None, sezona: None, zdroj: "vlastny_trh".into(), cas: None, zapisane: 2000 }).unwrap();
+        uloz_cenu(&conn, &ZaznamCeny { polozka: 1, cena_fe: 20.0, median_fe: None, pocet_ponuk: None, sezona: None, zdroj: "vlastny_trh".into(), cas: None, zapisane: 5000 }).unwrap(); // PO hranici, nemá sa použiť
+        uloz_cenu(&conn, &ZaznamCeny { polozka: 2, cena_fe: 99.0, median_fe: None, pocet_ponuk: None, sezona: None, zdroj: "vlastny_trh".into(), cas: None, zapisane: 3000 }).unwrap();
+
+        let mapa = ceny_pred(&conn, 2000).unwrap();
+        assert_eq!(mapa.get(&1), Some(&12.0), "najnovšia cena NIE NESKÔR než hranica");
+        assert_eq!(mapa.get(&2), None, "položku pred hranicou appka ešte nepoznala");
     }
 
     #[test]

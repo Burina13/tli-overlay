@@ -330,3 +330,69 @@ test("CURRENT INVENTORY: filter, triedenie podľa počtu a Hide/Unhide", async (
         window.close();
     }
 });
+
+// ─── Economy (TLI 48 bod 3) ─────────────────────────────────────────────────
+
+test("Economy: vykreslí všetky riadky z tracker_economy, s menom aj bez ceny formátom „—“", async () => {
+    const { window, document, volania } = postavApp();
+    try {
+        await pockajNaPrvePrekreslenie(window);
+        assert.ok(volania.some((v) => v.prikaz === "tracker_economy"), "appka si pri štarte má vypýtať ceny");
+
+        const riadky = [...document.querySelectorAll("#tabulka-economy-telo tr")];
+        assert.equal(riadky.length, 5, "stub má 5 cien");
+        assert.match(riadky[0].textContent, /Steel Forge Beacon/, "meno zo seedu, nie holé ID");
+        // 100300 (Flame Elementium) má `zmena_24h_percent: null` — appka to nemá
+        // vykresliť ako 0 %, to by bola iná informácia (pozri `economyZmenaText`).
+        const flameRiadok = riadky.find((r) => r.textContent.includes("Flame Elementium"));
+        assert.match(flameRiadok.textContent, /—/);
+    } finally {
+        window.close();
+    }
+});
+
+test("Economy: hľadanie podľa mena a filter podľa zdroja sa dajú kombinovať", async () => {
+    const { window, document } = postavApp();
+    try {
+        await pockajNaPrvePrekreslenie(window);
+
+        document.getElementById("economy-hladanie").value = "Energy";
+        document.getElementById("economy-hladanie").dispatchEvent(new window.Event("input", { bubbles: true }));
+        let riadky = [...document.querySelectorAll("#tabulka-economy-telo tr")];
+        assert.equal(riadky.length, 1);
+        assert.match(riadky[0].textContent, /Energy Core/);
+
+        // Vyprázdni hľadanie, filtruj len podľa zdroja "titrack" — má ostať len 140005.
+        document.getElementById("economy-hladanie").value = "";
+        document.getElementById("economy-hladanie").dispatchEvent(new window.Event("input", { bubbles: true }));
+        document.getElementById("economy-zdroj").value = "titrack";
+        document.getElementById("economy-zdroj").dispatchEvent(new window.Event("change", { bubbles: true }));
+        riadky = [...document.querySelectorAll("#tabulka-economy-telo tr")];
+        assert.equal(riadky.length, 1);
+        assert.match(riadky[0].textContent, /titrack\.ninja/);
+    } finally {
+        window.close();
+    }
+});
+
+test("Economy: klik na hlavičku stĺpca 'Zmena 24h' zoradí riadky a druhý klik obráti smer", async () => {
+    const { window, document } = postavApp();
+    try {
+        await pockajNaPrvePrekreslenie(window);
+
+        const hlavicka = document.querySelector('#tabulka-economy th[data-stlpec="zmena"]');
+        hlavicka.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+        // Zostupne (predvolené pri prvom kliku): najväčšia kladná zmena (12.5 %,
+        // Steel Forge Beacon) prvá, položky bez zmeny (`null`) vždy na konci.
+        let riadky = [...document.querySelectorAll("#tabulka-economy-telo tr")];
+        assert.match(riadky[0].textContent, /Steel Forge Beacon/);
+        assert.match(riadky[riadky.length - 1].textContent, /—/);
+
+        hlavicka.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+        // Vzostupne: najzápornejšia zmena (-8.1 %, Shallow Dream Talking) prvá.
+        riadky = [...document.querySelectorAll("#tabulka-economy-telo tr")];
+        assert.match(riadky[0].textContent, /Shallow Dream Talking/);
+    } finally {
+        window.close();
+    }
+});
