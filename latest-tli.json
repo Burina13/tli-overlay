@@ -1,6 +1,6 @@
 {
-  "version": "0.20.6",
-  "notes": "TLI 53 (časť 1/N): Current Inventory a NET WORTH predtým čítali len batoh stránku 103 (\"ostatné\") — chýbala stránka 102 (FE a ostatné meny/materiály ako embery, memory thready, divinity, wedge), takže Net Worth bol podhodnotený. Opravené podľa TITracku: appka teraz počíta celý majetok (FE 1:1 + ostatné s cenníkom). Pozri CHANGELOG.",
-  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.20.6/Tvoj-Tatko-TLI-Overlay_0.20.6_x64_en-US.msi",
-  "msiSha256": "c92e449335f935475381b3eb9a8e0b85c3726de22a1104ae6c78ec48caa16763"
+  "version": "0.20.8",
+  "notes": "TLI 53 (časť 2/N): ikony položiek (Economy, Current Inventory, Recent Runs, loot overlay mini-panel) sú teraz offline súčasťou appky — doterajšia verzia ich ťahala z herného servera, čo appkina CSP ticho blokovala a nikdy sa nezobrazili. Seed zosynchronizovaný na TITrack revision 2 (2189 položiek). Pozri CHANGELOG.",
+  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.20.8/Tvoj-Tatko-TLI-Overlay_0.20.8_x64_en-US.msi",
+  "msiSha256": "17ff886271e6491cd98f84c24d40c7b5c4adf82fb1aa4869bfcda9ea6dec9ca8"
 }
