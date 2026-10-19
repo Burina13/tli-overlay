@@ -425,6 +425,25 @@ function vykresliInventar(p) {
     document.getElementById("prazdne-inventar").classList.toggle("skryte", vsetky.length > 0);
     document.getElementById("tabulka-inventar").classList.toggle("skryte", vsetky.length === 0);
 
+    // TLI 56 bod 1: súčet hodnoty (zo VŠETKÝCH neskrytých položiek, nie len
+    // zo zobrazeného/filtrovaného zoznamu) sa ukazuje hore, nad tabuľkou —
+    // presne `net_worth_fe`, ktoré appka aj tak už počíta pre dlaždicu NET WORTH.
+    document.getElementById("inventar-sucet").textContent = `Súčet: ${fe(p.net_worth_fe || 0)}`;
+
+    // TLI 56 bod 1 (posledná odrážka): keď appka ešte v tejto session nevidela
+    // živé dáta z hry (reštart appky, hráč ešte nesortol/sa neprihlásil znova),
+    // `batoh_cache_cas` nesie čas poslednej ULOŽENEJ snímky z DB — appka vtedy
+    // namiesto prázdnej tabuľky ukáže ten starý stav aj s touto poznámkou.
+    const poznamka = document.getElementById("inventar-cache-poznamka");
+    if (p.batoh_cache_cas) {
+        const cas = new Date(p.batoh_cache_cas * 1000);
+        const hhmm = cas.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+        poznamka.textContent = `Zobrazený je posledný známy stav batohu (stav z ${hhmm}) — appka od reštartu ešte nevidela nový Sort/prihlásenie.`;
+        poznamka.classList.remove("skryte");
+    } else {
+        poznamka.classList.add("skryte");
+    }
+
     const hladane = inventarFilterText.trim().toLowerCase();
     let zoznam = vsetky.filter((pol) => inventarZobrazSkryte || !pol.skryte);
     if (hladane) {
@@ -436,6 +455,9 @@ function vykresliInventar(p) {
         }
         if (inventarTriedenie === "nazov") {
             return nazovPolozky(a.config_base_id).localeCompare(nazovPolozky(b.config_base_id));
+        }
+        if (inventarTriedenie === "cena") {
+            return (b.cena_za_kus_fe ?? -1) - (a.cena_za_kus_fe ?? -1);
         }
         // "hodnota" (predvolené) — neznáma cena (`null`) ide na koniec, nie hore ako „najväčšia".
         return (b.hodnota_fe ?? -1) - (a.hodnota_fe ?? -1);
@@ -472,6 +494,16 @@ document.getElementById("inventar-triedenie").addEventListener("change", (e) => 
 document.getElementById("inventar-zobraz-skryte").addEventListener("change", (e) => {
     inventarZobrazSkryte = e.target.checked;
     vykresliInventar(POSLEDNY_PREHLAD || {});
+});
+// TLI 56 bod 1: triedenie aj kliknutím na hlavičku stĺpca, nielen cez <select>
+// (ten ostáva, len sa pri kliku na hlavičku zosynchronizuje).
+document.querySelectorAll('#tabulka-inventar th[data-triedenie]').forEach((th) => {
+    th.classList.add("hlavicka-triedenie");
+    th.addEventListener("click", () => {
+        inventarTriedenie = th.dataset.triedenie;
+        document.getElementById("inventar-triedenie").value = inventarTriedenie;
+        vykresliInventar(POSLEDNY_PREHLAD || {});
+    });
 });
 document.querySelector("#tabulka-inventar tbody").addEventListener("click", async (e) => {
     const btn = e.target.closest(".btn-skryt-polozku");

@@ -66,6 +66,31 @@ impl Cas {
             + (self.ms as i64)
     }
 
+    /// Inverzná funkcia k `text()` — `"RRRR-MM-DD HH:MM:SS"` späť na `Cas`
+    /// (TLI 56, spätné načítanie behov z DB do živého `StavTrackera` po
+    /// reštarte appky). Milisekundy sa do tohto textu nikdy neukladajú
+    /// (`text()` ich nepíše), vrátené `Cas` má preto vždy `ms: 0` — to je
+    /// presne tá istá presnosť, akú má už aj uložený stĺpec v DB, takže
+    /// žiadna informácia sa týmto krokom nestráca navyše.
+    pub fn z_textu(s: &str) -> Option<Cas> {
+        let (datum, cas) = s.split_once(' ')?;
+        let mut d = datum.split('-');
+        let rok = d.next()?.parse().ok()?;
+        let mesiac = d.next()?.parse().ok()?;
+        let den = d.next()?.parse().ok()?;
+        if d.next().is_some() {
+            return None;
+        }
+        let mut c = cas.split(':');
+        let hodina = c.next()?.parse().ok()?;
+        let minuta = c.next()?.parse().ok()?;
+        let sekunda = c.next()?.parse().ok()?;
+        if c.next().is_some() {
+            return None;
+        }
+        Some(Cas { rok, mesiac, den, hodina, minuta, sekunda, ms: 0 })
+    }
+
     /// Bezpečný výpočet rozdielu časov rieši aj beh hry počas Silvestra, kedy sa rok
     /// preklopí a jednoduchý rozdiel by vrátil masívne záporné číslo.
     pub fn rozdiel_ms(&self, skorsi: &Cas) -> i64 {
@@ -782,6 +807,29 @@ mod testy {
         let stary = Cas { rok: 2024, mesiac: 12, den: 31, hodina: 23, minuta: 59, sekunda: 59, ms: 0 };
         let novy = Cas { rok: 2025, mesiac: 1, den: 1, hodina: 0, minuta: 0, sekunda: 1, ms: 0 };
         assert_eq!(novy.rozdiel_ms(&stary), 2000);
+    }
+
+    // ─── TLI 56: Cas::z_textu — spätné načítanie behov z DB ────────────────
+
+    #[test]
+    fn z_textu_je_inverzna_k_text() {
+        let c = Cas { rok: 2026, mesiac: 10, den: 19, hodina: 17, minuta: 38, sekunda: 5, ms: 0 };
+        assert_eq!(Cas::z_textu(&c.text()), Some(c));
+    }
+
+    #[test]
+    fn z_textu_zahodi_milisekundy_ktore_text_aj_tak_nenesie() {
+        let c = Cas { rok: 2026, mesiac: 1, den: 1, hodina: 0, minuta: 0, sekunda: 0, ms: 777 };
+        let spat = Cas::z_textu(&c.text()).unwrap();
+        assert_eq!(spat.ms, 0);
+        assert_eq!(spat.rok, 2026);
+    }
+
+    #[test]
+    fn z_textu_na_nezmyselnom_vstupe_vracia_none() {
+        assert_eq!(Cas::z_textu(""), None);
+        assert_eq!(Cas::z_textu("nieje cas"), None);
+        assert_eq!(Cas::z_textu("2026-10-19"), None);
     }
 
     // ─── TLI 12/13: nové typy udalostí z log-format-katalog.md ─────────────

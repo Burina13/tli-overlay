@@ -197,8 +197,10 @@ jobs:
           if (-not $edge) { Write-Warning "Edge sa nenašiel, náhľad preskakujem."; exit 0 }
           # `panel-economy` (TLI 48/49) tu chýbal odvtedy, čo pribudol v
           # `ui/nahlad-generuj.py` — ten `.html` súbor sa teda generoval, len
-          # sa nikdy neodfotil. Doplnené TLI 53 bod C.
-          $zalozky = @("panel-tracker", "panel-solvery", "panel-analyza", "panel-guide", "panel-economy", "panel-nastavenia")
+          # sa nikdy neodfotil. Doplnené TLI 53 bod C. TLI 56: `panel-inventory`
+          # pridaný do OBOCH zoznamov v TOM ISTOM commite, nech sa tá istá
+          # chyba nezopakuje tretí raz.
+          $zalozky = @("panel-tracker", "panel-inventory", "panel-solvery", "panel-analyza", "panel-guide", "panel-economy", "panel-nastavenia")
           # Témy sa fotia OBE: od 0.7.0 je predvolená svetlá a tmavá je prepínač
           # v hlavičke — na screenshote musí byť vidieť, že obe naozaj fungujú.
           $temy = @("svetla", "tmava")

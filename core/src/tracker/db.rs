@@ -16,10 +16,15 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 use super::ceny::{Cena, Cennik, Nastavenie, Zdroj};
 use super::log::Cas;
-use super::stav::{Beh, Dovod, HracSnimka, NalezCeny};
+use super::stav::{Beh, Dovod, HracSnimka, NalezCeny, Zmena};
 
 /// Aktuálna verzia schémy. Zvyšuje sa pri KAŽDEJ zmene tabuliek; `migruj()`
 /// podľa nej vie, ktoré kroky ešte treba spustiť.
+/// `5` (TLI 56, `2026-10-19-1740-mcp.md`) pridalo `tracker_meta` (key-value,
+/// napr. „Reset Stats" musí teraz prežiť reštart appky) a `batoh_snapshot`
+/// (posledná známa snímka KAŽDEJ sledovanej stránky batohu, nech appka po
+/// reštarte nemusí čakať na nový Sort/prihlásenie, kým ukáže Current
+/// Inventory a Net Worth).
 /// `4` (TLI 14) pridalo `tracker_upload_stav` — kam appka minule dohrala
 /// denný upload KAŽDÉHO súboru. Musí prežiť reštart appky: poslanie
 /// `pozicia_od = 0` nad súborom, ktorý server už čiastočne má, by server
@@ -30,7 +35,7 @@ use super::stav::{Beh, Dovod, HracSnimka, NalezCeny};
 /// zlúčenie signatúr taktík hráčom. Všetky `CREATE TABLE IF NOT EXISTS` sú
 /// samy o sebe idempotentné, verzia je tu najmä na diagnostiku a budúce kroky,
 /// ktoré by už idempotentné CREATE nestačili.
-pub const SCHEMA_VERZIA: i32 = 4;
+pub const SCHEMA_VERZIA: i32 = 5;
 
 /// Otvorí (alebo vytvorí) databázu na danej ceste a rovno ju zmigruje na
 /// najnovšiu schému. Jediné miesto, odkiaľ sa má DB otvárať — inak sa dá
@@ -210,6 +215,30 @@ pub fn migruj(conn: &Connection) -> rusqlite::Result<()> {
             nahrana_pozicia INTEGER NOT NULL,
             odtlacok_zaciatku TEXT NOT NULL
         );
+
+        -- TLI 56 (2026-10-19-1740-mcp.md bod 1/2/3): appka pred restartom
+        -- zila len z chvost.pozicia v zivom logu -- po restarte teda RUNS,
+        -- NET WORTH aj Current inventory vzdy spadli na prazdno/ciastocne
+        -- data, kym hrac znova nesortol/neprihlasil sa, hoci presne tie iste
+        -- data appka uz davno mala v tejto DB. tracker_meta je jednoduchy
+        -- key-value sklad (napr. stat_reset_unix pre Reset Stats, ktory
+        -- teraz musi prezit restart appky rovnako ako doteraz prezival len
+        -- v ramci jednej session) a batoh_snapshot je posledny znamy obsah
+        -- KAZDEJ sledovanej stranky batohu (101/102/103) samostatne -- appka
+        -- vie, ktore stranky tato session este nevidela, a prave za TIE
+        -- dosadi poslednu ulozenu snimku namiesto nicoho.
+        CREATE TABLE IF NOT EXISTS tracker_meta (
+            klic TEXT PRIMARY KEY,
+            hodnota TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS batoh_snapshot (
+            stranka INTEGER NOT NULL,
+            config_base_id INTEGER NOT NULL,
+            mnozstvo INTEGER NOT NULL,
+            cas INTEGER NOT NULL,
+            PRIMARY KEY (stranka, config_base_id)
+        );
         ",
     )?;
 
@@ -251,6 +280,193 @@ fn dovod_text(dovod: Dovod) -> &'static str {
         Dovod::Ignorovat => "ignorovat",
         Dovod::Ostatne => "ostatne",
     }
+}
+
+/// Inverzná funkcia k `dovod_text` (TLI 56, `nacitaj_zive_behy`). Neznámy
+/// text (DB poškodená inou appkou, budúci stĺpec) padá bezpečne na
+/// `Ostatne` — rovnaký predvolený princíp ako `Dovod::default()`.
+fn dovod_od_text(s: &str) -> Dovod {
+    match s {
+        "drop" => Dovod::Drop,
+        "vstup_mapy" => Dovod::VstupMapy,
+        "obchod" => Dovod::Obchod,
+        "ignorovat" => Dovod::Ignorovat,
+        _ => Dovod::Ostatne,
+    }
+}
+
+/// Jednoduchý key-value sklad (TLI 56) pre veci, ktoré musia prežiť reštart
+/// appky, ale nepatria do `Nastavenia` (súbor na disku, nie DB) — zatiaľ len
+/// `stat_reset_unix` („Reset Stats"). Upsert cez `ON CONFLICT`.
+pub fn nastav_meta(conn: &Connection, klic: &str, hodnota: &str) -> rusqlite::Result<()> {
+    conn.execute(
+        "INSERT INTO tracker_meta (klic, hodnota) VALUES (?1, ?2)
+         ON CONFLICT(klic) DO UPDATE SET hodnota = excluded.hodnota",
+        params![klic, hodnota],
+    )?;
+    Ok(())
+}
+
+pub fn precitaj_meta(conn: &Connection, klic: &str) -> rusqlite::Result<Option<String>> {
+    conn.query_row(
+        "SELECT hodnota FROM tracker_meta WHERE klic = ?1",
+        params![klic],
+        |r| r.get(0),
+    )
+    .optional()
+}
+
+/// Uloží aktuálny obsah JEDNEJ stránky batohu (TLI 56, bod 1 poslednej
+/// odrážky zadania `2026-10-19-1740-mcp.md`) — „replace celej stránky",
+/// nie `UPSERT` po položkách, lebo položka, ktorú hráč medzičasom minul do
+/// nuly, musí zo snímky ZMIZNÚŤ (inak by appka po reštarte ukazovala vec,
+/// ktorú hráč už v batohu nemá). Volá sa len s NEPRÁZDNOU stránkou (volajúci
+/// v `tracker.rs` prázdnu stránku jednoducho nepresype) — prázdny `polozky`
+/// by inak zmazal poslednú platnú snímku len preto, že appka túto stránku v
+/// tomto kole live nevidela.
+pub fn uloz_batoh_snapshot(
+    conn: &Connection,
+    stranka: u32,
+    polozky: &std::collections::BTreeMap<u32, i64>,
+    cas: i64,
+) -> rusqlite::Result<()> {
+    conn.execute("DELETE FROM batoh_snapshot WHERE stranka = ?1", params![stranka])?;
+    for (polozka, mnozstvo) in polozky {
+        conn.execute(
+            "INSERT INTO batoh_snapshot (stranka, config_base_id, mnozstvo, cas) VALUES (?1,?2,?3,?4)",
+            params![stranka, polozka, mnozstvo, cas],
+        )?;
+    }
+    Ok(())
+}
+
+/// Načíta poslednú uloženú snímku jednej stránky batohu a čas, kedy appka
+/// snímku zapísala (sekundy, unixový čas). `None` v čase, keď appka túto
+/// stránku ešte nikdy neuložila (stránka v `batoh_snapshot` vôbec nie je).
+pub fn nacitaj_batoh_snapshot(
+    conn: &Connection,
+    stranka: u32,
+) -> rusqlite::Result<(std::collections::BTreeMap<u32, i64>, Option<i64>)> {
+    let mut stmt = conn.prepare(
+        "SELECT config_base_id, mnozstvo, cas FROM batoh_snapshot WHERE stranka = ?1",
+    )?;
+    let mut polozky = std::collections::BTreeMap::new();
+    let mut cas = None;
+    let mut rows = stmt.query(params![stranka])?;
+    while let Some(row) = rows.next()? {
+        let polozka: u32 = row.get(0)?;
+        let mnozstvo: i64 = row.get(1)?;
+        let riadkovy_cas: i64 = row.get(2)?;
+        polozky.insert(polozka, mnozstvo);
+        cas = Some(cas.map_or(riadkovy_cas, |c: i64| c.max(riadkovy_cas)));
+    }
+    Ok((polozky, cas))
+}
+
+/// Spätné načítanie behov z DB do živého `StavTrackera` (TLI 56 bod 3,
+/// zadanie `2026-10-19-1740-mcp.md`) — bez toho appka po KAŽDOM reštarte
+/// ukazovala RUNS/FE-HOUR/Recent Runs prázdne, hoci tie isté mapy už dávno
+/// ležia v tejto DB (appka doteraz žila len z `chvost.pozicia` v živom logu,
+/// ktorá sa pri reštarte NEVRACIA na začiatok, takže sa staré riadky logu
+/// znova neprečítali a `stav.behy` ostávalo `Vec::new()`).
+///
+/// Vracia behy v chronologickom poradí (ako živé parsovanie), orezané podľa
+/// `tracker_meta.stat_reset_unix` (posledné kliknutie na „Reset Stats" —
+/// `resetuj_zive_staty` zapíše „teraz" do tejto hodnoty, aby reset tiež
+/// prežil reštart). Monštrá/modifikátory/bossovia/canvas akcie sa NEnačítavajú
+/// — dashboard (karty, Recent Runs, grafy) ich nepotrebuje, používa ich len
+/// záložka Analýza, ktorá si ich číta priamo z DB vlastným dotazom.
+///
+/// Chyba DB (poškodený súbor, zamknutý inou appkou) sa nerieši tu — volajúci
+/// (`StavTrackera::default()`) na `Err` jednoducho padne na prázdny zoznam,
+/// presne ako doteraz pri appke bez DB vôbec.
+pub fn nacitaj_zive_behy(conn: &Connection) -> rusqlite::Result<Vec<Beh>> {
+    let prah_unix: Option<i64> = precitaj_meta(conn, "stat_reset_unix")?.and_then(|s| s.parse().ok());
+
+    let mut stmt = conn.prepare(
+        "SELECT id, zona, je_hub, level_uid, level_typ, level_id, zaciatok_cas, koniec_cas, podpis_vstupov
+         FROM behy ORDER BY id ASC",
+    )?;
+    let riadky: Vec<(i64, String, i64, Option<i64>, Option<i64>, Option<i64>, Option<String>, Option<String>, String)> = stmt
+        .query_map([], |r| {
+            Ok((
+                r.get(0)?,
+                r.get(1)?,
+                r.get(2)?,
+                r.get(3)?,
+                r.get(4)?,
+                r.get(5)?,
+                r.get(6)?,
+                r.get(7)?,
+                r.get(8)?,
+            ))
+        })?
+        .collect::<Result<_, _>>()?;
+
+    let mut polozky_stmt = conn.prepare(
+        "SELECT config_base_id, mnozstvo, typ, cas FROM polozky WHERE beh_id = ?1 ORDER BY id ASC",
+    )?;
+
+    let mut vysledok = Vec::new();
+    for (id, zona, je_hub, level_uid, level_typ, level_id, zaciatok_s, koniec_s, podpis_db) in riadky {
+        let zaciatok = zaciatok_s.as_deref().and_then(Cas::z_textu);
+        if let Some(prah) = prah_unix {
+            let pred_prahom = zaciatok.and_then(|c| c.unix_sekundy()).map(|u| (u as i64) < prah).unwrap_or(false);
+            if pred_prahom {
+                continue;
+            }
+        }
+        let koniec = koniec_s.as_deref().and_then(Cas::z_textu);
+
+        let mut vsetky_zmeny = Vec::new();
+        let mut rows = polozky_stmt.query(params![id])?;
+        while let Some(row) = rows.next()? {
+            let polozka: u32 = row.get(0)?;
+            let mnozstvo: i64 = row.get(1)?;
+            let typ: String = row.get(2)?;
+            let riadkovy_cas: Option<String> = row.get(3)?;
+            vsetky_zmeny.push(Zmena {
+                polozka,
+                mnozstvo,
+                dovod: dovod_od_text(&typ),
+                cas: riadkovy_cas.as_deref().and_then(Cas::z_textu),
+            });
+        }
+
+        let mut dropy = std::collections::BTreeMap::new();
+        let mut vstupy = std::collections::BTreeMap::new();
+        for z in &vsetky_zmeny {
+            match z.dovod {
+                Dovod::Drop => *dropy.entry(z.polozka).or_insert(0) += z.mnozstvo,
+                Dovod::VstupMapy => *vstupy.entry(z.polozka).or_insert(0) += z.mnozstvo,
+                _ => {}
+            }
+        }
+
+        vysledok.push(Beh {
+            id: id as u64,
+            zona,
+            je_hub: je_hub != 0,
+            level_uid: level_uid.map(|v| v as u64),
+            level_typ: level_typ.map(|v| v as u32),
+            level_id: level_id.map(|v| v as u64),
+            zaciatok,
+            koniec,
+            // `podpis_vstupov()` sa rozhoduje medzi „bez-vstupu" a
+            // „boss-alebo-pinnacle" presne podľa tohto príznaku, keď sú
+            // vstupy prázdne — DB si ho samostatne neukladá, ale uložený
+            // stĺpec `podpis_vstupov` už hotovú odpoveď nesie.
+            otvorenie_bez_spotreby: vstupy.is_empty() && podpis_db == "boss-alebo-pinnacle",
+            dropy,
+            vstupy,
+            vsetky_zmeny,
+            monstra: Vec::new(),
+            modifikatory: Vec::new(),
+            bossovia: Vec::new(),
+            canvas_akcie: Vec::new(),
+        });
+    }
+    Ok(vysledok)
 }
 
 /// Jednoduchý, rýchly hash riadku (FNV-1a, 64-bit) na dedup v `raw_udalosti` —
@@ -1681,5 +1897,125 @@ mod testy {
             nacitaj_upload_stav(&conn, "UE_game-backup-2026.10.14.log").unwrap().unwrap().nahrana_pozicia,
             20
         );
+    }
+
+    // ─── TLI 56 (`2026-10-19-1740-mcp.md`): meta + snímka batohu + spätné
+    // načítanie behov prežívajú reštart appky ─────────────────────────────
+
+    #[test]
+    fn meta_sa_da_zapisat_precitat_a_prepisat() {
+        let conn = otvor_v_pamati().unwrap();
+        assert_eq!(precitaj_meta(&conn, "stat_reset_unix").unwrap(), None);
+        nastav_meta(&conn, "stat_reset_unix", "1000").unwrap();
+        assert_eq!(precitaj_meta(&conn, "stat_reset_unix").unwrap(), Some("1000".to_string()));
+        nastav_meta(&conn, "stat_reset_unix", "2000").unwrap();
+        assert_eq!(precitaj_meta(&conn, "stat_reset_unix").unwrap(), Some("2000".to_string()));
+    }
+
+    #[test]
+    fn batoh_snapshot_prezije_ulozenie_a_nacitanie() {
+        let conn = otvor_v_pamati().unwrap();
+        let mut polozky = BTreeMap::new();
+        polozky.insert(100300u32, 191i64); // FE
+        polozky.insert(200003u32, 5i64); // ember
+        uloz_batoh_snapshot(&conn, 102, &polozky, 1_000).unwrap();
+
+        let (nacitane, cas) = nacitaj_batoh_snapshot(&conn, 102).unwrap();
+        assert_eq!(nacitane, polozky);
+        assert_eq!(cas, Some(1_000));
+
+        // Iná stránka ostáva prázdna, appka ju ešte nikdy neuložila.
+        let (prazdna, ziadny_cas) = nacitaj_batoh_snapshot(&conn, 103).unwrap();
+        assert!(prazdna.is_empty());
+        assert_eq!(ziadny_cas, None);
+    }
+
+    #[test]
+    fn batoh_snapshot_druhe_ulozenie_nahradi_prve_celkom() {
+        // Položka, ktorú hráč medzičasom minul do nuly, zo snímky musí
+        // ZMIZNÚŤ — appka po reštarte nesmie ukazovať vec, ktorú hráč v
+        // batohu už nemá.
+        let conn = otvor_v_pamati().unwrap();
+        let mut prve = BTreeMap::new();
+        prve.insert(100300u32, 191i64);
+        prve.insert(5142u32, 3i64);
+        uloz_batoh_snapshot(&conn, 102, &prve, 1_000).unwrap();
+
+        let mut druhe = BTreeMap::new();
+        druhe.insert(100300u32, 250i64);
+        uloz_batoh_snapshot(&conn, 102, &druhe, 2_000).unwrap();
+
+        let (nacitane, cas) = nacitaj_batoh_snapshot(&conn, 102).unwrap();
+        assert_eq!(nacitane, druhe, "stará položka 5142 musí zo snímky zmiznúť");
+        assert_eq!(cas, Some(2_000));
+    }
+
+    #[test]
+    fn nacitaj_zive_behy_vrati_ulozene_behy_v_chronologickom_poradi() {
+        let mut conn = otvor_v_pamati().unwrap();
+        let mut b1 = prazdny_beh(1, "MapaA", 0);
+        b1.dropy.insert(400021, 3);
+        b1.vsetky_zmeny.push(Zmena { polozka: 400021, mnozstvo: 3, dovod: Dovod::Drop, cas: cas(2) });
+        let mut b2 = prazdny_beh(2, "MapaB", 20);
+        b2.vstupy.insert(300001, 1);
+        b2.vsetky_zmeny.push(Zmena { polozka: 300001, mnozstvo: 1, dovod: Dovod::VstupMapy, cas: cas(20) });
+
+        uloz_beh(&mut conn, &b1, &HracSnimka::default(), &OceneneHodnoty::default()).unwrap();
+        uloz_beh(&mut conn, &b2, &HracSnimka::default(), &OceneneHodnoty::default()).unwrap();
+
+        let nacitane = nacitaj_zive_behy(&conn).unwrap();
+        assert_eq!(nacitane.len(), 2);
+        assert_eq!(nacitane[0].zona, "MapaA");
+        assert_eq!(nacitane[0].dropy.get(&400021), Some(&3));
+        assert_eq!(nacitane[1].zona, "MapaB");
+        assert_eq!(nacitane[1].vstupy.get(&300001), Some(&1));
+    }
+
+    #[test]
+    fn nacitaj_zive_behy_respektuje_stat_reset_unix() {
+        let mut conn = otvor_v_pamati().unwrap();
+        let skorsi = prazdny_beh(1, "MapaStara", 0); // 2026-10-16 10:00:00
+        let neskorsi = prazdny_beh(2, "MapaNova", 40); // 2026-10-16 10:00:40
+        uloz_beh(&mut conn, &skorsi, &HracSnimka::default(), &OceneneHodnoty::default()).unwrap();
+        uloz_beh(&mut conn, &neskorsi, &HracSnimka::default(), &OceneneHodnoty::default()).unwrap();
+
+        // Prah tesne MEDZI oboma behmi (unix_sekundy je v minútach/sekundách
+        // od 1.1.1970, presná hodnota netreba — len že leží medzi 10:00:00 a
+        // 10:00:40 toho istého dňa).
+        let prah = cas(20).unwrap().unix_sekundy().unwrap();
+        nastav_meta(&conn, "stat_reset_unix", &prah.to_string()).unwrap();
+
+        let nacitane = nacitaj_zive_behy(&conn).unwrap();
+        assert_eq!(nacitane.len(), 1, "beh spred Reset Stats sa nesmie znova ukázať");
+        assert_eq!(nacitane[0].zona, "MapaNova");
+    }
+
+    #[test]
+    fn nacitaj_zive_behy_obnovi_otvorenie_bez_spotreby_z_podpisu() {
+        // Boss/pinnacle mapa: prázdne vstupy, ale `podpis_vstupov` v DB je
+        // "boss-alebo-pinnacle" (TLI 19 bug B) — po spätnom načítaní sa
+        // odznak v UI nesmie zmeniť na "kampaň".
+        let mut conn = otvor_v_pamati().unwrap();
+        let mut beh = prazdny_beh(1, "BossMapa", 0);
+        beh.otvorenie_bez_spotreby = true;
+        assert_eq!(beh.podpis_vstupov(), "boss-alebo-pinnacle");
+        uloz_beh(&mut conn, &beh, &HracSnimka::default(), &OceneneHodnoty::default()).unwrap();
+
+        let nacitane = nacitaj_zive_behy(&conn).unwrap();
+        assert_eq!(nacitane.len(), 1);
+        assert!(nacitane[0].otvorenie_bez_spotreby);
+        assert_eq!(nacitane[0].podpis_vstupov(), "boss-alebo-pinnacle");
+    }
+
+    #[test]
+    fn nacitaj_zive_behy_hubove_mapy_ostavaju_oznacene() {
+        let mut conn = otvor_v_pamati().unwrap();
+        let mut hub = prazdny_beh(1, "Hub", 0);
+        hub.je_hub = true;
+        uloz_beh(&mut conn, &hub, &HracSnimka::default(), &OceneneHodnoty::default()).unwrap();
+
+        let nacitane = nacitaj_zive_behy(&conn).unwrap();
+        assert_eq!(nacitane.len(), 1);
+        assert!(nacitane[0].je_hub, "hub beh sa má vrátiť ako hub, nie zahodiť — ocenenie ho beztak vynechá");
     }
 }

@@ -201,10 +201,36 @@ impl Default for StavTrackera {
             .as_ref()
             .and_then(|c| db::nacitaj_cennik(c).ok())
             .unwrap_or_else(Cennik::novy);
+        // TLI 56 (`2026-10-19-1740-mcp.md` bod 3): rovnaká OFFLINE CACHE
+        // filozofia ako pri cenníku vyššie, len pre behy. Appka doteraz
+        // RUNS/Recent Runs/FE-HOUR po KAŽDOM reštarte vynulovala, hoci tie
+        // isté mapy už dávno ležia v tejto DB — `chvost.pozicia` sa pri
+        // reštarte nevracia na začiatok, takže live čítanie logu staré
+        // riadky znova neuvidí. `nacitaj_zive_behy` vráti len to, čo ešte
+        // neprekryl posledný „Reset Stats" (`tracker_meta.stat_reset_unix`).
+        // `#[cfg(not(test))]`: `cesta_db_suboru()` nie je v testoch izolovaná
+        // (žiadny dočasný adresár na beh) — je to ten istý skutočný súbor pre
+        // VŠETKY testy v tomto builde (`$HOME/.config/.../tracker.sqlite3`),
+        // ktoré navyše bežia paralelne. Testy preto už dávno spoliehajú na
+        // to, že odtiaľ načítaný `cennik`/`behy` môže byť hocičo, a buď si
+        // vlastné dáta prepíšu (`stav.cennik.vloz(...)`), alebo si DB
+        // nahradia vlastnou `db::otvor_v_pamati()`. Správny fix (spätné
+        // načítanie behov pri štarte appky) by v builde pre testy spôsobilo
+        // presne to, čomu sa doteraz vyhýbali — testy typu
+        // „net_worth_sa_uz_nescitava_s_cistym_ziskom..." počítajú s PRESNÝM
+        // súčtom nad `stav.behy`, ktorý by sa krížovou kontamináciou zo
+        // zdieľaného súboru stal nedeterministickým. `nacitaj_zive_behy` má
+        // vlastné jednotkové testy nad izolovanou `otvor_v_pamati()` DB
+        // (`core/src/tracker/db.rs`), tie overujú správnosť už aj bez tohto
+        // prepojenia.
+        #[cfg(not(test))]
+        let behy = db.as_ref().and_then(|c| db::nacitaj_zive_behy(c).ok()).unwrap_or_default();
+        #[cfg(test)]
+        let behy = Vec::new();
         Self {
             sledovac: Sledovac::novy(),
             cennik,
-            behy: Vec::new(),
+            behy,
             chvost: StavChvosta::novy(),
             cesta: None,
             chyba: None,
@@ -292,10 +318,20 @@ impl StavTrackera {
     /// pozícia čítania logu (`sledovac`/`chvost`) aj lokálna DB pre záložku
     /// Analýza ostávajú nedotknuté, takže dlhodobá história sa nestratí a
     /// appka nezačne čítať log odznova. Presne to vyžaduje zadanie („Nič
-    /// nemaž") — toto nemaže žiadny súbor, len vyprázdni zoznam v pamäti,
-    /// ktorý sa rovnako nanovo napĺňa z bežiaceho logu od každého reštartu.
+    /// nemaž") — toto nemaže žiadny súbor, len vyprázdni zoznam v pamäti.
+    ///
+    /// TLI 56: od zavedenia spätného načítania behov z DB (`StavTrackera::
+    /// default`, `db::nacitaj_zive_behy`) by vyprázdnenie LEN pamäte
+    /// nevydržalo do ďalšieho reštartu appky — `behy` by sa znova naplnilo
+    /// tými istými starými mapami. Preto sa „teraz" zapisuje aj do
+    /// `tracker_meta.stat_reset_unix`: ďalšie spätné načítanie (aj po
+    /// reštarte) oreže všetko spred tohto okamihu rovnako, ako je už teraz
+    /// orezané v pamäti.
     pub fn resetuj_zive_staty(&mut self) {
         self.behy.clear();
+        if let Some(conn) = &self.db {
+            let _ = db::nastav_meta(conn, "stat_reset_unix", &unixovy_cas().to_string());
+        }
     }
 
     /// TLI 22: zistí a VYNULUJE, či posledné `precitaj` uvidelo otvorenie
@@ -632,6 +668,13 @@ pub struct PrehladProUi {
     /// upozornenie; `net_worth_fe`/zoznam `batoh` sa ukazujú vždy, bez
     /// ohľadu naň (aj neúplný súčet je lepší než žiadny).
     pub materialy_sortovane: bool,
+    /// TLI 56 bod 1 (posledná odrážka): `None`, keď appka v tejto session
+    /// VIDELA ŽIVO všetky sledované stránky batohu (101/102/103) — `batoh`
+    /// je teda úplne čerstvý. Keď aspoň jedna stránka chýba a appka ju
+    /// nahradila poslednou uloženou snímkou z DB (`mnozstva_s_cachou`), nesie
+    /// unixový čas TEJ snímky, aby UI vedelo ukázať „stav z HH:MM" namiesto
+    /// toho, aby tváril neúplný/starý súčet za aktuálny.
+    pub batoh_cache_cas: Option<u64>,
     /// Unixový čas (sekundy), kedy appka naposledy DOKONČILA kolo
     /// synchronizácie cien s partiou (TLI 49 bod 2) — `None`, kým appka ešte
     /// ani raz kolo nedokončila. JS si z neho sám urobí „HH:MM" v lokálnom
@@ -659,9 +702,66 @@ pub struct PolozkaBatohu {
     pub cena_vek: Option<String>,
 }
 
-/// Postaví zoznam `batoh` z aktuálneho stavu `Sledovac` + cenník, nad
-/// `STRANKY_BATOHU_SLEDOVANE` (TLI 53 — predtým len `STRANKA_BATOHU_OSTATNE`,
-/// pozri `PrehladProUi::net_worth_fe`). Skryté položky (`skryte_polozky`) sa
+/// TLI 56 bod 1 (posledná odrážka) a bod 2 (zadanie `2026-10-19-1740-mcp.md`):
+/// appka po KAŽDOM reštarte vidí z `Sledovac` len to, čo sa stihlo prečítať
+/// odvtedy (FE/materiály hra posiela len pri prihlásení/Sorte, nie znova pri
+/// každom riadku) — Current Inventory aj NET WORTH preto po reštarte padali
+/// na nulu alebo na čiastočný súčet (napr. videná bola len jedna stránka),
+/// hoci appka presne tie isté dáta už mala uložené z PREDOŠLEJ session.
+///
+/// Pre KAŽDÚ sledovanú stránku samostatne: keď appka v tejto session na danej
+/// stránke už niečo videla, použije ŽIVÉ dáta a rovno ich uloží ako novú
+/// snímku (nech má z čoho vychádzať pri ĎALŠOM reštarte). Keď stránku ešte
+/// nevidela, siahne po poslednej uloženej snímke TEJ ISTEJ stránky z DB.
+/// Vracia zlúčenú mapu cez všetky stránky a (keď aspoň jedna stránka použila
+/// cache) najstarší čas tej cache — presne to UI ukáže ako „stav z HH:MM".
+///
+/// DB čítanie/zápis je `#[cfg(not(test))]` — z toho istého dôvodu ako spätné
+/// načítanie `behy` v `StavTrackera::default()` vyššie: `cesta_db_suboru()`
+/// nie je v testoch izolovaná, je to JEDEN zdieľaný súbor pre všetky testy
+/// v builde a desiatky existujúcich testov (napr.
+/// `vystroj_na_strance_100_sa_do_current_inventory_nedostane`) spoliehajú na
+/// to, že prázdna živá stránka znamená prázdny `batoh`, nie krížovo
+/// kontaminovanú snímku z INEJ paralelne bežiacej testovacej funkcie.
+/// `uloz_batoh_snapshot`/`nacitaj_batoh_snapshot` majú vlastné jednotkové
+/// testy nad izolovanou `otvor_v_pamati()` DB (`core/src/tracker/db.rs`).
+#[cfg_attr(test, allow(unused_variables))]
+fn mnozstva_s_cachou(stav: &StavTrackera, teraz: u64) -> (BTreeMap<u32, i64>, Option<u64>) {
+    let mut spolu = BTreeMap::new();
+    #[cfg_attr(test, allow(unused_mut))]
+    let mut cache_cas: Option<u64> = None;
+    for &stranka in &STRANKY_BATOHU_SLEDOVANE {
+        let zive = stav.sledovac.batoh_stranka(stranka);
+        if !zive.is_empty() {
+            #[cfg(not(test))]
+            if let Some(conn) = &stav.db {
+                let _ = db::uloz_batoh_snapshot(conn, stranka, &zive, teraz as i64);
+            }
+            for (polozka, pocet) in zive {
+                *spolu.entry(polozka).or_insert(0) += pocet;
+            }
+            continue;
+        }
+        #[cfg(not(test))]
+        if let Some(conn) = &stav.db {
+            if let Ok((ulozene, cas)) = db::nacitaj_batoh_snapshot(conn, stranka) {
+                for (polozka, pocet) in ulozene {
+                    *spolu.entry(polozka).or_insert(0) += pocet;
+                }
+                if let Some(c) = cas {
+                    let c = c as u64;
+                    cache_cas = Some(cache_cas.map_or(c, |existujuci| existujuci.min(c)));
+                }
+            }
+        }
+    }
+    (spolu, cache_cas)
+}
+
+/// Postaví zoznam `batoh` z aktuálneho stavu `Sledovac` (s cache fallbackom
+/// z DB, `mnozstva_s_cachou`) + cenník, nad `STRANKY_BATOHU_SLEDOVANE`
+/// (TLI 53 — predtým len `STRANKA_BATOHU_OSTATNE`, pozri
+/// `PrehladProUi::net_worth_fe`). Skryté položky (`skryte_polozky`) sa
 /// v zozname UKÁŽU (appka nič nezahadzuje ticho), len appka ich označí
 /// príznakom — UI rozhoduje, či ich pri predajnom zozname vynechá, ale do
 /// `net_worth_fe` sa nerátajú (sú to veci, čo si hráč necháva, nie majetok
@@ -669,8 +769,8 @@ pub struct PolozkaBatohu {
 /// neuplatňuje — rovnaký princíp ako `core::tracker::ceny::ocen_v_case`,
 /// len appka tu navyše potrebuje aj `cena_vek`/`cena_zastarana` pre UI,
 /// preto sa nevolá priamo zdieľaná funkcia.
-fn aktualny_batoh(stav: &StavTrackera, nastavenie: &Nastavenie, skryte_polozky: &[u32], teraz: u64) -> (Vec<PolozkaBatohu>, f64) {
-    let mnozstva = stav.sledovac.batoh_stranky(&STRANKY_BATOHU_SLEDOVANE);
+fn aktualny_batoh(stav: &StavTrackera, nastavenie: &Nastavenie, skryte_polozky: &[u32], teraz: u64) -> (Vec<PolozkaBatohu>, f64, Option<u64>) {
+    let (mnozstva, cache_cas) = mnozstva_s_cachou(stav, teraz);
     let mut zoznam = Vec::with_capacity(mnozstva.len());
     let mut hodnota_spolu = 0.0;
     for (polozka, pocet) in mnozstva {
@@ -698,7 +798,7 @@ fn aktualny_batoh(stav: &StavTrackera, nastavenie: &Nastavenie, skryte_polozky: 
             cena_vek: if je_fe { None } else { cena.map(|c| vek_text(teraz.saturating_sub(c.kedy))) },
         });
     }
-    (zoznam, hodnota_spolu)
+    (zoznam, hodnota_spolu, cache_cas)
 }
 
 /// Koľko položiek najviac vypíše výzva „vyhľadaj na Exchange". Viac než tri
@@ -789,7 +889,7 @@ pub fn prehlad_pre_ui(stav: &StavTrackera, zapnuty: bool, dan: bool, skryte_polo
     // takže posledný nehubový je ten, z ktorého hráč práve vyšiel.
     let posledna_mapa = stav.behy.iter().rev().find_map(na_zivo);
 
-    let (batoh, hodnota_batohu) = aktualny_batoh(stav, &nastavenie, skryte_polozky, teraz);
+    let (batoh, hodnota_batohu, batoh_cache_cas) = aktualny_batoh(stav, &nastavenie, skryte_polozky, teraz);
     // TLI 53: NIE `+ suhrn.celkom.cisty_zisk`. `hodnota_batohu` už od TLI 53
     // obsahuje aj skutočný FE zostatok (stránka 102), takže pripočítanie
     // kumulatívneho zisku z máp by ten istý FE zarátalo druhý raz.
@@ -822,6 +922,7 @@ pub fn prehlad_pre_ui(stav: &StavTrackera, zapnuty: bool, dan: bool, skryte_polo
         batoh,
         net_worth_fe,
         materialy_sortovane,
+        batoh_cache_cas,
         ceny_synchronizovane_o: stav.posledna_synchronizacia_cien,
     }
 }
@@ -2146,5 +2247,44 @@ mod testy {
         let p = prehlad_pre_ui(&stav, true, false, &[]);
         assert_eq!(p.prehlad.celkom.cisty_zisk, 300.0, "test predpokladá nenulový cisty_zisk, inak nič nedokazuje");
         assert_eq!(p.net_worth_fe, 500.0);
+    }
+
+    // ─── TLI 56 (`2026-10-19-1740-mcp.md`): „Reset Stats" prežíva reštart ──
+    //
+    // `StavTrackera::default()`/`mnozstva_s_cachou` samotné spätné
+    // načítanie z DB v tomto builde (`#[cfg(test)]`) zámerne nespúšťajú —
+    // dôvod je v komentári pri oboch miestach (zdieľaný neizolovaný súbor
+    // DB naprieč všetkými testami tohto crate). Čo je testovateľné aj tu:
+    // že `resetuj_zive_staty` naozaj zapíše marker do DB, ktorú appka
+    // reálne má otvorenú — zvyšok (že toto `tracker_meta.stat_reset_unix`
+    // orezáva `nacitaj_zive_behy`) už overujú testy v `core/src/tracker/db.rs`.
+
+    #[test]
+    fn reset_zivych_statov_zapise_marker_do_db_ked_je_otvorena() {
+        let mut stav = StavTrackera::default();
+        stav.db = Some(db::otvor_v_pamati().unwrap());
+        let mut beh = prazdny_beh_pre_test("Mapa1");
+        beh.dropy.insert(POLOZKA_FE, 10);
+        stav.behy.push(beh);
+
+        stav.resetuj_zive_staty();
+
+        assert!(stav.behy.is_empty(), "pamäťová časť resetu sa nemení");
+        let conn = stav.db.as_ref().unwrap();
+        let marker = db::precitaj_meta(conn, "stat_reset_unix").unwrap();
+        assert!(marker.is_some(), "reset musí prežiť reštart appky, nie len vyprázdniť pamäť");
+        assert!(marker.unwrap().parse::<u64>().is_ok(), "marker má byť unixový čas ako text");
+    }
+
+    #[test]
+    fn reset_zivych_statov_nepada_bez_otvorenej_db() {
+        // `StavTrackera::default()` v builde pre testy `db` field aj tak
+        // nastaví (otvorí reálny súbor) — explicitný `None` tu simuluje
+        // appku, ktorej sa DB nepodarilo otvoriť vôbec (`chyba_db`).
+        let mut stav = StavTrackera::default();
+        stav.db = None;
+        stav.behy.push(prazdny_beh_pre_test("Mapa1"));
+        stav.resetuj_zive_staty();
+        assert!(stav.behy.is_empty());
     }
 }

@@ -2,6 +2,63 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.20.9 — 19.10.2026 (TLI 56 — akceptačná kontrola: Current Inventory ako záložka, NET WORTH a Recent Runs prežívajú reštart)
+
+Úloha `2026-10-19-1740-mcp.md` (HNED, Opus). core `0.13.16`.
+
+**Skutočný nájdený regres, nie len kozmetika.** Akceptačná kontrola appky
+`0.20.8` priamo na Richardovom PC 19.10.2026 ~17:38 ukázala: Current Inventory
+sa v záložke Tracker nedalo nájsť (bolo úplne dole pod Históriou máp), NET
+WORTH ukazovalo podozrivo nízkych 191 FE a RUNS/Recent Runs/FE-HOUR boli po
+celodennom hraní prázdne, akoby appka nikdy nebežala.
+
+**Koreňová príčina (spoločná pre NET WORTH aj RUNS):** appka od `StavTrackera::
+default()` žila výhradne z `chvost.pozicia` v živom logu — tá sa pri reštarte
+appky NEVRACIA na začiatok (správne, inak by appka log čítala odznova pri
+každom spustení), takže riadky, ktoré hra napísala PRED týmto reštartom (FE
+zostatok pri prihlásení, materiály po poslednom Sorte, dokončené mapy), appka
+už nikdy neuvidí. `cennik` (ceny) mal presne tento istý problém vyriešený už
+od TLI 20 („OFFLINE CACHE“, cenník sa pri štarte načíta z DB) — `behy`
+(RUNS) a obsah batohu (Current Inventory/NET WORTH) túto ochranu nikdy
+nedostali.
+
+**Oprava — rovnaká filozofia ako TLI 20, rozšírená na zvyšok stavu appky:**
+- Nová tabuľka `batoh_snapshot` (per stránka 101/102/103) — appka po KAŽDOM
+  kole, keď na stránke živo niečo vidí, uloží jej obsah; keď stránku v tejto
+  session ešte nevidela, siahne po poslednej uloženej snímke namiesto
+  prázdna/čiastočného súčtu. UI ukáže „stav z HH:MM“, keď použila cache.
+- `nacitaj_zive_behy` (core `db.rs`) spätne postaví `Vec<Beh>` z tabuliek
+  `behy`+`polozky` a appka ním pri štarte naplní `stav.behy` — RUNS/Recent
+  Runs/FE-HOUR/AVG/TOTAL TIME po reštarte UŽ NEZMIZNÚ.
+- „Reset Stats“ doteraz mazal len pamäť appky (prežilo by to len do ďalšieho
+  reštartu, ktorý by to znova naplnil z DB) — nová tabuľka `tracker_meta`
+  (`stat_reset_unix`) drží posledný reset trvalo, `nacitaj_zive_behy` ho
+  rešpektuje.
+- Current Inventory presunuté z dna záložky Tracker do VLASTNEJ záložky
+  „Inventory“ v hlavnom menu (zadanie bod 1, druhá ponúkaná možnosť) — nad
+  tabuľkou pribudol súčet hodnoty, triedenie funguje aj kliknutím na
+  hlavičku stĺpca (meno/počet/cena/hodnota), nielen cez `<select>`.
+- `#[cfg(not(test))]` na oboch nových DB prepojeniach (`StavTrackera::
+  default`, `mnozstva_s_cachou`) — `cesta_db_suboru()` nie je v testoch
+  izolovaná (jeden zdieľaný súbor pre všetky testy v builde), takže spätné
+  načítanie by v builde pre testy spôsobilo nedeterministickú krížovú
+  kontamináciu medzi testami. Samotná logika (`nacitaj_zive_behy`,
+  `uloz_batoh_snapshot`/`nacitaj_batoh_snapshot`) má vlastné testy nad
+  izolovanou `otvor_v_pamati()` DB.
+
+**TLI 53 (ikony všade) overené ako už HOTOVÉ** — Economy/Current Inventory/
+Recent Runs/loot mini-panel mali offline ikony už od `0.20.7`/`0.20.8`,
+zadanie to len žiadalo potvrdiť.
+
+**Zámerne NEurobené v tomto behu** (vyžadujú samostatnú pozornosť, obe majú
+vlastnú úlohu už v `inbox/`): **TLI 55** (živý čas a FE/h počas bežiacej
+mapy — koreňová príčina je iná, `Beh::trvanie_ms()` vracia `None`, kým mapa
+nemá `koniec`, treba sledovať reálny systémový čas štartu mapy, nie čas z
+logu) a **TLI 54b** (6. stupeň rarity Tartarus/Supreme — zásah do
+`stacks/games/tli` enginu, nie do tejto appky). Tichá aktualizácia bez UAC
+(TLI 52 zvyšok) sa NEzapína naživo — stále čaká na Richardovo osobné
+vyskúšanie NSIS inštalátora, presne ako zapísané v `STAV.md`.
+
 ## 0.20.8 — 19.10.2026 (TLI 53 časť 2/N doplnok — zmenšené ikony, CI overenie štartu padalo)
 
 Úloha `2026-10-19-1537-agent.md` (to isté zadanie, bezprostredné pokračovanie

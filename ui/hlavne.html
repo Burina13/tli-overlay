@@ -66,6 +66,7 @@
 
     <nav class="zalozky" id="zalozky">
         <button type="button" class="zalozka aktivna" data-panel="panel-tracker">Tracker</button>
+        <button type="button" class="zalozka" data-panel="panel-inventory">Inventory</button>
         <button type="button" class="zalozka" data-panel="panel-solvery">Solvery</button>
         <button type="button" class="zalozka" data-panel="panel-analyza">Analýza</button>
         <button type="button" class="zalozka" data-panel="panel-guide">Guide</button>
@@ -201,11 +202,23 @@
             </table>
             <p class="prazdne" id="prazdne-behy">Zatiaľ žiadna dokončená mapa.</p>
 
-            <!-- CURRENT INVENTORY (TLI 47, zadanie `2026-10-19-0744-mcp.md`
-                 bod 2) — len batoh hráča („ostatné" PageId z BagMgr, NIE
-                 sklad), naplní sa po prvom Sorte v hre tejto session. -->
+            <p class="vysvetlivka" id="stav-trackera"></p>
+        </section>
+
+        <!-- CURRENT INVENTORY (TLI 47, rozšírené TLI 53, vlastná záložka TLI
+             56 zadanie `2026-10-19-1740-mcp.md` bod 1 — predtým bola súčasť
+             záložky Tracker úplne dole, Richard ju tam nenašiel) — len batoh
+             hráča („zručnosti"/„meny"/„ostatné" PageId z BagMgr, NIE sklad),
+             FE a zručnosti appka vidí hneď pri prihlásení, materiály až po
+             prvom Sorte v hre tejto session (alebo z poslednej uloženej
+             snímky v DB, pozri `inventar-cache-poznamka`). -->
+        <section id="panel-inventory" class="panel skryte">
             <div class="riadok-akcii">
-                <h3 class="nadpis-tabulky">Current inventory</h3>
+                <h2>Current inventory</h2>
+                <span class="karta-hodnota" id="inventar-sucet"></span>
+            </div>
+            <p class="vysvetlivka skryte" id="inventar-cache-poznamka"></p>
+            <div class="riadok-akcii">
                 <input type="text" id="inventar-filter" placeholder="Hľadať položku…">
                 <select id="inventar-triedenie">
                     <option value="hodnota">Zoradiť podľa hodnoty</option>
@@ -220,18 +233,16 @@
             <table class="tabulka" id="tabulka-inventar">
                 <thead>
                     <tr>
-                        <th>Položka</th>
-                        <th class="cislo">Počet</th>
-                        <th class="cislo">Cena/ks</th>
-                        <th class="cislo">Hodnota</th>
+                        <th data-triedenie="nazov">Položka</th>
+                        <th class="cislo" data-triedenie="mnozstvo">Počet</th>
+                        <th class="cislo" data-triedenie="cena">Cena/ks (vek)</th>
+                        <th class="cislo" data-triedenie="hodnota">Hodnota</th>
                         <th></th>
                     </tr>
                 </thead>
                 <tbody></tbody>
             </table>
             <p class="prazdne" id="prazdne-inventar">Appka ešte nevidela batoh — sortni inventár v hre.</p>
-
-            <p class="vysvetlivka" id="stav-trackera"></p>
         </section>
 
         <section id="panel-solvery" class="panel skryte">

@@ -464,6 +464,15 @@ button:focus-visible {
     color: var(--farba-text-hlavny);
 }
 
+/* TLI 56: hlavičky Current Inventory sa dajú triediť aj kliknutím. */
+.hlavicka-triedenie {
+    cursor: pointer;
+    user-select: none;
+}
+.hlavicka-triedenie:hover {
+    color: var(--farba-zvyraznenie, inherit);
+}
+
 /* Tabuľka nech nelepí na predošlý blok ani na vysvetlivku pod ňou. */
 table.tabulka {
     margin-bottom: 18px;
