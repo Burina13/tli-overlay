@@ -2,6 +2,64 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.20.0 — 19.10.2026 (TLI 47, 2/2 — CURRENT INVENTORY + upozornenia v pätičke)
+
+Úloha `2026-10-19-0744-mcp.md` (doplnok k `2026-10-19-0731-mcp.md`), nedozorovaný
+nočný beh. core 0.13.9→0.13.10.
+
+**CURRENT INVENTORY je HOTOVÉ (zadanie bod 2).** Predošlý predpoklad (BACKLOG
+pred týmto behom) bol, že appka potrebuje ÚPLNE NOVÝ, doteraz neanalyzovaný typ
+log riadku „po Sorte" — **to bol omyl**: appka od TLI 11b/13 už parsuje
+`BagMgr@:InitBagData` (presne ten riadok, ktorý hra zapíše pri Sorte aj pri
+prihlásení, `log-format.md` §…) a od začiatku si z neho stavia ÚPLNÝ obraz
+batohu (`Sledovac::batoh`) — len ho doteraz používala LEN na počítanie delty
+zisku, nikdy ho nevystavila von ako aktuálny stav. Stačilo teda pridať getter
+(`core::tracker::stav::batoh_stranka`, nový `pub const STRANKA_BATOHU_OSTATNE =
+103`) a agregáciu s cenníkom (`src-tauri::tracker::aktualny_batoh`) — žiadny
+nový parser.
+- **Záložka Tracker má novú tabuľku „Current inventory"** — položka (meno cez
+  existujúci `polozky-seed-en.json`), počet, cena/ks, hodnota, „bez ceny" pre
+  neznáme položky (nikdy 0 — nula a „neviem" sú dve rôzne veci). Hľadanie podľa
+  mena, triedenie podľa hodnoty/počtu/názvu, tlačidlo **Hide/Unhide** na
+  položku (persistentné v `nastavenia.json` → `batoh_skryte_polozky`, nový
+  príkaz `tracker_prepni_skrytu_polozku`) — appka nič nemaže ani nepredáva,
+  len filtruje VLASTNÉ zobrazenie.
+- **Je to výhradne BATOH, nie sklad** — `BagMgr` (PageId 100 výstroj/101
+  zručnosti/102 meny/103 ostatné) je úplne iný systém než `WareHouseMgr`
+  (sklad), appka do skladu vôbec nenazerá.
+- **NET WORTH je teraz skutočný súčet batohu (bez skrytých) + doterajší
+  zisk**, presne podľa zadania — kým appka ešte nevidela ani jeden Sort tejto
+  session, karta to hovorí nahlas odznakom „⏳ ešte bez batohu" namiesto
+  predstierania hodnoty.
+
+**Upozornenia v pätičke dashboardu (zadanie bod 1, časť „červený stav").**
+Pätička teraz rozlišuje tri stavy namiesto jedného:
+- **„⚠ Log sa neposiela na server"** — keď appka hrá (`zivo` nie je `null`) a
+  posledný úspešný upload je starší než 15 minút, alebo posledný pokus
+  skončil chybou (nové pole `posledny_upload_pred_s` v `PrehladProUi`).
+- **„⚠ Sortni inventár v hre"** — appka hrá, ale `batoh` je ešte prázdny
+  (žiadny `InitBagData` v tejto session).
+- Mimo hry (žiadna rozohraná mapa) appka mlčí — ticho mimo hry je normálne,
+  varovanie len vtedy, keď sa dá naozaj niečo prehliadnuť.
+- **Toast nad hrou pre tieto dve nové upozornenia (zadania „toast +" časť)
+  NIE JE v tomto behu** — existujúci toast systém (`pripomienka.rs`) je úzko
+  postavený len pre „Enable Log" (vlastný stavový automat, testy naviazané na
+  presne tento jeden prípad) a rozšíriť ho bezpečne o ďalšie dva typy je
+  samostatná práca. Footer je vidieť VŽDY, keď je hlavné okno otvorené —
+  čiastočné, nie žiadne pokrytie. Zapísané do `BACKLOG.md` ako pokračovanie.
+
+**Čo v tomto behu NIE JE** (zadania body 1 toast, 3, 4 — zapísané ako
+nadväzujúca úloha, nie do `BACKLOG.md`, podľa pokynu zadania „zadaj
+nadväzujúcu úlohu sám"): toast nad hrou pre upload/Sort upozornenia; loot
+overlay ťahateľný za pásik bez Ctrl+F8 (zmena `ignore_cursor_events` len pre
+mini okno); Economy ako plný prehliadač cien (titrack.ninja + vlastné).
+
+Testy: core 395+3 (`batoh_stranka`), ui 66 (+6: NET WORTH z batohu, prázdny
+batoh, filter/triedenie/Hide, varovania v pätičke). `cargo check` zelené pre
+`core` aj `src-tauri` (dev profil, Linux — `#[cfg(windows)]` vetvy sa
+netypujú, BACKLOG položka TLI 37). Rollback: `latest-tli.json` späť na
+`0.19.3`.
+
 ## 0.19.3 — 19.10.2026 (TLI 47 bod A — viditeľný stav uploadu logu)
 
 Úloha `2026-10-19-0731-mcp.md`, nedozorovaný nočný beh. Richard si myslel, že

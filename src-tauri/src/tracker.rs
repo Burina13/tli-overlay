@@ -29,7 +29,7 @@ use tli_overlay_core::tracker::chvost::StavChvosta;
 use tli_overlay_core::nastavenia::Nastavenia;
 use tli_overlay_core::tracker::db::{self, OceneneHodnoty, ZaznamCeny};
 use tli_overlay_core::tracker::pripomienka::{klasifikuj, SledovacPripomienky};
-use tli_overlay_core::tracker::stav::{Beh, Sledovac};
+use tli_overlay_core::tracker::stav::{Beh, Sledovac, STRANKA_BATOHU_OSTATNE};
 use tli_overlay_core::tracker::steam;
 use tli_overlay_core::tracker::trh::je_otvorenie_trhu;
 
@@ -533,6 +533,11 @@ pub struct PrehladProUi {
     /// `stav-upload` po ručnom kliku „Nahrať log teraz" toto ukazuje stav AJ
     /// z tichého behu na pozadí (`2026-10-16-1528-mcp.md` bod 4).
     pub posledna_kontrola_uploadu_pred: Option<String>,
+    /// To isté ako vyššie, ale v surových sekundách (TLI 47, zadanie
+    /// `2026-10-19-0744-mcp.md` bod 1a) — UI z toho vie odvodiť prah
+    /// „> 15 min pri bežiacej hre", čo sa z ľudského textu „pred X" parsovať
+    /// nedá spoľahlivo (jednotky sa menia: min/h/deň).
+    pub posledny_upload_pred_s: Option<u64>,
     /// Text poslednej chyby uploadu, `None` keď posledný pokus prešiel.
     pub posledna_chyba_uploadu: Option<String>,
     /// Koľko cien appka prečítala z obrazovky trhu (TLI 22) za posledných
@@ -541,6 +546,65 @@ pub struct PrehladProUi {
     /// Posledná DOKONČENÁ mapa (TLI 25) — mini-panel ukazuje „čo padlo"
     /// aj medzi mapami, keď `zivo` je `None`. Hubové behy sa preskakujú.
     pub posledna_mapa: Option<Zivo>,
+    /// CURRENT INVENTORY (TLI 47) — aktuálny obsah batohu („ostatné", nie
+    /// výstroj/zručnosti/meny a NIE sklad), s cenou a hodnotou za kus. Skryté
+    /// položky (`Nastavenia::batoh_skryte_polozky`) tu NIE SÚ — appka ich
+    /// nezahadzuje nikde inde, len z tohto zoznamu na predaj.
+    pub batoh: Vec<PolozkaBatohu>,
+    /// Súčet hodnoty `batoh` (bez skrytých) + čistý zisk doteraz odohraných
+    /// máp — zadanie TLI 47 bod 2: „net worth = batoh × ceny + aktuálny beh".
+    pub net_worth_fe: f64,
+}
+
+/// Jedna položka aktuálneho batohu pre záložku CURRENT INVENTORY (TLI 47).
+#[derive(Debug, Clone, Serialize)]
+pub struct PolozkaBatohu {
+    pub config_base_id: u32,
+    pub mnozstvo: i64,
+    /// `None`, keď appka cenu tejto položky nepozná vôbec — UI to má ukázať
+    /// ako „bez ceny", nie ako 0 (nula a „neviem" sú dve rôzne veci, rovnaký
+    /// princíp ako pri mini-paneli TLI 25).
+    pub cena_za_kus_fe: Option<f64>,
+    pub hodnota_fe: Option<f64>,
+    /// Cena existuje, ale je staršia než 24 h (TLI 20) — súčet s ňou počíta,
+    /// ale UI má na to upozorniť.
+    pub cena_zastarana: bool,
+    pub skryte: bool,
+}
+
+/// Postaví zoznam `batoh` z aktuálneho stavu `Sledovac` + cenník. Skryté
+/// položky (`skryte_polozky`) sa v zozname UKÁŽU (appka nič nezahadzuje ticho),
+/// len appka ich označí príznakom — UI rozhoduje, či ich pri predajnom
+/// zozname vynechá, ale napr. do `net_worth_fe` sa nerátajú (sú to veci, čo
+/// si hráč necháva, nie majetok na predaj).
+fn aktualny_batoh(stav: &StavTrackera, nastavenie: &Nastavenie, skryte_polozky: &[u32], teraz: u64) -> (Vec<PolozkaBatohu>, f64) {
+    let mnozstva = stav.sledovac.batoh_stranka(STRANKA_BATOHU_OSTATNE);
+    let mut zoznam = Vec::with_capacity(mnozstva.len());
+    let mut hodnota_spolu = 0.0;
+    for (polozka, pocet) in mnozstva {
+        let skryte = skryte_polozky.contains(&polozka);
+        let cena = stav.cennik.cena(polozka);
+        let cena_za_kus = cena.map(|c| c.fe);
+        let hodnota = cena_za_kus.map(|c| {
+            let mut h = c * (pocet as f64);
+            if nastavenie.dan {
+                h *= 0.875;
+            }
+            h
+        });
+        if !skryte {
+            hodnota_spolu += hodnota.unwrap_or(0.0);
+        }
+        zoznam.push(PolozkaBatohu {
+            config_base_id: polozka,
+            mnozstvo: pocet,
+            cena_za_kus_fe: cena_za_kus,
+            hodnota_fe: hodnota,
+            cena_zastarana: cena.is_some() && stav.cennik.je_zastarana(polozka, teraz),
+            skryte,
+        });
+    }
+    (zoznam, hodnota_spolu)
 }
 
 /// Koľko položiek najviac vypíše výzva „vyhľadaj na Exchange". Viac než tri
@@ -596,7 +660,7 @@ fn vyzva_z_behov(vysledky: &[VysledokBehu]) -> Option<VyzvaCeny> {
 }
 
 /// Zostaví prehľad z aktuálneho stavu. Nič nečíta — to robí `precitaj`.
-pub fn prehlad_pre_ui(stav: &StavTrackera, zapnuty: bool, dan: bool) -> PrehladProUi {
+pub fn prehlad_pre_ui(stav: &StavTrackera, zapnuty: bool, dan: bool, skryte_polozky: &[u32]) -> PrehladProUi {
     let nastavenie = Nastavenie { dan };
     let teraz = unixovy_cas();
     let vysledky: Vec<VysledokBehu> = stav
@@ -631,6 +695,9 @@ pub fn prehlad_pre_ui(stav: &StavTrackera, zapnuty: bool, dan: bool) -> PrehladP
     // takže posledný nehubový je ten, z ktorého hráč práve vyšiel.
     let posledna_mapa = stav.behy.iter().rev().find_map(na_zivo);
 
+    let (batoh, hodnota_batohu) = aktualny_batoh(stav, &nastavenie, skryte_polozky, teraz);
+    let net_worth_fe = hodnota_batohu + suhrn.celkom.cisty_zisk;
+
     PrehladProUi {
         zapnuty,
         cesta_logu: stav.cesta.as_ref().map(|p| p.display().to_string()),
@@ -646,6 +713,7 @@ pub fn prehlad_pre_ui(stav: &StavTrackera, zapnuty: bool, dan: bool) -> PrehladP
         posledna_kontrola_uploadu_pred: stav
             .posledna_kontrola_uploadu
             .map(|kedy| vek_text(teraz.saturating_sub(kedy))),
+        posledny_upload_pred_s: stav.posledna_kontrola_uploadu.map(|kedy| teraz.saturating_sub(kedy)),
         posledna_chyba_uploadu: stav.posledna_chyba_uploadu.clone(),
         pocet_cien_z_obrazovky_24h: stav
             .db
@@ -653,6 +721,8 @@ pub fn prehlad_pre_ui(stav: &StavTrackera, zapnuty: bool, dan: bool) -> PrehladP
             .and_then(|c| db::pocet_cien_z_obrazovky_od(c, teraz.saturating_sub(24 * 3600) as i64).ok())
             .unwrap_or(0),
         posledna_mapa,
+        batoh,
+        net_worth_fe,
     }
 }
 
@@ -1270,12 +1340,12 @@ mod testy {
         // Ani jeden riadok nie je rozpoznaná udalosť (dokončená mapa) — oba sú
         // appke neznáme, čo je presne to, čo má táto cesta overiť.
         assert_eq!(n1, 0);
-        assert_eq!(prehlad_pre_ui(&stav, true, false).neznamych_riadkov, 3);
+        assert_eq!(prehlad_pre_ui(&stav, true, false, &[]).neznamych_riadkov, 3);
 
         pripis(&cesta, "treti\n");
         precitaj(&mut stav, &cesta).unwrap();
         assert_eq!(
-            prehlad_pre_ui(&stav, true, false).neznamych_riadkov,
+            prehlad_pre_ui(&stav, true, false, &[]).neznamych_riadkov,
             5,
             "pridaný riadok sa mal dočítať navyše, nie nahradiť predošlý počet"
         );
@@ -1283,13 +1353,13 @@ mod testy {
         // Bez zmeny súboru druhé čítanie nenájde nič nové.
         let n3 = precitaj(&mut stav, &cesta).unwrap();
         assert_eq!(n3, 0);
-        assert_eq!(prehlad_pre_ui(&stav, true, false).neznamych_riadkov, 5);
+        assert_eq!(prehlad_pre_ui(&stav, true, false, &[]).neznamych_riadkov, 5);
 
         // Rotácia: hra súbor nahradí menším — má sa dočítať celý nový súbor
         // od začiatku, nič navyše a nič chýbajúce.
         napis(&cesta, "x\n");
         precitaj(&mut stav, &cesta).unwrap();
-        assert_eq!(prehlad_pre_ui(&stav, true, false).neznamych_riadkov, 7);
+        assert_eq!(prehlad_pre_ui(&stav, true, false, &[]).neznamych_riadkov, 7);
 
         let _ = std::fs::remove_file(&cesta);
     }
@@ -1527,7 +1597,7 @@ mod testy {
     #[test]
     fn prehlad_bez_pokusu_o_upload_nema_ani_kontrolu_ani_chybu() {
         let stav = StavTrackera::default();
-        let p = prehlad_pre_ui(&stav, true, false);
+        let p = prehlad_pre_ui(&stav, true, false, &[]);
         assert_eq!(p.posledna_kontrola_uploadu_pred, None);
         assert_eq!(p.posledna_chyba_uploadu, None);
     }
@@ -1538,7 +1608,7 @@ mod testy {
         stav.posledna_kontrola_uploadu = Some(unixovy_cas());
         stav.posledna_chyba_uploadu = Some("server vrátil 500".to_string());
 
-        let p = prehlad_pre_ui(&stav, true, false);
+        let p = prehlad_pre_ui(&stav, true, false, &[]);
         assert_eq!(p.posledna_kontrola_uploadu_pred.as_deref(), Some("teraz"));
         assert_eq!(p.posledna_chyba_uploadu.as_deref(), Some("server vrátil 500"));
     }
@@ -1549,7 +1619,7 @@ mod testy {
         stav.posledna_kontrola_uploadu = Some(unixovy_cas());
         stav.posledna_chyba_uploadu = None;
 
-        let p = prehlad_pre_ui(&stav, true, false);
+        let p = prehlad_pre_ui(&stav, true, false, &[]);
         assert!(p.posledna_kontrola_uploadu_pred.is_some());
         assert_eq!(p.posledna_chyba_uploadu, None);
     }

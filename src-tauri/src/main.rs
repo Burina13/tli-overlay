@@ -1611,7 +1611,7 @@ fn tracker_prehlad(
     let mut t = tracker.0.lock().unwrap();
 
     if !n.tracker_zapnuty {
-        return Ok(tracker::prehlad_pre_ui(&t, false, n.tracker_dan));
+        return Ok(tracker::prehlad_pre_ui(&t, false, n.tracker_dan, &n.batoh_skryte_polozky));
     }
 
     match tracker::najdi_log(&n.cesta_logu) {
@@ -1629,7 +1629,7 @@ fn tracker_prehlad(
         }
     }
 
-    Ok(tracker::prehlad_pre_ui(&t, true, n.tracker_dan))
+    Ok(tracker::prehlad_pre_ui(&t, true, n.tracker_dan, &n.batoh_skryte_polozky))
 }
 
 /// Export histórie máp do CSV. Vracia obsah súboru — uloženie rieši UI.
@@ -1640,7 +1640,7 @@ fn tracker_csv(
 ) -> Result<String, String> {
     let n = stav.nastavenia.lock().unwrap().clone();
     let t = tracker.0.lock().unwrap();
-    let prehlad = tracker::prehlad_pre_ui(&t, n.tracker_zapnuty, n.tracker_dan);
+    let prehlad = tracker::prehlad_pre_ui(&t, n.tracker_zapnuty, n.tracker_dan, &n.batoh_skryte_polozky);
     Ok(tracker::csv(&prehlad.behy))
 }
 
@@ -1884,7 +1884,7 @@ fn tracker_sync_teraz(
 
     let vysledky = {
         let t = tracker.0.lock().unwrap();
-        tracker::prehlad_pre_ui(&t, n.tracker_zapnuty, n.tracker_dan).behy
+        tracker::prehlad_pre_ui(&t, n.tracker_zapnuty, n.tracker_dan, &n.batoh_skryte_polozky).behy
     };
 
     // Dávka je zhora obmedzená rovnako ako na serveri (200) — pri prvom zapnutí
@@ -1992,6 +1992,25 @@ fn uloz_prepinac(
         nastav_mini(&app, zapnuty);
     }
     Ok(zapnuty)
+}
+
+/// CURRENT INVENTORY (TLI 47) — „Hide" v dashboarde pre jednu položku.
+/// Appka nič nemaže ani neposiela, len si pre `config_base_id` zapamätá, že
+/// nemá vstupovať do zoznamu na predaj ani do net worth (pravidlo appky
+/// „Nič nemaž" z úlohy `2026-10-19-0744-mcp.md`).
+#[tauri::command]
+fn tracker_prepni_skrytu_polozku(stav: tauri::State<Stav>, config_base_id: u32, skryta: bool) -> Result<(), String> {
+    let mut n = stav.nastavenia.lock().unwrap();
+    if skryta {
+        if !n.batoh_skryte_polozky.contains(&config_base_id) {
+            n.batoh_skryte_polozky.push(config_base_id);
+        }
+    } else {
+        n.batoh_skryte_polozky.retain(|&p| p != config_base_id);
+    }
+    let kopia = n.clone();
+    drop(n);
+    stav::uloz(&kopia)
 }
 
 /// Ukáže alebo schová mini-overlay. Keď okno neexistuje (nemalo by sa stať),
@@ -2821,6 +2840,7 @@ fn main() {
             tracker_prehlad,
             tracker_csv,
             tracker_reset_zive_staty,
+            tracker_prepni_skrytu_polozku,
             tracker_navrh_cestu,
             tracker_stav_cesty,
             tracker_vyber_subor,

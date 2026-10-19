@@ -209,19 +209,23 @@ function karta(popis, hodnota, detail, trieda) {
     </div>`;
 }
 
-// TLI 45 — sedem kariet presne podľa TITracku (zadanie bod 1). Appka zatiaľ
-// NEČÍTA celý batoh (to je samostatná časť 3 toho istého zadania), takže
-// NET WORTH je tu len „čistý zisk spolu" — rovnaké číslo ako CUMULATIVE
-// VALUE — a karta to hovorí nahlas odznakom namiesto predstierania hodnoty
-// inventára, ktorú appka ešte nepozná (BACKLOG).
+// TLI 45/47 — sedem kariet presne podľa TITracku (zadanie bod 1). Od TLI 47
+// appka ČÍTA celý batoh (CURRENT INVENTORY, cez InitBagData po Sorte) a NET
+// WORTH je skutočný súčet batohu (bez skrytých položiek) + doterajší zisk
+// — kým appka ešte nevidela ani jeden Sort tejto session (`p.batoh` prázdny),
+// karta to hovorí nahlas odznakom namiesto predstierania hodnoty, ktorú
+// nepozná (viď aj pätička „Sortni inventár").
 function vykresliKarty(p) {
     const c = p.prehlad.celkom;
     const zaHodinu = c.cas_ms > 0 ? (c.cisty_zisk * 3600000) / c.cas_ms : 0;
     const priemer = c.pocet_map > 0 ? c.cisty_zisk / c.pocet_map : 0;
     const priemernyCas = c.pocet_map > 0 ? c.cas_ms / c.pocet_map : 0;
+    const maBatoh = p.batoh && p.batoh.length > 0;
+    const netWorth = maBatoh ? p.net_worth_fe : c.cisty_zisk;
+    const netWorthDetail = maBatoh ? "batoh (bez skrytých) + doterajší zisk" : "⏳ ešte bez batohu — sortni inventár v hre";
 
     document.getElementById("karty-statistik").innerHTML = [
-        karta("NET WORTH", fe(c.cisty_zisk), "⏳ bez hodnoty batoha — pozri Backlog", triedaZnamienka(c.cisty_zisk)),
+        karta("NET WORTH", fe(netWorth), netWorthDetail, triedaZnamienka(netWorth)),
         karta("CUMULATIVE VALUE", fe(c.cisty_zisk), "dropy mínus vstupy, od spustenia appky", triedaZnamienka(c.cisty_zisk)),
         karta("FE/HOUR", fe(zaHodinu), "", triedaZnamienka(zaHodinu)),
         karta("FE/MAP", fe(priemer), "priemer na dokončenú mapu", triedaZnamienka(priemer)),
@@ -366,6 +370,79 @@ function textReportuBehu(b) {
         dropy,
     ].join("\n");
 }
+
+// ─── CURRENT INVENTORY (TLI 47, `2026-10-19-0744-mcp.md` bod 2) ────────────
+// Len batoh hráča (appka ho vidí z `BagMgr` PageId „ostatné" po Sorte v hre),
+// NIE sklad — appka do skladu (WareHouseMgr) ani nenazerá. Appka tu nič
+// nepredáva ani neposiela — je to zoznam na POZRETIE pred predajom v hre.
+let inventarFilterText = "";
+let inventarTriedenie = "hodnota";
+let inventarZobrazSkryte = false;
+
+function vykresliInventar(p) {
+    const telo = document.querySelector("#tabulka-inventar tbody");
+    const vsetky = p.batoh || [];
+    document.getElementById("prazdne-inventar").classList.toggle("skryte", vsetky.length > 0);
+    document.getElementById("tabulka-inventar").classList.toggle("skryte", vsetky.length === 0);
+
+    const hladane = inventarFilterText.trim().toLowerCase();
+    let zoznam = vsetky.filter((pol) => inventarZobrazSkryte || !pol.skryte);
+    if (hladane) {
+        zoznam = zoznam.filter((pol) => nazovPolozky(pol.config_base_id).toLowerCase().includes(hladane));
+    }
+    zoznam = zoznam.slice().sort((a, b) => {
+        if (inventarTriedenie === "mnozstvo") {
+            return b.mnozstvo - a.mnozstvo;
+        }
+        if (inventarTriedenie === "nazov") {
+            return nazovPolozky(a.config_base_id).localeCompare(nazovPolozky(b.config_base_id));
+        }
+        // "hodnota" (predvolené) — neznáma cena (`null`) ide na koniec, nie hore ako „najväčšia".
+        return (b.hodnota_fe ?? -1) - (a.hodnota_fe ?? -1);
+    });
+
+    telo.innerHTML = zoznam
+        .map((pol) => {
+            const zastarana = pol.cena_zastarana ? ' <span class="odznak odznak-bez-ceny">stará cena</span>' : "";
+            const cena = pol.cena_za_kus_fe != null ? fe(pol.cena_za_kus_fe) : "bez ceny";
+            const hodnota = pol.hodnota_fe != null ? fe(pol.hodnota_fe) + zastarana : "bez ceny";
+            return `<tr class="${pol.skryte ? "riadok-skryty" : ""}">
+                <td>${nazovPolozky(pol.config_base_id)}</td>
+                <td class="cislo">${pol.mnozstvo}</td>
+                <td class="cislo">${cena}</td>
+                <td class="cislo">${hodnota}</td>
+                <td><button type="button" class="btn-vedlajsi btn-skryt-polozku" data-id="${pol.config_base_id}" data-skryte="${pol.skryte}">${pol.skryte ? "Unhide" : "Hide"}</button></td>
+            </tr>`;
+        })
+        .join("");
+}
+
+document.getElementById("inventar-filter").addEventListener("input", (e) => {
+    inventarFilterText = e.target.value;
+    vykresliInventar(POSLEDNY_PREHLAD || {});
+});
+document.getElementById("inventar-triedenie").addEventListener("change", (e) => {
+    inventarTriedenie = e.target.value;
+    vykresliInventar(POSLEDNY_PREHLAD || {});
+});
+document.getElementById("inventar-zobraz-skryte").addEventListener("change", (e) => {
+    inventarZobrazSkryte = e.target.checked;
+    vykresliInventar(POSLEDNY_PREHLAD || {});
+});
+document.querySelector("#tabulka-inventar tbody").addEventListener("click", async (e) => {
+    const btn = e.target.closest(".btn-skryt-polozku");
+    if (!btn) {
+        return;
+    }
+    const configBaseId = Number(btn.dataset.id);
+    const skryteTeraz = btn.dataset.skryte === "true";
+    try {
+        await invoke("tracker_prepni_skrytu_polozku", { configBaseId, skryta: !skryteTeraz });
+        await obnovTracker();
+    } catch (err) {
+        console.error(err);
+    }
+});
 
 // Delegovaný listener (tabuľka sa prekresľuje á 3 s, takže sa pripája raz na
 // tbody, nie na každý riadok pri každom obnovení).
@@ -572,10 +649,12 @@ async function obnovTracker() {
         vykresliGrafy(p);
         vykresliKombinacie(p);
         vykresliBehy(p);
+        vykresliInventar(p);
         vykresliStav(p);
         vykresliVyzvuCien(p);
         vykresliStavUploadu(p);
         vykresliPatickaUploadu(p);
+        vykresliVyzvuNaSort(p);
 
         // Automatické odoslanie partii — len keď si to hráč zapol a len raz za
         // SYNC_KAZDYCH_KOL kôl, nech sa pri každom takte nechodí na server.
@@ -813,6 +892,13 @@ const stavSync = document.getElementById("stav-sync");
 const btnUploadTeraz = document.getElementById("btn-upload-teraz");
 const stavUpload = document.getElementById("stav-upload");
 const pitaUpload = document.getElementById("pita-upload");
+const pitaSortVyzva = document.getElementById("pita-sort-vyzva");
+
+/// Nad koľkými sekundami bez ÚSPEŠNÉHO uploadu appka pri bežiacej hre ukáže
+/// varovanie namiesto bežného „Posledný upload: …" (TLI 47, zadanie
+/// `2026-10-19-0744-mcp.md` bod 1a). 15 minút — appka sa o upload pokúša
+/// oveľa častejšie, takže toľko ticha znamená, že niečo nefunguje.
+const UPLOAD_VAROVANIE_PO_S = 15 * 60;
 
 /// Koľko kôl `obnovTracker` (á 3 s) prejde medzi dvoma automatickými odoslaniami.
 /// 60 kôl = 3 minúty: dosť zriedka na to, aby to nikoho neobťažovalo, a dosť
@@ -896,9 +982,15 @@ function vykresliPatickaUploadu(p) {
         pitaUpload.classList.remove("hodnota-zaporna");
         return;
     }
+    // Hra momentálne beží/mapuje — vtedy má zmysel pýtať sa „kedy naposledy
+    // niečo odišlo", mimo hry môže byť ticho dlho a je to v poriadku.
+    const hraBezi = Boolean(p.zivo);
     if (p.posledna_chyba_uploadu) {
         const kedy = p.posledna_kontrola_uploadu_pred ? ` (${p.posledna_kontrola_uploadu_pred})` : "";
-        pitaUpload.textContent = "Posledný upload: chyba" + kedy;
+        pitaUpload.textContent = "⚠ Log sa neposiela na server — chyba" + kedy;
+        pitaUpload.classList.add("hodnota-zaporna");
+    } else if (hraBezi && typeof p.posledny_upload_pred_s === "number" && p.posledny_upload_pred_s > UPLOAD_VAROVANIE_PO_S) {
+        pitaUpload.textContent = "⚠ Log sa neposiela na server — posledný upload " + p.posledna_kontrola_uploadu_pred;
         pitaUpload.classList.add("hodnota-zaporna");
     } else if (p.posledna_kontrola_uploadu_pred) {
         pitaUpload.textContent = "Posledný upload: " + p.posledna_kontrola_uploadu_pred;
@@ -906,6 +998,19 @@ function vykresliPatickaUploadu(p) {
     } else {
         pitaUpload.textContent = "Posledný upload: zatiaľ žiadny";
         pitaUpload.classList.remove("hodnota-zaporna");
+    }
+}
+
+/// „Sortni inventár" (TLI 47 bod 1c) — appka vie o CURRENT INVENTORY len z
+/// `InitBagData`, ktoré hra zapíše pri Sorte (aj pri prihlásení). Kým sa to
+/// nestane, `p.batoh` je prázdny a zoznam na predaj aj NET WORTH klamú, že
+/// hráč nemá nič — treba o tom vedieť, nie si to mýliť s „naozaj nič nemá".
+function vykresliVyzvuNaSort(p) {
+    const hraBezi = Boolean(p.zivo) || (p.behy && p.behy.length > 0);
+    if (hraBezi && (!p.batoh || p.batoh.length === 0)) {
+        pitaSortVyzva.textContent = "⚠ Sortni inventár v hre — appka ešte nevidela batoh";
+    } else {
+        pitaSortVyzva.textContent = "";
     }
 }
 

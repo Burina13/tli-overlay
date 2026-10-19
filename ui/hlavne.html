@@ -200,6 +200,36 @@
             </table>
             <p class="prazdne" id="prazdne-behy">Zatiaľ žiadna dokončená mapa.</p>
 
+            <!-- CURRENT INVENTORY (TLI 47, zadanie `2026-10-19-0744-mcp.md`
+                 bod 2) — len batoh hráča („ostatné" PageId z BagMgr, NIE
+                 sklad), naplní sa po prvom Sorte v hre tejto session. -->
+            <div class="riadok-akcii">
+                <h3 class="nadpis-tabulky">Current inventory</h3>
+                <input type="text" id="inventar-filter" placeholder="Hľadať položku…">
+                <select id="inventar-triedenie">
+                    <option value="hodnota">Zoradiť podľa hodnoty</option>
+                    <option value="mnozstvo">Zoradiť podľa počtu</option>
+                    <option value="nazov">Zoradiť podľa názvu</option>
+                </select>
+                <label class="prepinac">
+                    <input type="checkbox" id="inventar-zobraz-skryte">
+                    Zobraziť aj skryté
+                </label>
+            </div>
+            <table class="tabulka" id="tabulka-inventar">
+                <thead>
+                    <tr>
+                        <th>Položka</th>
+                        <th class="cislo">Počet</th>
+                        <th class="cislo">Cena/ks</th>
+                        <th class="cislo">Hodnota</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+            <p class="prazdne" id="prazdne-inventar">Appka ešte nevidela batoh — sortni inventár v hre.</p>
+
             <p class="vysvetlivka" id="stav-trackera"></p>
         </section>
 
@@ -378,6 +408,10 @@
              nech je to vidieť bez otvárania panela (ako TITrack „Log was last
              updated"). -->
         <span id="pita-upload"></span>
+        <!-- CURRENT INVENTORY (TLI 47, `2026-10-19-0744-mcp.md` bod 1c) — keď
+             hráč hrá, ale appka ešte nevidela InitBagData (žiadny Sort v tejto
+             session), zoznam na predaj je prázdny a treba o tom vedieť. -->
+        <span id="pita-sort-vyzva" class="hodnota-zaporna"></span>
         <button type="button" class="btn-vedlajsi" id="btn-pita-aktualizacia">Check for Updates</button>
         <span id="pita-aktualizacia-stav"></span>
     </footer>

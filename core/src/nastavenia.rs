@@ -107,6 +107,11 @@ pub struct Nastavenia {
     /// (`src-tauri/src/main.rs::konfliktne_moduly`), nie tu — táto štruktúra
     /// o ostatných dvoch poliach nič nevie.
     pub hotkey_trh: String,
+    /// CURRENT INVENTORY (TLI 47, `2026-10-19-0744-mcp.md` bod 2) — zoznam
+    /// `ConfigBaseId`, ktoré hráč tlačidlom „Hide" schoval zo zoznamu na
+    /// predaj (napr. veci, čo si chce nechať, nie predať). Appka nič
+    /// NEMAŽE ani neposiela — je to len filter vo vlastnom zobrazení.
+    pub batoh_skryte_polozky: Vec<u32>,
 }
 
 impl Default for Nastavenia {
@@ -133,6 +138,7 @@ impl Default for Nastavenia {
             okno_hlavne: None,
             ceny_obrazovka_zapnute: true,
             hotkey_trh: "F10".to_string(),
+            batoh_skryte_polozky: Vec::new(),
         }
     }
 }

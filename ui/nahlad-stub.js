@@ -74,7 +74,15 @@ const UKAZKA_TRACKER = {
   // bez chyby; náhľad tak ukazuje, ako appka vyzerá v BEŽNOM (fungujúcom)
   // stave, nielen po chybe.
   posledna_kontrola_uploadu_pred: "pred 2 min",
+  posledny_upload_pred_s: 120,
   posledna_chyba_uploadu: null,
+  // CURRENT INVENTORY (TLI 47) — niekoľko vzorových položiek po Sorte.
+  batoh: [
+    { config_base_id: 400021, mnozstvo: 3, cena_za_kus_fe: 140.0, hodnota_fe: 420.0, cena_zastarana: false, skryte: false },
+    { config_base_id: 500101, mnozstvo: 24, cena_za_kus_fe: 2.0, hodnota_fe: 48.0, cena_zastarana: false, skryte: false },
+    { config_base_id: 999999, mnozstvo: 3, cena_za_kus_fe: null, hodnota_fe: null, cena_zastarana: false, skryte: false },
+  ],
+  net_worth_fe: 971.8,
 };
 
 // Mená položiek pre náhľad (TLI 20 bod 7). Náhľad beží z `file://`, kde

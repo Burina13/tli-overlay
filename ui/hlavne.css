@@ -325,6 +325,13 @@ tbody tr:hover {
     color: var(--farba-upozornenie);
 }
 
+/* CURRENT INVENTORY (TLI 47) — skrytá položka ostáva vidieť (keď je
+   „Zobraziť aj skryté" zapnuté), len stlmená, nech je jasné, že sa do
+   NET WORTH ani do predvoleného zoznamu na predaj nepočíta. */
+.riadok-skryty {
+    opacity: 0.5;
+}
+
 .odznak-stara {
     background-color: var(--farba-priehladna);
     color: var(--farba-upozornenie-tlmene);

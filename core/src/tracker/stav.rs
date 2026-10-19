@@ -7,6 +7,13 @@ pub const POLOZKA_FE: u32 = 100300;
 /// To isté ako text, lebo v tele správy je mena reťazec.
 const MENA_FE: &str = "100300";
 
+/// `PageId` batohu (`BagMgr@`), zdokumentované v `log-format.md`: 100 výstroj,
+/// 101 zručnosti, 102 meny, **103 „ostatné"** — materiály a loot, presne to,
+/// čo hráč predáva po Sorte (TLI 47, zadanie `2026-10-19-0744-mcp.md` bod 2).
+/// Sklad (WareHouseMgr) je ÚPLNE iný systém, do `BagMgr` sa vôbec nedostane —
+/// nehrozí teda, že by sa sem omylom priplietli veci zo skladu.
+pub const STRANKA_BATOHU_OSTATNE: u32 = 103;
+
 /// Zaradenie zmeny batohu podľa toho, PREČO nastala.
 /// `Ostatne` je predvolená hodnota zámerne: mimo bloku `ItemChange@` nevieme,
 /// prečo sa batoh zmenil, a tipovať „drop" by nafúklo zisk.
@@ -368,6 +375,22 @@ impl Sledovac {
     /// Posledná spracovaná snímka hráčovej identity (`+player+...` blok).
     pub fn hrac_snimka(&self) -> Option<&HracSnimka> {
         self.hrac_snimka.as_ref()
+    }
+
+    /// Aktuálny obsah jednej stránky batohu (napr. `STRANKA_BATOHU_OSTATNE`) —
+    /// `(ConfigBaseId, počet kusov)` za KAŽDÝ neprázdny slot, zoskupené podľa
+    /// položky (jedna položka môže ležať vo viacerých slotoch naraz, keď sa
+    /// stack nezmestí do jedného). Je to presne ten istý `self.batoh`, z ktorého
+    /// appka od začiatku počíta delty ziskov (TLI 11b) — TLI 47 ho len prvý raz
+    /// vystavuje von ako AKTUÁLNY STAV, nie len ako zdroj delty.
+    pub fn batoh_stranka(&self, stranka: u32) -> BTreeMap<u32, i64> {
+        let mut vysledok = BTreeMap::new();
+        for (&(s, _slot), &(polozka, num)) in &self.batoh {
+            if s == stranka && num > 0 {
+                *vysledok.entry(polozka).or_insert(0) += num;
+            }
+        }
+        vysledok
     }
 
     /// Odoberie nazbierané „zaujímavé, ale nerozobrané" riadky (`raw`) od
@@ -944,6 +967,37 @@ mod testy {
         sledovac.spracuj_udalost(None, Udalost::BatohOdstranenie { stranka: 1, slot: 1 });
         
         assert_eq!(*sledovac.cakajuce_vstupy.get(&50).unwrap(), 10);
+    }
+
+    #[test]
+    fn test_batoh_stranka_scita_viac_slotov_tej_istej_polozky() {
+        let mut sledovac = Sledovac::novy();
+        sledovac.spracuj_udalost(None, Udalost::Batoh(BatohZmena { stranka: STRANKA_BATOHU_OSTATNE, slot: 1, polozka: 400021, num: 30, je_init: true }));
+        sledovac.spracuj_udalost(None, Udalost::Batoh(BatohZmena { stranka: STRANKA_BATOHU_OSTATNE, slot: 2, polozka: 400021, num: 15, je_init: true }));
+        sledovac.spracuj_udalost(None, Udalost::Batoh(BatohZmena { stranka: STRANKA_BATOHU_OSTATNE, slot: 3, polozka: 400099, num: 1, je_init: true }));
+        // Iná stránka (výstroj) sa do „ostatné" nesmie priplietsť.
+        sledovac.spracuj_udalost(None, Udalost::Batoh(BatohZmena { stranka: 100, slot: 1, polozka: 3210, num: 1, je_init: true }));
+
+        let batoh = sledovac.batoh_stranka(STRANKA_BATOHU_OSTATNE);
+        assert_eq!(batoh.get(&400021), Some(&45));
+        assert_eq!(batoh.get(&400099), Some(&1));
+        assert_eq!(batoh.get(&3210), None);
+        assert_eq!(batoh.len(), 2);
+    }
+
+    #[test]
+    fn test_batoh_stranka_odzrkadluje_odstranenie_a_zmenu_mnozstva() {
+        let mut sledovac = Sledovac::novy();
+        sledovac.spracuj_udalost(None, Udalost::Batoh(BatohZmena { stranka: STRANKA_BATOHU_OSTATNE, slot: 1, polozka: 400021, num: 10, je_init: true }));
+        assert_eq!(sledovac.batoh_stranka(STRANKA_BATOHU_OSTATNE).get(&400021), Some(&10));
+
+        // Zmena množstva v tom istom slote (napr. predaj časti stacku).
+        sledovac.spracuj_udalost(None, Udalost::Batoh(BatohZmena { stranka: STRANKA_BATOHU_OSTATNE, slot: 1, polozka: 400021, num: 4, je_init: false }));
+        assert_eq!(sledovac.batoh_stranka(STRANKA_BATOHU_OSTATNE).get(&400021), Some(&4));
+
+        // Úplné odstránenie slotu.
+        sledovac.spracuj_udalost(None, Udalost::BatohOdstranenie { stranka: STRANKA_BATOHU_OSTATNE, slot: 1 });
+        assert!(sledovac.batoh_stranka(STRANKA_BATOHU_OSTATNE).is_empty());
     }
 
     #[test]
