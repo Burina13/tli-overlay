@@ -1,6 +1,6 @@
 {
-  "version": "0.20.2",
-  "notes": "TLI 49+50: Economy dostala kategórie položiek (záložky s ikonami); appka teraz všade ukazuje vek ceny („cena pred X min“) a v pätičke „ceny aktualizované HH:MM“; CURRENT INVENTORY overené proti TITracku (zhoda do posledného kusu); loot overlay (mini-panel) má opravený vzhľad (pásik na presun sa už neprekrýva s nadpisom, tmavšie čitateľné pozadie, zoznam dropov sa pri preplnení scrolluje namiesto orezania) a dá sa ťahaním za roh zväčšiť/zmenšiť bez Ctrl+F8.",
-  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.20.2/Tvoj-Tatko-TLI-Overlay_0.20.2_x64_en-US.msi",
-  "msiSha256": "9b1da099c9fb77426182b89e539324f8d045309a955ae5aefce8194e9dd04da1"
+  "version": "0.20.3",
+  "notes": "TLI 51: opravené duplicitné počítanie položiek na interných (hráčovi neviditeľných) stránkach batohu 100-102 — hra pri triedení inventára vie tú istú položku preradiť do iného slotu a appka ju predtým počítala v starom aj novom slote naraz. CURRENT INVENTORY (stránka, ktorú appka hráčovi ukazuje) sa touto opravou nemení — bola a ostáva presne zhodná s TITrackom.",
+  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.20.3/Tvoj-Tatko-TLI-Overlay_0.20.3_x64_en-US.msi",
+  "msiSha256": "141d185b42fcad89faf02f69b2d5bb0d7ba15707ccd430179418ced1a2e9ebe3"
 }
