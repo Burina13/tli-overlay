@@ -6,16 +6,40 @@ use tauri_plugin_global_shortcut::Shortcut;
 use tli_overlay_core::nastavenia::Nastavenia;
 use tli_overlay_core::tracker::chvost::StavChvosta;
 
+/// Jedna prebiehajúca analýza (TLI 67b) — jej poradové číslo a kedy začala.
+/// Čas je tu preto, že podľa neho sa rozhoduje, či je nové stlačenie „nový
+/// zámer" (zruš a foť odznova), alebo len netrpezlivé ťukanie do klávesy.
+#[derive(Debug, Clone, Copy)]
+pub struct BehAnalyzy {
+    pub generacia: u64,
+    pub zacata: Instant,
+}
+
 pub struct Stav {
     pub nastavenia: Mutex<Nastavenia>,
-    pub beh: Mutex<bool>,
-    /// TLI 41 — požiadavka, ktorá prišla, kým `beh` bolo `true`. Namiesto
-    /// tichého zahodenia (Richard 18.10.2026: opakované Ctrl+Q počas analýzy
-    /// hlásilo chybu) appka drží len POSLEDNÚ takú požiadavku a spustí ju
-    /// hneď po dobehnutí tej prebiehajúcej — „vždy posledná snímka vyhráva",
-    /// nie prvé stlačenie. Jedno miesto (nie front), lebo viac rozostavaných
-    /// analýz naraz nad tým istým oknom nemá zmysel.
-    pub cakajuci_dalsi: Mutex<Option<(crate::Modul, &'static str)>>,
+    /// Práve bežiaca analýza, alebo `None`, keď nebeží žiadna.
+    ///
+    /// **TLI 67b (`2026-10-20-1348-mcp.md`, bod 2) — bývalo to `Mutex<bool>`
+    /// plus fronta `cakajuci_dalsi` (TLI 41) a práve tá fronta bola to, čo
+    /// Richard 20.10.2026 o 13:48 opísal ako „celé sa mi to seklo":** Canvas
+    /// požiadavka na zaneprázdnenom serveri trvala 34 s, on medzitým stlačil
+    /// Ctrl+W asi osemkrát, appka každé stlačenie poslušne „zaradila" a po
+    /// dobehnutí spustila ĎALŠIU, už dávno neaktuálnu snímku. Čakanie sa tým
+    /// nezrušilo, ale predĺžilo.
+    ///
+    /// Odteraz sa nič nezaraďuje: nové stlačenie **zruší** tú bežiacu
+    /// (`generacia` sa zvýši, výsledok starej sa zahodí) a odfotí odznova —
+    /// aktuálny stav obrazovky je dôležitejší než dobehnutie starej
+    /// požiadavky. Stlačenie do `OPAKOVANIE_IGNOROVANIE_MS` od štartu
+    /// bežiacej sa ignoruje úplne (to je už len netrpezlivosť, nie nový zámer).
+    pub beh: Mutex<Option<BehAnalyzy>>,
+    /// Rastúce poradové číslo analýz (TLI 67b). Vlákno si pri štarte vezme
+    /// svoje a po návrate zo siete sa spýta, či je ešte to platné — keď nie,
+    /// nekreslí, neemituje a nesiaha na `beh`. Je to JEDINÝ spôsob, ako sa
+    /// „zrušenie" dá s blokujúcim `ureq`-om spraviť: samotné HTTP spojenie
+    /// sa prerušiť nedá, ale jeho výsledok sa dá zahodiť a zámok uvoľniť
+    /// okamžite (zvyšné vlákno dobehne do 10 s na timeout a ticho skončí).
+    pub beh_generacia: Mutex<u64>,
     pub zobrazene_od: Mutex<Option<Instant>>,
     /// Zber dát (TLI 4c) — koľko snímok sa za tento beh appky úspešne poslalo
     /// a uložilo na server v režime "Zber dát". Len v pamäti (reštart appky

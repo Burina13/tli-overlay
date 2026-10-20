@@ -531,6 +531,26 @@ pub fn sprava_chyby(stav: u16, telo: &str) -> String {
     }
 }
 
+/// TLI 67b (`2026-10-20-1348-mcp.md`, bod 1) — koľko sekúnd appka čaká na
+/// odpoveď na RUČNÚ analýzu (F8 Tartarus aj F9/Ctrl+W Frozen Canvas), kým to
+/// vzdá a napíše hráčovi, že server neodpovedá.
+///
+/// Do 20.10.2026 to bolo **60 s** a prejavilo sa to presne tak, ako to Richard
+/// o 13:48 opísal („a teraz sa mi to celé seklo"): Canvas požiadavka na
+/// zaneprázdnenom serveri trvala **34 267 ms** (ráno 2,6–3,2 s) a appka na ňu
+/// celý ten čas mlčky čakala. Bežná analýza sa zmestí do ~3 s, takže 10 s je
+/// trojnásobná rezerva a zároveň doba, ktorú hráč ešte vydrží stáť v hre.
+///
+/// Zber na pozadí má vlastný, dlhší timeout (`klient.rs`) — tam na nikoho
+/// nečaká hráč a znovuodoslanie stojí ďalšiu snímku.
+pub const TIMEOUT_ANALYZY_S: u64 = 10;
+
+/// Text, ktorý hráč uvidí, keď server do `TIMEOUT_ANALYZY_S` neodpovie
+/// (TLI 67b, bod 1 — znenie je doslova zo zadania). Je to `const`, a nie
+/// `format!`, aby sa dal POROVNAŤ: `main.rs` podľa neho pozná, že panel má
+/// zhasnúť na prvý klik bez ohľadu na nastavenie autoskrytia.
+pub const SPRAVA_TIMEOUTU: &str = "Server teraz neodpovedá – skús o chvíľu";
+
 /// Formátuje chybovú hlášku priamo na vrstve sieťového prenosu (napr. timeouty),
 /// aby sme oddelili aplikačné chyby servera od zlyhaní pripojenia.
 pub fn sprava_siete(detail: &str) -> String {

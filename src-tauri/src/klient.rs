@@ -22,6 +22,35 @@ fn zapis_do_denika(kontext: &str, text: &str) {
 #[cfg(test)]
 fn zapis_do_denika(_kontext: &str, _text: &str) {}
 
+/// TLI 67b (bod 1) — bola to chyba prenosu preto, že vypršal náš vlastný
+/// timeout, alebo preto, že spojenie zlyhalo inak (DNS, TLS, odmietnuté)?
+///
+/// Rozhoduje UPLYNUTÝ ČAS, nie text chyby: `ureq` 2 hlási timeout ako
+/// `Transport(kind = Io)` a jeho znenie sa medzi verziami aj platformami líši,
+/// takže grep na „timed out" by sa vedel ticho pokaziť pri `cargo update`.
+/// Čas si appka meria sama a je to tá istá hodnota, akú dala `ureq`-u.
+///
+/// Odpočítava sa malá rezerva — `ureq` vracia chybu zlomok milisekundy PRED
+/// uplynutím celého rozpočtu (meria si ho po častiach: pripojenie, zápis,
+/// čítanie), takže porovnanie „>= presne timeout" by timeout minulo.
+fn je_timeout(uplynulo: std::time::Duration, timeout_s: u64) -> bool {
+    uplynulo + std::time::Duration::from_millis(TIMEOUT_REZERVA_MS)
+        >= std::time::Duration::from_secs(timeout_s)
+}
+
+/// Rezerva pre `je_timeout` — viac než rozptyl merania, menej než ktorýkoľvek
+/// rozdiel medzi „server mlčí" a „spojenie okamžite zlyhalo" (DNS/TLS/refused
+/// padnú rádovo v milisekundách až stovkách ms, nie 9,8 s).
+const TIMEOUT_REZERVA_MS: u64 = 200;
+
+fn chyba_prenosu(uplynulo: std::time::Duration, timeout_s: u64, detail: &str) -> String {
+    if je_timeout(uplynulo, timeout_s) {
+        api::SPRAVA_TIMEOUTU.to_string()
+    } else {
+        api::sprava_siete(detail)
+    }
+}
+
 fn loguj_neparsovatelnu_odpoved(kontext: &str, stav: u16, telo: &str) -> String {
     let ukazka: String = telo.chars().take(200).collect();
     zapis_do_denika(
@@ -58,7 +87,8 @@ pub fn posli_analyzu(n: &Nastavenia, jpeg: Vec<u8>) -> Result<Vysledok, String> 
     let odpoved = ureq::post(&n.adresa_analyza())
         .set("Authorization", &format!("Bearer {}", n.kluc))
         .set("Content-Type", "image/jpeg")
-        .timeout(std::time::Duration::from_secs(60))
+        // TLI 67b, bod 1: 10 s namiesto pôvodných 60 — pozri `api::TIMEOUT_ANALYZY_S`.
+        .timeout(std::time::Duration::from_secs(api::TIMEOUT_ANALYZY_S))
         .send_bytes(&jpeg);
 
     match odpoved {
@@ -80,7 +110,11 @@ pub fn posli_analyzu(n: &Nastavenia, jpeg: Vec<u8>) -> Result<Vysledok, String> 
         // Zvyšok sú chyby prenosu (DNS, TLS, timeout). Zámerne catch-all, nie
         // `Transport(t)` — `ureq::Error` môže pribudnúť variant a appka sa nemá
         // prestať kompilovať pri `cargo update`.
-        Err(ina) => Err(api::sprava_siete(&ina.to_string())),
+        Err(ina) => Err(chyba_prenosu(
+            zaciatok.elapsed(),
+            api::TIMEOUT_ANALYZY_S,
+            &ina.to_string(),
+        )),
     }
 }
 
@@ -100,7 +134,8 @@ pub fn posli_analyzu_canvas(
     let odpoved = ureq::post(&n.adresa_analyza_canvas_s_ramami(ramy))
         .set("Authorization", &format!("Bearer {}", n.kluc))
         .set("Content-Type", "image/jpeg")
-        .timeout(std::time::Duration::from_secs(60))
+        // TLI 67b, bod 1 — ten istý rozpočet ako pri Tartarus doske vyššie.
+        .timeout(std::time::Duration::from_secs(api::TIMEOUT_ANALYZY_S))
         .send_bytes(&jpeg);
 
     match odpoved {
@@ -119,7 +154,11 @@ pub fn posli_analyzu_canvas(
             let telo = odpoved.into_string().unwrap_or_default();
             Err(api::sprava_chyby(kod, &telo))
         }
-        Err(ina) => Err(api::sprava_siete(&ina.to_string())),
+        Err(ina) => Err(chyba_prenosu(
+            zaciatok.elapsed(),
+            api::TIMEOUT_ANALYZY_S,
+            &ina.to_string(),
+        )),
     }
 }
 
@@ -597,5 +636,49 @@ mod testy {
         assert!(text.contains("application/gzip"));
         assert!(telo.windows(b"gzipdata".len()).any(|w| w == b"gzipdata"));
         assert!(text.trim_end().ends_with(&format!("--{boundary}--")));
+    }
+
+    // ── TLI 67b, bod 1: timeout 10 s a jeho odlíšenie od inej chyby ───────
+
+    #[test]
+    fn rucna_analyza_caka_na_server_desat_sekund() {
+        // Číslo je v `core` (jeden zdroj pravdy pre appku aj dokumentáciu).
+        assert_eq!(api::TIMEOUT_ANALYZY_S, 10);
+    }
+
+    #[test]
+    fn vyprsany_rozpocet_je_timeout_aj_tesne_pred_hranicou() {
+        use std::time::Duration;
+        assert!(je_timeout(Duration::from_millis(10_000), 10));
+        // `ureq` vracia chybu zlomok pred uplynutím celého rozpočtu.
+        assert!(je_timeout(Duration::from_millis(9_900), 10));
+        assert!(je_timeout(Duration::from_millis(12_500), 10));
+    }
+
+    #[test]
+    fn rychle_zlyhanie_spojenia_nie_je_timeout() {
+        use std::time::Duration;
+        // DNS/TLS/„connection refused" padnú rádovo v milisekundách.
+        assert!(!je_timeout(Duration::from_millis(3), 10));
+        assert!(!je_timeout(Duration::from_millis(3_200), 10));
+        assert!(!je_timeout(Duration::from_millis(9_700), 10));
+    }
+
+    #[test]
+    fn hlaska_po_timeoute_je_presne_ta_zo_zadania() {
+        use std::time::Duration;
+        assert_eq!(
+            chyba_prenosu(Duration::from_secs(10), 10, "io: timed out"),
+            "Server teraz neodpovedá – skús o chvíľu"
+        );
+    }
+
+    #[test]
+    fn hlaska_pri_inej_sietovej_chybe_ostava_povodna() {
+        use std::time::Duration;
+        let t = chyba_prenosu(Duration::from_millis(5), 10, "dns error");
+        assert!(t.contains("Nepodarilo sa spojiť so serverom"));
+        assert!(t.contains("dns error"));
+        assert_ne!(t, api::SPRAVA_TIMEOUTU);
     }
 }

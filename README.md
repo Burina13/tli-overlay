@@ -43,6 +43,28 @@ nefotilo. Fronty sú v `%APPDATA%\sk.tvojtatko.tli-overlay\` v priečinkoch
 `canvas-zber`, `tartarus-zber` a `minimapa-zber`; **nič sa z nich nemaže** —
 mizne výhradne snímka, ktorú server práve prijal.
 
+## Keď server mešká (TLI 67b)
+
+Appka čaká na odpoveď na ručnú analýzu **najviac 10 sekúnd**
+(`core/src/api.rs` → `TIMEOUT_ANALYZY_S`); bežná analýza sa zmestí do ~3 s.
+Po uplynutí napíše **„Server teraz neodpovedá – skús o chvíľu"** a tá hláška
+zhasne na **prvý klik**, bez ohľadu na nastavené autoskrytie — je to prechodná
+správa, nie rada, ktorú si treba prečítať. Zber na pozadí má vlastný, dlhší
+rozpočet; tam na nikoho nečaká hráč.
+
+Počas čakania je v overlayi vidieť **počítadlo sekúnd** („Odoslané, čakám na
+radu… (7 s)"). Ráta sa od stlačenia klávesy, nie až od odoslania, a nič ním
+nie je riadené — je to len dôkaz, že appka pracuje.
+
+**Nové stlačenie počas bežiacej analýzy ju ZRUŠÍ a odfotí odznova.** Žiadna
+fronta zdržaných požiadaviek neexistuje (bola, TLI 41, a 20.10.2026 sa ukázalo,
+prečo bola zlý nápad: pri 34-sekundovej odpovedi servera sa osem stlačení
+Ctrl+W zaradilo za sebou a appka po dobehnutí spustila ďalšiu, dávno neaktuálnu
+snímku — z pohľadu hráča „sa to celé seklo"). Stlačenie do **1 sekundy** od
+štartu sa ignoruje; automatický popud na pozadí (ceny z trhu) analýzu, na ktorú
+hráč čaká, nezhodí nikdy. Samotné HTTP spojenie sa prerušiť nedá, zahodí sa
+jeho výsledok a zvyšné vlákno ticho dobehne do timeoutu.
+
 ## Ako sa to používa
 Aplikácia beží na pozadí a čaká na klávesovú skratku. 
 

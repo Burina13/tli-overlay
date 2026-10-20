@@ -38,8 +38,61 @@ function zrusCasovacPracujem() {
     }
 }
 
+// ── TLI 67b (`2026-10-20-1348-mcp.md`, bod 3) — počítadlo sekúnd ────────────
+// Richard 20.10.2026: Canvas analýza trvala 34 s a z overlayu sa nedalo
+// poznať, či appka pracuje, alebo zamrzla — text „Odoslané, čakám na radu…"
+// vyzerá po dvoch sekundách presne tak isto ako po tridsiatich. Odteraz za
+// textom pribúda „(3 s)" a každú sekundu sa prepočíta. Je to IBA text: nič
+// sa tým nespúšťa ani neruší, o vzdanie sa stará 10-sekundový timeout
+// v Ruste (`api::TIMEOUT_ANALYZY_S`).
+const KROK_POCITADLA_MS = 1000;
+let casovacPocitadla = null;
+let pocitadloZaciatok = 0;
+let pocitadloZaklad = "";
+
+// Zastaví tikanie, ale NEZABUDNE, kedy sa čakanie začalo — `skryVsetko()`
+// beží aj medzi fázami `analyzujem` -> `odosielam` tej istej analýzy a
+// vynulovanie začiatku by počítadlo po odoslaní vrátilo na nulu.
+function zrusPocitadlo() {
+    if (casovacPocitadla !== null) {
+        clearInterval(casovacPocitadla);
+        casovacPocitadla = null;
+    }
+    pocitadloZaklad = "";
+}
+
+// Text indikátora, ktorý sa má počítadlom dopĺňať. Volá sa pri každej zmene
+// textu počas čakania (Snímam… -> Odoslané… -> Pracujem…), aby počítadlo
+// nezmizlo a zároveň sa neduplikovalo.
+function nastavTextSPocitadlom(text) {
+    pocitadloZaklad = text;
+    elIndikatorText.textContent = textSPocitadlom(text, pocitadloZaciatok, Date.now());
+}
+
+// Čistá funkcia — bez DOM a bez času zvonku, nech sa dá otestovať.
+// Prvá sekunda sa nepíše: „(0 s)" hneď po stlačení len bliká a nič nehovorí.
+function textSPocitadlom(zaklad, odkedyMs, terazMs) {
+    const sekund = Math.floor((terazMs - odkedyMs) / 1000);
+    return sekund >= 1 ? `${zaklad} (${sekund} s)` : zaklad;
+}
+
+function spustiPocitadlo(odznova) {
+    zrusPocitadlo();
+    if (odznova || pocitadloZaciatok === 0) {
+        pocitadloZaciatok = Date.now();
+    }
+    casovacPocitadla = setInterval(() => {
+        if (pocitadloZaklad === "") {
+            return;
+        }
+        elIndikatorText.textContent =
+            textSPocitadlom(pocitadloZaklad, pocitadloZaciatok, Date.now());
+    }, KROK_POCITADLA_MS);
+}
+
 function skryVsetko() {
     zrusCasovacPracujem();
+    zrusPocitadlo();
     elIndikator.classList.add("skryte");
     elChyba.classList.add("skryte");
     elPanel.classList.add("skryte");
@@ -80,20 +133,35 @@ listen("stav", (event) => {
     logUi(`prijaté stav=${payload.faza}`);
     skryVsetko();
 
+    // TLI 67b, bod 3: čakanie sa počíta od stlačenia klávesy po výsledok.
+    // Fázy `analyzujem` a `odosielam` sú to isté čakanie, všetko ostatné
+    // (hotovo*, chyba, skry) je jeho koniec — vtedy sa začiatok zabudne.
+    if (payload.faza !== "analyzujem" && payload.faza !== "odosielam") {
+        pocitadloZaciatok = 0;
+    }
+
     // TLI 24 (`2026-10-17-1238-mcp.md` bod 3): VŽDY viditeľná spätná väzba —
     // "Snímam…" hneď po stlačení F8/F9 (okno hry nájdené, snímka urobená),
     // "Odoslané, čakám na radu…" len čo appka pošle HTTP požiadavku. Predtým
     // bola jediná fáza "analyzujem" pre oba kroky naraz.
     if (payload.faza === "analyzujem") {
-        elIndikatorText.textContent = "Snímam…";
+        // TLI 67b, bod 3: tu sa počítadlo ZAKLADÁ — `analyzujem` je prvá fáza
+        // po stlačení klávesy, takže sekundy rátajú od stlačenia, nie až od
+        // odoslania na server.
+        spustiPocitadlo(true);
+        nastavTextSPocitadlom("Snímam…");
         elIndikator.classList.remove("skryte");
     }
     else if (payload.faza === "odosielam") {
-        elIndikatorText.textContent = "Odoslané, čakám na radu…";
+        // `skryVsetko()` vyššie počítadlo zhodilo — tu beží ďalej od stlačenia
+        // len vtedy, keď `analyzujem` predtým prišlo; inak (ceny z trhu idú
+        // rovno sem) sa založí teraz.
+        spustiPocitadlo(false);
+        nastavTextSPocitadlom("Odoslané, čakám na radu…");
         elIndikator.classList.remove("skryte");
         zrusCasovacPracujem();
         casovacPracujem = setTimeout(() => {
-            elIndikatorText.textContent = "Pracujem… (neznámu obrazovku rozoberám podrobnejšie)";
+            nastavTextSPocitadlom("Pracujem… (neznámu obrazovku rozoberám podrobnejšie)");
             casovacPracujem = null;
         }, PRAH_PRACUJEM_MS);
     }

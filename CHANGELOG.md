@@ -2,6 +2,34 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.30.0 — 20.10.2026 (TLI 67b — „a teraz sa mi to celé seklo")
+
+**Čo Richard nahlásil 20.10.2026 13:48** (v0.24.0): appka prestala reagovať.
+Z logu: jedna Canvas požiadavka `/api/analyza?modul=canvas` trvala **34 267 ms**
+(ráno v ten istý deň 2,6–3,2 s). Richard počas nej stlačil Ctrl+W asi osemkrát
+a appka každé stlačenie poslušne **zaradila do fronty** („čaká na dobehnutie
+predošlej analýzy"); po dobehnutí spustila ďalšiu zdržanú požiadavku nad už
+neaktuálnou snímkou. Appka aj hra bežali, server bol len pomalý — zrejme preto,
+že sa práve nasadzoval `tli-web` (TLI 66) na CT 114.
+
+**Čo je nové v 0.30.0:**
+- **Appka čaká na server najviac 10 s** (Tartarus aj Frozen Canvas; dovtedy
+  60 s). Po uplynutí napíše „Server teraz neodpovedá – skús o chvíľu" a hláška
+  zhasne na **prvý klik**, aj keď má hráč nastavené autoskrytie na sekundy.
+  Zber na pozadí si ponecháva svoj vlastný, dlhší rozpočet.
+- **Fronta zdržaných požiadaviek je PREČ** (bola to TLI 41). Nové stlačenie
+  počas bežiacej analýzy ju **zruší** a odfotí odznova — aktuálny stav
+  obrazovky je dôležitejší než dobehnutie starej požiadavky. Stlačenie do 1 s
+  od štartu sa ignoruje (to je už len netrpezlivosť). Automatický popud na
+  pozadí (ceny z trhu) ručnú analýzu nikdy nezhodí.
+- **Počas čakania pribúda v overlayi počítadlo sekúnd** — „Odoslané, čakám na
+  radu… (7 s)". Ráta sa od stlačenia klávesy, nie až od odoslania na server,
+  a je to iba text: nič nespúšťa ani neruší.
+- Na strane servera (`tli-web`, repo `ops`): `/zdravie` hlási, koľko
+  požiadaviek práve beží a ako dávno niečo chcel živý hráč, a `nasadit.sh`
+  pred `systemctl restart` počká na ticho (najviac 3 minúty). Nasadenie tak
+  nepadne hráčovi do rozohranej analýzy.
+
 ## 0.29.0 — 20.10.2026 (TLI 69b — rada povie, PREČO práve ten paint)
 
 **Čo Richard nahlásil 20.10.2026 ~13:45** (v0.24.0, snímka Frozen Canvasu):

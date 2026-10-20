@@ -18,7 +18,7 @@ mod zber_canvas;
 mod zber_minimapa;
 
 use serde_json::json;
-use stav::{KontrolaAktualizacie, RezimUpravyKontext, Stav};
+use stav::{BehAnalyzy, KontrolaAktualizacie, RezimUpravyKontext, Stav};
 use std::str::FromStr;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -537,6 +537,43 @@ const OVERENIE_PREZENTACIE_ONESKORENIE_MS: u64 = 400;
 /// bežným key-repeat intervalom (~30-50 ms) a výrazne pod tým, čo by hráč
 /// vnímal ako samostatný druhý stlak.
 const HOTKEY_DEBOUNCE_MS: u64 = 500;
+
+/// TLI 67b (`2026-10-20-1348-mcp.md`, bod 2) — stlačenie, ktoré príde do tejto
+/// doby od ZAČIATKU bežiacej analýzy, sa ignoruje úplne. Richard 20.10.2026
+/// stlačil počas 34-sekundovej požiadavky Ctrl+W asi osemkrát; zadanie na to
+/// hovorí „prípadne ignoruj, ak od stlačenia neuplynulo 1 s". Je to niečo iné
+/// než `HOTKEY_DEBOUNCE_MS` vyššie: ten rieši ECHO Windowsu na jeden stlak
+/// (500 ms, tá istá skratka), toto rieši netrpezlivého človeka.
+const OPAKOVANIE_IGNOROVANIE_MS: u64 = 1000;
+
+/// Čo spraviť s novým popudom na analýzu (TLI 67b, bod 2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Opakovanie {
+    /// Nič nebeží — bežný štart.
+    Spusti,
+    /// Bežiaca analýza sa zruší (jej výsledok sa zahodí) a fotí sa odznova.
+    ZrusAFot,
+    /// Netrpezlivé ťukanie do klávesy — nerobí sa nič.
+    Ignoruj,
+    /// Automatický popud na pozadí (ceny z trhu) nesmie zhodiť analýzu,
+    /// na ktorú čaká hráč pri obrazovke. Ten počká na ďalšiu príležitosť.
+    NechajBezat,
+}
+
+/// Čistá logika pre `Opakovanie` — bez Tauri, bez OS, testovateľné aj na Linuxe.
+/// `bezi` je čas od štartu práve bežiacej analýzy (`None` = nebeží žiadna),
+/// `rucne` hovorí, či popud prišiel od hráča (hotkey/tlačidlo), alebo
+/// automaticky z pozadia.
+fn rozhodni_opakovanie(bezi: Option<Duration>, rucne: bool) -> Opakovanie {
+    match bezi {
+        None => Opakovanie::Spusti,
+        Some(_) if !rucne => Opakovanie::NechajBezat,
+        Some(uplynulo) if uplynulo < Duration::from_millis(OPAKOVANIE_IGNOROVANIE_MS) => {
+            Opakovanie::Ignoruj
+        }
+        Some(_) => Opakovanie::ZrusAFot,
+    }
+}
 
 /// Čistá logika debounce (TLI 44, bod 3) — žiadne OS volanie, testovateľné aj
 /// mimo Windowsu. `posledny` je (skratka, kedy) z MINULÉHO doručenia, `nova`
@@ -1158,39 +1195,98 @@ pub(crate) fn spusti_analyzu(app: AppHandle, modul: Modul, zdroj: &'static str) 
         return;
     }
 
-    // Dvojité stlačenie hotkey (ktoréhokoľvek z dvoch) nemá poslať dve
-    // požiadavky naraz — server púšťa 30 za minútu a zámok je zdieľaný medzi
-    // Tartarus aj Frozen Canvas, nemajú bežať naraz nad tým istým oknom.
+    // Dve analýzy naraz nad tým istým oknom nemajú zmysel — server púšťa 30
+    // požiadaviek za minútu a zámok je zdieľaný medzi Tartarus aj Frozen
+    // Canvas.
     //
     // TLI 24: tento zámok je JEDINÉ miesto, kde appka vie úplne potichu
     // „nič nespraviť" (žiadny event, žiadny log) — keby z nejakého dôvodu
-    // ostal `true` navždy (napr. nečakaný panic vo vlákne nižšie pred jeho
-    // vrátením na `false`), appka by od tej chvíle na KAŽDÝ ďalší F8/F9
-    // mlčala presne tak, ako to opísal Richard. Preto je zápis do logu tu
-    // PRED early-returnom — keby sa to niekedy zopakovalo, log to ukáže.
+    // ostal zabratý navždy (napr. nečakaný panic vo vlákne nižšie pred jeho
+    // uvoľnením), appka by od tej chvíle na KAŽDÝ ďalší F8/F9 mlčala presne
+    // tak, ako to opísal Richard. Preto je zápis do logu tu PRED
+    // early-returnom — keby sa to niekedy zopakovalo, log to ukáže.
     //
-    // TLI 41: požiadavka, ktorá príde, kým predošlá ešte nedobehla, sa už
-    // NEZAHADZUJE ticho — uloží sa ako `cakajuci_dalsi` a spustí sa HNEĎ po
-    // dobehnutí tej prebiehajúcej (koniec funkcie nižšie). Keď medzitým
-    // príde ešte jedna, nahradí tú predchádzajúcu — vždy vyhráva POSLEDNÁ
-    // snímka, nie prvé stlačenie (Richard 18.10.2026: rýchle opakované
-    // Ctrl+Q hlásilo chybu namiesto toho, aby jednoducho počkalo).
-    {
+    // TLI 67b (bod 2) — FRONTA ZDRŽANÝCH POŽIADAVIEK JE PREČ, NEVRACAJ JU.
+    // TLI 41 ju zaviedla s dobrým úmyslom (nech rýchle opakované stlačenie
+    // nehlási chybu), ale 20.10.2026 sa ukázala jej odvrátená strana: keď
+    // Canvas požiadavka trvala 34 s, Richard stlačil Ctrl+W asi osemkrát,
+    // appka každé stlačenie zaradila a po dobehnutí spustila ĎALŠIU, už
+    // neaktuálnu snímku — z pohľadu hráča sa appka „celá sekla". Odteraz
+    // nové stlačenie bežiacu analýzu ZRUŠÍ a odfotí odznova; aktuálny stav
+    // obrazovky je dôležitejší než dobehnutie starej požiadavky.
+    let moja_generacia = {
         let stav = app.state::<Stav>();
         let mut beh = stav.beh.lock().unwrap();
-        if *beh {
-            *stav.cakajuci_dalsi.lock().unwrap() = Some((modul, zdroj));
-            denik::zapis(
-                "hotkey",
-                &format!("{modul:?} čaká na dobehnutie predošlej analýzy (zdroj={zdroj})"),
-            );
-            return;
+        let rucne = zdroj != "auto";
+        match rozhodni_opakovanie(beh.map(|b| b.zacata.elapsed()), rucne) {
+            Opakovanie::Ignoruj => {
+                let ms = beh.map(|b| b.zacata.elapsed().as_millis()).unwrap_or(0);
+                denik::zapis(
+                    "hotkey",
+                    &format!(
+                        "{modul:?} ignorované — predošlá analýza beží len {ms} ms \
+(menej než {OPAKOVANIE_IGNOROVANIE_MS} ms, zdroj={zdroj})"
+                    ),
+                );
+                return;
+            }
+            Opakovanie::NechajBezat => {
+                denik::zapis(
+                    "hotkey",
+                    &format!(
+                        "{modul:?} zahodené — beží analýza, na ktorú čaká hráč \
+(automatický popud ju neruší, zdroj={zdroj})"
+                    ),
+                );
+                return;
+            }
+            Opakovanie::ZrusAFot => {
+                let ms = beh.map(|b| b.zacata.elapsed().as_millis()).unwrap_or(0);
+                denik::zapis(
+                    "hotkey",
+                    &format!(
+                        "{modul:?} ruším bežiacu analýzu (bežala {ms} ms) a fotím odznova \
+(zdroj={zdroj})"
+                    ),
+                );
+            }
+            Opakovanie::Spusti => {}
         }
-        *beh = true;
+        // Nové poradové číslo. Staré vlákno (ak nejaké bolo) sa po návrate zo
+        // siete spýta, či je ešte jeho číslo to platné, a keď nie, ticho
+        // skončí — nekreslí, neemituje, nesiaha na `beh`.
+        let g = {
+            let mut g = stav.beh_generacia.lock().unwrap();
+            *g += 1;
+            *g
+        };
+        *beh = Some(BehAnalyzy { generacia: g, zacata: Instant::now() });
+        g
+    };
+
+    /// Uvoľní zámok, ale LEN keď ho stále drží toto vlákno (TLI 67b) —
+    /// zrušené vlákno nesmie zhodiť analýzu, ktorá medzitým začala.
+    fn uvolni_ak_moj(app: &AppHandle, moja: u64) -> bool {
+        let stav = app.state::<Stav>();
+        let mut beh = stav.beh.lock().unwrap();
+        match *beh {
+            Some(b) if b.generacia == moja => {
+                *beh = None;
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Je výsledok tohto vlákna ešte aktuálny (TLI 67b)? Volá sa hneď po
+    /// návrate zo siete — zrušené vlákno od tej chvíle nekreslí, neemituje
+    /// ani nezapisuje, čo je na obrazovke.
+    fn este_platna(app: &AppHandle, moja: u64) -> bool {
+        matches!(*app.state::<Stav>().beh.lock().unwrap(), Some(b) if b.generacia == moja)
     }
 
     let koniec = |app: &AppHandle| {
-        *app.state::<Stav>().beh.lock().unwrap() = false;
+        uvolni_ak_moj(app, moja_generacia);
     };
 
     let okno_hry = match okno::najdi_hru(&nastavenia.proces_hry) {
@@ -1283,6 +1379,10 @@ V hre prepni Nastavenia → Zobrazenie → Režim okna na „Okno bez okrajov“
     // KAŽDÝ ďalší F8/F9 ticho mlčala. Takto appka aj pri panike ukáže chybu
     // a zámok uvoľní.
     std::thread::spawn(move || {
+        // TLI 67b (bod 1) — vypršal 10-sekundový rozpočet? Rozhoduje to o tom,
+        // ako sa hláška zhasína (vždy klikom), a číta sa to AŽ PO dobehnutí
+        // uzáveru, preto `AtomicBool` a nie obyčajné `bool` v uzávere.
+        let bol_timeout = std::sync::atomic::AtomicBool::new(false);
         let vysledok_behu = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         match modul {
             Modul::Tartarus => {
@@ -1294,6 +1394,12 @@ V hre prepni Nastavenia → Zobrazenie → Režim okna na „Okno bez okrajov“
                 match &vysledok {
                     Ok(v) => denik::zapis("http", &format!("analyza OK, {} ms", v.trvanie_ms)),
                     Err(e) => denik::zapis("http", &format!("analyza CHYBA: {e}")),
+                }
+                // TLI 67b (bod 2): medzitým mohlo prísť nové stlačenie, ktoré
+                // túto analýzu zrušilo. Od tejto chvíle by sme kreslili nad
+                // obrazovkou, ktorú hráč už nemá — radšej ticho skončiť.
+                if !este_platna(&app, moja_generacia) {
+                    return;
                 }
                 // TLI 70: server práve prečítal, čo je na obrazovke — zber na
                 // pozadí sa o to oprie, kým nepríde ďalšia analýza.
@@ -1622,6 +1728,12 @@ V hre prepni Nastavenia → Zobrazenie → Režim okna na „Okno bez okrajov“
                         );
                     }
                     Err(e) => {
+                        // TLI 67b (bod 1): „server neodpovedá" je prechodná
+                        // hláška, nie rada — zhasína VŽDY na prvý klik, aj keď
+                        // má hráč autoskrytie nastavené na sekundy.
+                        if e == api::SPRAVA_TIMEOUTU {
+                            bol_timeout.store(true, std::sync::atomic::Ordering::SeqCst);
+                        }
                         let _ = app.emit("stav", json!({ "faza": "chyba", "sprava": e }));
                     }
                 }
@@ -1654,6 +1766,12 @@ V hre prepni Nastavenia → Zobrazenie → Režim okna na „Okno bez okrajov“
                 match &vysledok {
                     Ok(v) => denik::zapis("http", &format!("canvas OK, {} ms", v.trvanie_ms)),
                     Err(e) => denik::zapis("http", &format!("canvas CHYBA: {e}")),
+                }
+                // TLI 67b (bod 2): medzitým mohlo prísť nové stlačenie, ktoré
+                // túto analýzu zrušilo. Od tejto chvíle by sme kreslili nad
+                // obrazovkou, ktorú hráč už nemá — radšej ticho skončiť.
+                if !este_platna(&app, moja_generacia) {
+                    return;
                 }
                 // TLI 70: odpoveď `modul=canvas` pole `obrazovka` nenesie —
                 // že ide o Frozen Canvas, je dané samotným modulom.
@@ -1732,6 +1850,12 @@ V hre prepni Nastavenia → Zobrazenie → Režim okna na „Okno bez okrajov“
                         );
                     }
                     Err(e) => {
+                        // TLI 67b (bod 1): „server neodpovedá" je prechodná
+                        // hláška, nie rada — zhasína VŽDY na prvý klik, aj keď
+                        // má hráč autoskrytie nastavené na sekundy.
+                        if e == api::SPRAVA_TIMEOUTU {
+                            bol_timeout.store(true, std::sync::atomic::Ordering::SeqCst);
+                        }
                         let _ = app.emit("stav", json!({ "faza": "chyba", "sprava": e }));
                     }
                 }
@@ -1746,6 +1870,12 @@ V hre prepni Nastavenia → Zobrazenie → Režim okna na „Okno bez okrajov“
                     denik::zapis("http", &format!("POST /api/analyza?modul=ceny ({} B JPEG)", jpeg.len()));
                     klient::posli_analyzu_ceny(&nastavenia, jpeg)
                 });
+                // TLI 67b (bod 2): ceny bežia na pozadí, ale zámok držia ako
+                // ostatné — keď ich medzitým zrušilo stlačenie hráča, toast
+                // ani zápis „posledná obrazovka = trh" už nepatria nikam.
+                if !este_platna(&app, moja_generacia) {
+                    return;
+                }
                 match vysledok {
                     Ok(v) => {
                         denik::zapis("http", &format!("ceny OK, {} ms", v.trvanie_ms));
@@ -1783,7 +1913,16 @@ V hre prepni Nastavenia → Zobrazenie → Režim okna na „Okno bez okrajov“
             );
         }
 
-        *app.state::<Stav>().beh.lock().unwrap() = false;
+        // TLI 67b (bod 2): zámok uvoľní LEN to vlákno, ktoré ho drží. Keď
+        // medzitým prišlo nové stlačenie, toto vlákno je zrušené — nesmie
+        // zhodiť zámok novej analýzy ani jej prekresliť panel.
+        if !uvolni_ak_moj(&app, moja_generacia) {
+            denik::zapis(
+                "hotkey",
+                &format!("{modul:?} výsledok zahodený — medzitým prišla novšia požiadavka"),
+            );
+            return;
+        }
 
         let znacka = *app.state::<Stav>().zobrazene_od.lock().unwrap();
         if let Some(znacka) = znacka {
@@ -1799,21 +1938,16 @@ V hre prepni Nastavenia → Zobrazenie → Režim okna na „Okno bez okrajov“
             // Cesta v kóde je pre všetky stavy JEDNA A TÁ ISTÁ (doska,
             // nástroj, poklad, objective, poradca, canvas, chyba) — nebolo to
             // teda viazané na `hotovo_*`, len na časovanie.
-            naplanuj_skrytie_podla_nastavenia(app.clone(), znacka, &nastavenia);
+            if bol_timeout.load(std::sync::atomic::Ordering::SeqCst) {
+                denik::zapis(
+                    "zobraz",
+                    "server neodpovedal do 10 s — hláška zhasne na prvý klik (TLI 67b)",
+                );
+                naplanuj_skrytie_po_kliku(app.clone(), znacka);
+            } else {
+                naplanuj_skrytie_podla_nastavenia(app.clone(), znacka, &nastavenia);
+            }
             over_prezentaciu(&app, &obdlznik, &snimok.rgb, zdroj, znacka);
-        }
-
-        // TLI 41: požiadavka zdržaná počas tohto behu (pozri `cakajuci_dalsi`
-        // vyššie) sa spustí TERAZ, hneď po uvoľnení zámku — appka teda nikdy
-        // nehlási chybu na rýchle opakované stlačenie, len dorieši poslednú
-        // snímku o pár sekúnd neskôr.
-        let dalsi = app.state::<Stav>().cakajuci_dalsi.lock().unwrap().take();
-        if let Some((dalsi_modul, dalsi_zdroj)) = dalsi {
-            denik::zapis(
-                "hotkey",
-                &format!("spúšťam zdržanú požiadavku ({dalsi_modul:?}, zdroj={dalsi_zdroj})"),
-            );
-            spusti_analyzu(app.clone(), dalsi_modul, dalsi_zdroj);
         }
     });
 }
@@ -3515,8 +3649,8 @@ fn main() {
         .plugin(tauri_plugin_notification::init())
         .manage(Stav {
             nastavenia: Mutex::new(nacitane),
-            beh: Mutex::new(false),
-            cakajuci_dalsi: Mutex::new(None),
+            beh: Mutex::new(None),
+            beh_generacia: Mutex::new(0),
             zobrazene_od: Mutex::new(None),
             pocitadlo_zber: Mutex::new(0),
             poslane_behy: Mutex::new(std::collections::BTreeSet::new()),
@@ -3910,6 +4044,59 @@ mod testy {
         let t0 = Instant::now();
         let t1 = t0 + Duration::from_millis(10);
         assert!(!hotkey_debounovany(Some((ctrl_q(), t0)), &ctrl_f8(), t1));
+    }
+
+    // ── rozhodni_opakovanie (TLI 67b, bod 2) ───────────────────────────────
+    //
+    // Richard 20.10.2026 13:48: „a teraz sa mi to celé seklo". Canvas
+    // požiadavka trvala 34 s, on medzitým stlačil Ctrl+W asi osemkrát a appka
+    // každé stlačenie ZARADILA do fronty (TLI 41). Tieto testy držia nové
+    // pravidlo: nič sa nezaraďuje.
+
+    #[test]
+    fn ked_nic_nebezi_sa_jednoducho_spusti() {
+        assert_eq!(rozhodni_opakovanie(None, true), Opakovanie::Spusti);
+        assert_eq!(rozhodni_opakovanie(None, false), Opakovanie::Spusti);
+    }
+
+    #[test]
+    fn stlacenie_do_sekundy_od_startu_sa_ignoruje() {
+        assert_eq!(
+            rozhodni_opakovanie(Some(Duration::from_millis(0)), true),
+            Opakovanie::Ignoruj
+        );
+        assert_eq!(
+            rozhodni_opakovanie(Some(Duration::from_millis(999)), true),
+            Opakovanie::Ignoruj
+        );
+    }
+
+    #[test]
+    fn stlacenie_po_sekunde_zrusi_beziacu_a_foti_odznova() {
+        assert_eq!(
+            rozhodni_opakovanie(Some(Duration::from_millis(1000)), true),
+            Opakovanie::ZrusAFot
+        );
+        // Presne Richardov prípad: 34-sekundová Canvas požiadavka.
+        assert_eq!(
+            rozhodni_opakovanie(Some(Duration::from_millis(34_267)), true),
+            Opakovanie::ZrusAFot
+        );
+    }
+
+    /// Fronta je preč — ŽIADNA kombinácia vstupov nesmie znamenať „zaraď to
+    /// a spusti neskôr". Keby sa niekedy vrátila, tento test padne na tom, že
+    /// `Opakovanie` má nový variant.
+    #[test]
+    fn automaticky_popud_nikdy_nezhodi_analyzu_hraca() {
+        assert_eq!(
+            rozhodni_opakovanie(Some(Duration::from_millis(1)), false),
+            Opakovanie::NechajBezat
+        );
+        assert_eq!(
+            rozhodni_opakovanie(Some(Duration::from_secs(30)), false),
+            Opakovanie::NechajBezat
+        );
     }
 
     // ── vyhodnot_prezentaciu (TLI 44, bod 2) ───────────────────────────────

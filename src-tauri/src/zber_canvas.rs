@@ -253,7 +253,7 @@ fn zhrn_dovody(
 fn appka_prekaza(app: &AppHandle) -> bool {
     let stav = app.state::<Stav>();
     let panel_svieti = stav.zobrazene_od.lock().unwrap().is_some();
-    let analyza_bezi = *stav.beh.lock().unwrap();
+    let analyza_bezi = stav.beh.lock().unwrap().is_some();
     panel_svieti || analyza_bezi
 }
 
