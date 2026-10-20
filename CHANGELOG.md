@@ -2,6 +2,36 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## core 0.17.0 — 20.10.2026 (TLI 62/3a+b: vlákno zberu minimapy, Nastavenia UI; BEZ appka releasu)
+
+Self-queued pokračovanie TLI 62 (`inbox/2026-10-20-0600-agent.md`), nadväzuje
+na jadro zberu (62/2). Prepája `core/src/minimapa_fronta.rs` so skutočným
+oknom hry, diskom a sieťou — vzor `zber_canvas.rs` (TLI 60).
+
+- `core::minimapa_fronta::kod_zony(cesta)` — posledný segment
+  `InMainLevelPath` (kontrakt, parameter `mapa`), nie `LevelId` (62/0: jedna
+  zóna má 6–8 `LevelId`). Tracker (`Beh::zona`) nesie celú cestu, appka pred
+  odoslaním posiela len tento posledný kus.
+- `Nastavenia.minimapa_zber_zapnute` (**predvolene VYPNUTÉ** — ToS, appka
+  nesmie fotiť nikoho, kto si to sám nezapol) + `Nastavenia.minimapa_rezim`
+  (`RezimMinimapy`, predvolene `stred`) + `adresa_minimapa()`/
+  `adresa_minimapa_stav()`.
+- `core::api::{MinimapaOdpoved, MinimapaStavOdpoved, MinimapaMapaStav}` —
+  tvar odpovedí `POST /api/minimapa` a `GET /api/minimapa/stav` z kontraktu.
+- Nový `src-tauri/src/zber_minimapa.rs` — dve vlákna (sledovač + odosielač),
+  vlastná fronta na disku (`minimapa-zber/`, nezdieľaná s Canvasom). Zdroj
+  „beh mapy prebieha" je TRACKER (`StavTrackera::aktualny_beh`, nová
+  verejná metóda), nie druhý sledovač `UE_game.log`. Sidecar `<meno>.jpg.meta`
+  vedľa každej snímky nesie `mapa`/`level_uid`/`rezim`/`okno`/`roi` presne
+  také, aké platili v čase ODFOTENIA (nerozširuje už otestovaný formát mena
+  súboru z kroku 62/2). `klient::posli_minimapa_zber`/`ziskaj_stav_minimapy`.
+- Nastavenia UI: prepínač „Zber minimapy" + výber režimu (stred/roh),
+  5 nových e2e testov (`testy-nastavenia-minimapa-zber.e2e.mjs`).
+- Testy: core 580/580 zelené (9 nových), `cargo check` zelený v `core` aj
+  `src-tauri`, UI e2e 118/118 zelené.
+- **Appka sa NEVYDÁVA v tomto kroku** — release, oznam do `#torchlight` a
+  test na TLI-TEST-VM (VM 210) sú 62/3c, self-queued samostatne.
+
 ## core 0.16.0 — 20.10.2026 (TLI 62/2: jadro appky pre zber minimapy — ROI, ticker, denný strop, fronta, `dost_dat`; bez appka releasu)
 
 Self-queued pokračovanie TLI 62 (`inbox/2026-10-20-0440-agent.md`), nadväzuje

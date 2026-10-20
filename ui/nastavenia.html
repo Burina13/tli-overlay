@@ -128,6 +128,24 @@
                     ručný (na klávesu) a mení, čo appka ukáže v rade.</small>
             </div>
 
+            <div class="skupina">
+                <label class="checkbox-obal">
+                    <input type="checkbox" id="inp-minimapa-zber">
+                    Zber minimapy (stavba trás k bossovi / full clear)
+                </label>
+                <small>Keď máš v hre otvorenú minimapu, appka počas behu mapy á 2 s
+                    sama odfotí jej výrez a pošle na server — stavia sa z toho knižnica
+                    máp pre neskoršiu trasu. Zbiera sa LEN to, čo minimapa UKAZUJE
+                    (nič sa neodkrýva) a appka za teba nikdy nehýbe ani neklika.
+                    <strong>Predvolene VYPNUTÉ</strong> — zapni, len keď chceš pomôcť
+                    so zberom dát.</small>
+                <label for="inp-minimapa-rezim" class="mt-8">Režim minimapy</label>
+                <select id="inp-minimapa-rezim">
+                    <option value="stred">Stred (rozbalená, mapa stojí)</option>
+                    <option value="roh">Roh (malá, stále zobrazená)</option>
+                </select>
+            </div>
+
             <div class="skupina akcia-riadok mt-16">
                 <button type="submit" id="btn-ulozit" class="btn-hlavny">Uložiť</button>
                 <span id="vysledok-ulozenia"></span>

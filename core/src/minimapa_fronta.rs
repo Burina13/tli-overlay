@@ -237,6 +237,17 @@ pub fn je_subor_fronty(nazov: &str) -> bool {
     nazov.starts_with("minimapa-") && nazov.ends_with(".jpg")
 }
 
+// ── 5. Kód zóny (krok 62/3) ──
+
+/// „Kód zóny" z kontraktu (`minimapa-api-kontrakt.md`, parameter `mapa`) —
+/// posledný segment `InMainLevelPath`, napr. `SD_DuiLongJuQiang211`. Tracker
+/// (`Beh::zona`) nesie CELÚ cestu (`/Game/Art/Maps/01SD/XZ_Foo200/XZ_Foo200`),
+/// appka pred odoslaním posiela len tento posledný kus — **nie** `LevelId`
+/// (62/0: jedna zóna má 6–8 `LevelId` nad tou istou geometriou).
+pub fn kod_zony(cesta: &str) -> String {
+    cesta.rsplit('/').next().unwrap_or(cesta).to_string()
+}
+
 // ── 4. `dost_dat` — kedy sa appka prestane pýtať/fotiť danú mapu ──
 
 /// Ako dlho platí odpoveď `GET /api/minimapa/stav` pre jednu mapu, kým sa
@@ -475,6 +486,23 @@ mod testy {
         assert!(!je_subor_fronty("canvas-1760000000-0000.jpg"));
         assert!(!je_subor_fronty("minimapa-stred-1760000000-0000.jpg.tmp"));
         assert!(!je_subor_fronty("poznamka.txt"));
+    }
+
+    // ── kód zóny ──
+
+    #[test]
+    fn kod_zony_berie_posledny_segment_cesty() {
+        assert_eq!(
+            kod_zony("/Game/Art/Maps/01SD/XZ_YuJinZhiXiBiNanSuo200/XZ_YuJinZhiXiBiNanSuo200"),
+            "XZ_YuJinZhiXiBiNanSuo200"
+        );
+        assert_eq!(kod_zony("/Game/Art/Maps/Town/Town"), "Town");
+    }
+
+    #[test]
+    fn kod_zony_bez_lomky_vrati_cely_text() {
+        assert_eq!(kod_zony("SamostatnyNazov"), "SamostatnyNazov");
+        assert_eq!(kod_zony(""), "");
     }
 
     // ── dost_dat ──

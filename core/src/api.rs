@@ -444,6 +444,38 @@ pub fn text_toastu_ceny(a: &AnalyzaCeny) -> String {
     }
 }
 
+/// Odpoveď `POST /api/minimapa` (TLI 62/3, `minimapa-api-kontrakt.md`) —
+/// **vždy 200**, aj keď sa snímka neprijala (`prijate: false`). Appka z nej
+/// potrebuje len `prijate` (vyhodiť súbor z fronty na disku) a `dost_dat`
+/// (prestať fotiť TÚTO mapu) — zvyšné polia kontraktu (`behov`, `snimok`…)
+/// sú len pre server/Richardovo hlásenie, appka ich nepotrebuje.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct MinimapaOdpoved {
+    pub ok: bool,
+    pub prijate: bool,
+    pub dost_dat: bool,
+}
+
+/// Jedna mapa v odpovedi `GET /api/minimapa/stav`.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct MinimapaMapaStav {
+    pub dost_dat: bool,
+}
+
+/// Odpoveď `GET /api/minimapa/stav` — appka sa pýta raz za čas
+/// (`DostDatStav::ma_sa_opytat_servera`), nie pri každej snímke. `zapnute:
+/// false` znamená, že appka má zber úplne vypnúť (rovnaké ako `503` pri
+/// `POST /api/minimapa`).
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct MinimapaStavOdpoved {
+    pub ok: bool,
+    pub zapnute: bool,
+    pub mapy: std::collections::HashMap<String, MinimapaMapaStav>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ChybaServera {
@@ -1032,5 +1064,38 @@ mod testy {
             ..Default::default()
         };
         assert!(tlacidlo_podla_indexu(&a, Some(0)).is_none());
+    }
+
+    /// TLI 62/3 — presný tvar odpovede z kontraktu (`minimapa-api-kontrakt.md`),
+    /// aj s poliami, ktoré appka vôbec nečíta (`behov`, `snimok`…) — tie
+    /// nesmú parsovanie zhodiť, len sa zahodia.
+    #[test]
+    fn minimapa_odpoved_sa_parsuje_s_neznamymi_poliami() {
+        let json = r#"{"ok": true, "prijate": true, "mapa": "XZ_Foo", "behov": 3,
+            "behov_pouzitelnych": 2, "snimok": 118, "dost_dat": false,
+            "potrebujem_behov": 6, "subor": "x.jpg"}"#;
+        let o: MinimapaOdpoved = serde_json::from_str(json).unwrap();
+        assert!(o.ok);
+        assert!(o.prijate);
+        assert!(!o.dost_dat);
+    }
+
+    #[test]
+    fn minimapa_odpoved_bez_poli_padne_na_predvolene() {
+        let o: MinimapaOdpoved = serde_json::from_str("{}").unwrap();
+        assert!(!o.ok);
+        assert!(!o.prijate);
+        assert!(!o.dost_dat);
+    }
+
+    #[test]
+    fn minimapa_stav_sa_parsuje_a_vracia_dost_dat_na_mapu() {
+        let json = r#"{"ok": true, "zapnute": true,
+            "mapy": {"XZ_Foo": {"behov": 8, "behov_pouzitelnych": 8, "snimok": 2400, "dost_dat": true}},
+            "hotove": ["XZ_Foo"], "dost_behov": 8}"#;
+        let s: MinimapaStavOdpoved = serde_json::from_str(json).unwrap();
+        assert!(s.zapnute);
+        assert!(s.mapy.get("XZ_Foo").unwrap().dost_dat);
+        assert!(s.mapy.get("XZ_Ina").is_none());
     }
 }

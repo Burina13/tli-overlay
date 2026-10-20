@@ -291,6 +291,14 @@ impl StavTrackera {
         self.cesta.as_deref()
     }
 
+    /// Aktuálne bežiaci beh mapy (ak nejaký) — pre moduly MIMO trackera,
+    /// ktoré potrebujú len zónu/`je_hub`/`level_uid`, nie celé API trackera
+    /// (TLI 62/3, zber minimapy: appka nemá druhý sledovač `UE_game.log`,
+    /// túto informáciu už parsuje tracker, TLI 11c).
+    pub fn aktualny_beh(&self) -> Option<&Beh> {
+        self.sledovac.aktualny()
+    }
+
     /// Zapíše stiahnutý agregát partie do cenníka aj do lokálnej DB, aby ho
     /// appka mala aj po reštarte bez siete (offline cache).
     pub fn prijmi_ceny_partie(

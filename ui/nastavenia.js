@@ -19,6 +19,8 @@ const inpSkrytieRezim = document.getElementById("inp-skrytie-rezim");
 const inpZvuk = document.getElementById("inp-zvuk");
 const inpZberDat = document.getElementById("inp-zber-dat");
 const inpUcenieCanvas = document.getElementById("inp-ucenie-canvas");
+const inpMinimapaZber = document.getElementById("inp-minimapa-zber");
+const inpMinimapaRezim = document.getElementById("inp-minimapa-rezim");
 
 const btnUkazatKluc = document.getElementById("btn-ukazat-kluc");
 const btnTest = document.getElementById("btn-test");
@@ -274,6 +276,10 @@ document.addEventListener("DOMContentLoaded", async () => {
         // `#[serde(default)]` na strane Rustu. Obyčajné `!!` by hráčovi
         // pri prvom otvorení Nastavení zber potichu vyplo.
         inpUcenieCanvas.checked = nastavenia.ucenie_canvas_zapnute !== false;
+        // TLI 62/3: predvolené je VYPNUTÉ — na rozdiel od `ucenie_canvas_zapnute`
+        // tu `undefined` (staré nastavenia bez poľa) musí zostať `false`.
+        inpMinimapaZber.checked = !!nastavenia.minimapa_zber_zapnute;
+        inpMinimapaRezim.value = nastavenia.minimapa_rezim === "roh" ? "roh" : "stred";
         const priehladnost = nastavenia.rozlozenie && nastavenia.rozlozenie.priehladnost;
         inpPriehladnost.value = typeof priehladnost === "number" ? priehladnost : 1;
 
@@ -371,6 +377,8 @@ formular.addEventListener("submit", async (e) => {
         zvuk: inpZvuk.checked,
         zber_dat_zapnute: inpZberDat.checked,
         ucenie_canvas_zapnute: inpUcenieCanvas.checked,
+        minimapa_zber_zapnute: inpMinimapaZber.checked,
+        minimapa_rezim: inpMinimapaRezim.value,
         // TLI 62/2b — farbu posiela `<input type=color>` vždy ako malé
         // písmená (`#ffd24a`); Rust `normalizuj()` ju zdvihne na veľké, aby
         // sa `nastavenia.json` nemenil len kvôli veľkosti písmen.

@@ -1,6 +1,6 @@
 use tli_overlay_core::aktualizacia;
 use tli_overlay_core::api;
-use tli_overlay_core::api::{Analyza, AnalyzaCanvas, AnalyzaCeny};
+use tli_overlay_core::api::{Analyza, AnalyzaCanvas, AnalyzaCeny, MinimapaOdpoved, MinimapaStavOdpoved};
 use tli_overlay_core::nastavenia::Nastavenia;
 
 /// TLI 29: keď server odpovie 2xx, ale telo sa nedá rozobrať na očakávaný
@@ -133,6 +133,77 @@ pub fn posli_canvas_zber(n: &Nastavenia, jpeg: Vec<u8>) -> Result<(), String> {
 
     match odpoved {
         Ok(_) => Ok(()),
+        Err(ureq::Error::Status(kod, odpoved)) => {
+            let telo = odpoved.into_string().unwrap_or_default();
+            Err(api::sprava_chyby(kod, &telo))
+        }
+        Err(ina) => Err(api::sprava_siete(&ina.to_string())),
+    }
+}
+
+/// Pošle jeden výrez minimapy na `POST /api/minimapa` (TLI 62/3,
+/// `minimapa-api-kontrakt.md`). Vracia vždy rozobraté telo, aj keď server
+/// snímku odmietol (`prijate: false`) — to NIE JE chyba, len pokyn „prestaň
+/// fotiť". Skutočné `Err` je len HTTP chyba/zlyhanie prenosu.
+///
+/// Kratší timeout než pri ručnej analýze (60 s), rovnako ako pri
+/// `posli_canvas_zber`: appka zbiera na pozadí, nikto nečaká na odpoveď.
+#[allow(clippy::too_many_arguments)]
+pub fn posli_minimapa_zber(
+    n: &Nastavenia,
+    jpeg: Vec<u8>,
+    rezim: &str,
+    mapa: &str,
+    level_uid: u64,
+    cas_unix_s: u64,
+    okno: Option<(u32, u32)>,
+    roi: &str,
+) -> Result<MinimapaOdpoved, String> {
+    let mut req = ureq::post(&n.adresa_minimapa())
+        .query("rezim", rezim)
+        .query("mapa", mapa)
+        .query("level_uid", &level_uid.to_string())
+        .query("cas", &cas_unix_s.to_string())
+        .query("roi", roi)
+        .set("Authorization", &format!("Bearer {}", n.kluc))
+        .set("Content-Type", "image/jpeg")
+        .timeout(std::time::Duration::from_secs(30));
+    if let Some((sirka, vyska)) = okno {
+        req = req.query("okno", &format!("{sirka}x{vyska}"));
+    }
+
+    let odpoved = req.send_bytes(&jpeg);
+
+    match odpoved {
+        Ok(res) => {
+            let stav = res.status();
+            let telo = res.into_string().unwrap_or_default();
+            serde_json::from_str(&telo)
+                .map_err(|_| loguj_neparsovatelnu_odpoved("posli_minimapa_zber", stav, &telo))
+        }
+        Err(ureq::Error::Status(kod, odpoved)) => {
+            let telo = odpoved.into_string().unwrap_or_default();
+            Err(api::sprava_chyby(kod, &telo))
+        }
+        Err(ina) => Err(api::sprava_siete(&ina.to_string())),
+    }
+}
+
+/// `GET /api/minimapa/stav` (TLI 62/3) — appka sa pýta raz za čas
+/// (`DostDatStav::ma_sa_opytat_servera`), nie pri každej snímke.
+pub fn ziskaj_stav_minimapy(n: &Nastavenia) -> Result<MinimapaStavOdpoved, String> {
+    let odpoved = ureq::get(&n.adresa_minimapa_stav())
+        .set("Authorization", &format!("Bearer {}", n.kluc))
+        .timeout(std::time::Duration::from_secs(15))
+        .call();
+
+    match odpoved {
+        Ok(res) => {
+            let stav = res.status();
+            let telo = res.into_string().unwrap_or_default();
+            serde_json::from_str(&telo)
+                .map_err(|_| loguj_neparsovatelnu_odpoved("ziskaj_stav_minimapy", stav, &telo))
+        }
         Err(ureq::Error::Status(kod, odpoved)) => {
             let telo = odpoved.into_string().unwrap_or_default();
             Err(api::sprava_chyby(kod, &telo))

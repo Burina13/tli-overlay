@@ -15,6 +15,7 @@ mod snimka;
 mod stav;
 mod tracker;
 mod zber_canvas;
+mod zber_minimapa;
 
 use serde_json::json;
 use stav::{KontrolaAktualizacie, RezimUpravyKontext, Stav};
@@ -3433,6 +3434,12 @@ fn main() {
             // server. Vlákna bežia vždy; samotný prepínač sa číta pri každom
             // kliku, takže zapnutie/vypnutie v Nastaveniach nepotrebuje reštart.
             zber_canvas::spusti(handle.clone());
+
+            // TLI 62/3: zber snímok minimapy na pozadí — ticker á 2 s počas
+            // behu mapy, zdroj zóny/level_uid je tracker (vyššie), nie druhý
+            // sledovač logu. Prepínač `minimapa_zber_zapnute` je predvolene
+            // VYPNUTÝ (ToS), rovnako sa číta pri každom tiku bez reštartu.
+            zber_minimapa::spusti(handle.clone());
 
             if let Some(overlay) = app.get_webview_window(OVERLAY) {
                 let _ = overlay.set_ignore_cursor_events(true);

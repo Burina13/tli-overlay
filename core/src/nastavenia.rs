@@ -1,4 +1,4 @@
-use crate::minimapa_fronta::RoiSada;
+use crate::minimapa_fronta::{RezimMinimapy, RoiSada};
 use crate::minimapa_vzhlad::VzhladTrasy;
 use crate::rozlozenie::Rozlozenie;
 use serde::{Deserialize, Serialize};
@@ -153,6 +153,18 @@ pub struct Nastavenia {
     /// hodnoty sú zatiaľ PRACOVNÁ HYPOTÉZA (žiadna snímka minimapy ešte
     /// nebola zozbieraná) a opravia sa tu, keď prídu prvé reálne dáta.
     pub minimapa_roi: RoiSada,
+    /// Zber snímok minimapy na stavbu knižnice trás (TLI 62/3, zadanie
+    /// `inbox/2026-10-20-0600-agent.md`). **Predvolene VYPNUTÉ** — rovnaký
+    /// precedens ako `zber_dat_zapnute`: appka nesmie fotiť nikoho, kto si to
+    /// sám nezapol (ToS, `minimapa-api-kontrakt.md` § „Richard rozhodol").
+    /// Na rozdiel od `ucenie_canvas_zapnute` (ktoré je predvolene ZAPNUTÉ,
+    /// lebo Richard to tak výslovne chcel pre Canvas) tu zadanie žiadnu takú
+    /// vetu nemá — zber minimapy je ručné rozhodnutie hráča.
+    pub minimapa_zber_zapnute: bool,
+    /// Ktorý režim minimapy appka sleduje. Appka to NEVIE zistiť sama (nie je
+    /// to niečo, čo appka môže čítať z obrazovky bez OCR navyše) — hráč si ho
+    /// vyberie v Nastaveniach. Richard používa „stred" — predvolené.
+    pub minimapa_rezim: RezimMinimapy,
 }
 
 impl Default for Nastavenia {
@@ -184,6 +196,8 @@ impl Default for Nastavenia {
             vzhlad_trasy: VzhladTrasy::default(),
             batoh_skryte_polozky: Vec::new(),
             minimapa_roi: RoiSada::default(),
+            minimapa_zber_zapnute: false,
+            minimapa_rezim: RezimMinimapy::Stred,
         }
     }
 }
@@ -276,6 +290,19 @@ impl Nastavenia {
     /// pre oba typy (`typ=log`/`typ=db_export`), rozlíšené v tele requestu.
     pub fn adresa_tracker_upload(&self) -> String {
         self.adresa("/api/tracker/upload")
+    }
+
+    /// Zber snímok minimapy (TLI 62/3) — vlastný endpoint, vlastný
+    /// rate-limit kôš na serveri (`limity.minimapa_za_minutu`), nie
+    /// `/api/analyza*` (ten volá vision model, toto len uloží na disk).
+    pub fn adresa_minimapa(&self) -> String {
+        self.adresa("/api/minimapa")
+    }
+
+    /// Stav nazbieraných dát za mapu (TLI 62/3) — appka sa pýta raz za čas
+    /// (`DostDatStav::ma_sa_opytat_servera`), nie pri každej snímke.
+    pub fn adresa_minimapa_stav(&self) -> String {
+        self.adresa("/api/minimapa/stav")
     }
 
     /// Poskytuje varovanie používateľovi ešte predtým, ako sa aplikácia pokúsi spojiť,
@@ -669,5 +696,46 @@ mod testy_minimapa_roi {
         n.minimapa_roi.stred = crate::minimapa_fronta::RoiMinimapy { x: 0.3, y: 0.2, w: 0.4, h: 0.5 };
         let znova = Nastavenia::z_jsonu(&n.do_jsonu());
         assert_eq!(znova.minimapa_roi.stred, n.minimapa_roi.stred);
+    }
+}
+
+#[cfg(test)]
+mod testy_minimapa_zber {
+    use super::*;
+    use crate::minimapa_fronta::RezimMinimapy;
+
+    /// TLI 62/3 — appka nesmie fotiť nikoho, kto si to sám nezapol.
+    #[test]
+    fn minimapa_zber_je_predvolene_vypnuty_a_rezim_stred() {
+        let n = Nastavenia::default();
+        assert!(!n.minimapa_zber_zapnute);
+        assert_eq!(n.minimapa_rezim, RezimMinimapy::Stred);
+    }
+
+    /// Staré `nastavenia.json` (spred TLI 62/3) tieto polia nemajú —
+    /// `#[serde(default)]` musí dosadiť rovnaké predvoľby ako čerstvý
+    /// Default, nie appku mlčky zapnúť alebo nechať bez režimu.
+    #[test]
+    fn stare_nastavenia_bez_poli_dostanu_predvolene_hodnoty() {
+        let n = Nastavenia::z_jsonu(r#"{"url_servera":"https://tli.tvojtatko.sk"}"#);
+        assert!(!n.minimapa_zber_zapnute);
+        assert_eq!(n.minimapa_rezim, RezimMinimapy::Stred);
+    }
+
+    #[test]
+    fn vlastne_hodnoty_prezije_kolo_cez_json() {
+        let mut n = Nastavenia::default();
+        n.minimapa_zber_zapnute = true;
+        n.minimapa_rezim = RezimMinimapy::Roh;
+        let znova = Nastavenia::z_jsonu(&n.do_jsonu());
+        assert!(znova.minimapa_zber_zapnute);
+        assert_eq!(znova.minimapa_rezim, RezimMinimapy::Roh);
+    }
+
+    #[test]
+    fn adresy_minimapy_su_spravne() {
+        let n = Nastavenia { url_servera: "https://tli.tvojtatko.sk".to_string(), ..Default::default() };
+        assert_eq!(n.adresa_minimapa(), "https://tli.tvojtatko.sk/api/minimapa");
+        assert_eq!(n.adresa_minimapa_stav(), "https://tli.tvojtatko.sk/api/minimapa/stav");
     }
 }
