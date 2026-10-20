@@ -3208,6 +3208,7 @@ fn main() {
     denik::zapis("start", &format!("tli-overlay {} spustené", env!("CARGO_PKG_VERSION")));
 
     let nacitane = stav::nacitaj();
+    denik::zapis("stav-debug", &format!("nacitaj(): minimapa_zber_zapnute={}", nacitane.minimapa_zber_zapnute));
     let hotkey_pri_starte = nacitane.hotkey.clone();
     let hotkey_canvas_pri_starte = nacitane.hotkey_canvas.clone();
     let hotkey_trh_pri_starte = nacitane.hotkey_trh.clone();

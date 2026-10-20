@@ -131,6 +131,7 @@ pub fn nacitaj() -> Nastavenia {
 /// Zapisuje pouzivatelom modifikovane data a spristupnuje novu konfiguraciu pri dalsej analzye.
 /// DOVOD: Perzistencia hesiel k API a klavesovych skratiek je nutna pre standardny operacny chod.
 pub fn uloz(n: &Nastavenia) -> Result<(), String> {
+    crate::denik::zapis("stav-debug", &format!("uloz(): minimapa_zber_zapnute={}", n.minimapa_zber_zapnute));
     let cesta = cesta_suboru();
 
     if let Some(priecinok) = cesta.parent() {
