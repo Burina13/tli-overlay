@@ -2,6 +2,23 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.24.0 — 20.10.2026 (TLI 62/3c — release zberu minimapy, core-0.17.0)
+
+Prvý release obsahujúci zber snímok minimapy na stavbu knižnice trás k
+bossovi / full clear (TLI 62/2, 62/2b, 62/3a+b, úlohy `2026-10-20-0600-agent.md`
+a predchádzajúce). **Funkcia je RUČNE zapínaná a PREDVOLENE VYPNUTÁ** —
+`Nastavenia.minimapa_zber_zapnute = false` v predvolenom nastavení, hráč si
+ju musí sám zapnúť v Nastaveniach a zvoliť režim ROI (`roh`/`stred`). Keď je
+vypnutá, appka sa správa úplne rovnako ako `0.23.2`.
+
+Zbiera sa výhradne to, čo minimapa v hre ukazuje (žiadne odkrývanie
+neodhalených častí) — vlákno `zber_minimapa.rs` sleduje beh mapy cez stav
+trackera (nie druhý log-sledovač) a odosiela výrezy s metadátami zóny na
+server, kde sa archivujú pre budúcu statickú knižnicu máp (62/4+).
+
+core 580/580 testov, UI e2e 118/118, `cargo check` zelený v `core` aj
+`src-tauri`.
+
 ## 0.23.2 — 20.10.2026 (TLI 52c doplnok — po migrácii chýbal Start Menu zástupca)
 
 Živo zistené vlastnou CI poistkou `migracia` (nový krok „Start Menu zástupca
