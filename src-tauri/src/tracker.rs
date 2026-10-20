@@ -507,10 +507,118 @@ pub fn nacitaj_stare_logy(
     let Some(conn) = &mut stav.db else {
         return Err("Lokálna databáza nie je dostupná.".to_string());
     };
-    let priecinok = cesta_aktualneho_logu
+    let obsahy = precitaj_logy_v_priecinku(cesta_aktualneho_logu)?;
+
+    tli_overlay_core::tracker::import::importuj_subory(conn, &obsahy)
+        .map_err(|e| format!("Import do databázy zlyhal: {e}"))
+}
+
+/// **TLI 68 bod e)** — JEDNORAZOVÝ prepočet nafúknutej histórie.
+///
+/// Behy uložené od TLI 56 (0.20.9, 19.10.2026) do tejto verzie môžu mať
+/// dropy nafúknuté na celý stack z batohu, keď sa appka reštartovala
+/// uprostred hrania (`StavChvosta` si drží pozíciu v logu cez reštart, stav
+/// batohu nie). Prepočet prejde logy, ktoré má hráč ešte na disku, opraveným
+/// `Sledovac`om a prepíše položky tých behov, ktoré v DB naozaj sú.
+///
+/// **Pred prepočtom sa vždy spraví KÓPIA súboru DB** (`tracker.sqlite3.
+/// pred-tli68-<unix>`) a overí sa, že nie je prázdna — bez toho sa prepočet
+/// vôbec nespustí. Nič sa nemaže: pôvodné hodnoty ostávajú v tej kópii
+/// a behy, ktorých log už na disku nie je, sa nedotknú vôbec.
+///
+/// Beží RAZ (zarážka `tracker_meta.prepocet_tli68`) a na vlákne trackera,
+/// nie pri štarte UI — nad gigabajtovým logom to trvá sekundy.
+#[cfg(not(test))]
+fn prepocitaj_historiu_tli68(stav: &mut StavTrackera, cesta_logu: &Path) {
+    const ZARAZKA: &str = "prepocet_tli68";
+
+    let Some(conn) = stav.db.as_ref() else { return };
+    match db::precitaj_meta(conn, ZARAZKA) {
+        Ok(Some(_)) => return, // už sa to raz spravilo
+        Ok(None) => {}
+        Err(_) => return,
+    }
+
+    let zdroj = crate::stav::cesta_db_suboru();
+    let kam = zdroj.with_extension(format!("sqlite3.pred-tli68-{}", unixovy_cas()));
+    // WAL: časť zápisov môže ležať v `-wal`, preto sa pred kópiou
+    // checkpointuje — inak by záloha bola staršia než to, čo appka ukazuje.
+    let _ = conn.pragma_update(None, "wal_checkpoint", "TRUNCATE");
+    if let Err(e) = std::fs::copy(&zdroj, &kam) {
+        crate::denik::zapis(
+            "tracker",
+            &format!("TLI 68: prepočet sa NESPUSTIL — zálohu DB sa nepodarilo spraviť ({e})"),
+        );
+        return;
+    }
+    match std::fs::metadata(&kam) {
+        Ok(m) if m.len() > 0 => {}
+        _ => {
+            crate::denik::zapis(
+                "tracker",
+                "TLI 68: prepočet sa NESPUSTIL — záloha DB je prázdna alebo sa nedá prečítať",
+            );
+            return;
+        }
+    }
+
+    let subory = match najdi_logy_v_priecinku(cesta_logu) {
+        Ok(o) => o,
+        Err(e) => {
+            crate::denik::zapis("tracker", &format!("TLI 68: prepočet sa NESPUSTIL — {e}"));
+            return;
+        }
+    };
+
+    let Some(conn) = stav.db.as_mut() else { return };
+    // Súbor po súbore, nie všetky naraz — rotované `UE_game-backup-*.log`
+    // majú bežne stovky MB a appka ich nemá prečo držať v pamäti súčasne.
+    let mut spolu = tli_overlay_core::tracker::import::VysledokPrepoctu::default();
+    let mut chyba: Option<String> = None;
+    for cesta in &subory {
+        let Ok(bajty) = std::fs::read(cesta) else { continue };
+        let text = tli_overlay_core::tracker::log::dekoduj(&bajty);
+        drop(bajty);
+        match tli_overlay_core::tracker::import::prepocitaj_text(conn, &text) {
+            Ok(v) => {
+                spolu.behov_prepocitanych += v.behov_prepocitanych;
+                spolu.behov_mimo_db += v.behov_mimo_db;
+                spolu.behov_precenenych += v.behov_precenenych;
+            }
+            Err(e) => {
+                chyba = Some(e.to_string());
+                break;
+            }
+        }
+    }
+    match chyba {
+        None => {
+            let _ = db::nastav_meta(conn, ZARAZKA, &unixovy_cas().to_string());
+            crate::denik::zapis(
+                "tracker",
+                &format!(
+                    "TLI 68: história prepočítaná z logu — prepísaných behov {}, \
+                     mimo DB {}, precenených {}; pôvodné hodnoty sú v {}",
+                    spolu.behov_prepocitanych,
+                    spolu.behov_mimo_db,
+                    spolu.behov_precenenych,
+                    kam.display()
+                ),
+            );
+        }
+        Some(e) => crate::denik::zapis(
+            "tracker",
+            &format!("TLI 68: prepočet zlyhal ({e}) — pôvodné dáta ostávajú, zarážka sa nenastavila"),
+        ),
+    }
+}
+
+/// Nájde všetky `UE_game*.log` v priečinku daného logu, zoradené
+/// (spoločné pre „Načítať staré logy" aj prepočet TLI 68).
+fn najdi_logy_v_priecinku(cesta_logu: &Path) -> Result<Vec<PathBuf>, String> {
+    let priecinok = cesta_logu
         .parent()
         .ok_or_else(|| "Log nemá nadradený priečinok.".to_string())?;
-
     let mut subory: Vec<PathBuf> = std::fs::read_dir(priecinok)
         .map_err(|e| format!("Priečinok s logmi sa nedá prečítať: {e}"))?
         .filter_map(|z| z.ok())
@@ -523,17 +631,20 @@ pub fn nacitaj_stare_logy(
         })
         .collect();
     subory.sort();
+    Ok(subory)
+}
 
+/// To isté, ale rovno s obsahom súborov — „Načítať staré logy" ich potrebuje
+/// naraz (`importuj_subory`).
+fn precitaj_logy_v_priecinku(cesta_logu: &Path) -> Result<Vec<Vec<u8>>, String> {
     let mut obsahy = Vec::new();
-    for cesta in &subory {
-        match std::fs::read(cesta) {
+    for cesta in najdi_logy_v_priecinku(cesta_logu)? {
+        match std::fs::read(&cesta) {
             Ok(b) => obsahy.push(b),
             Err(e) => return Err(format!("Súbor {} sa nedá prečítať: {e}", cesta.display())),
         }
     }
-
-    tli_overlay_core::tracker::import::importuj_subory(conn, &obsahy)
-        .map_err(|e| format!("Import do databázy zlyhal: {e}"))
+    Ok(obsahy)
 }
 
 /// Prečíta nové bajty a pretlačí ich cez `Sledovac`.
@@ -563,6 +674,11 @@ pub fn precitaj(stav: &mut StavTrackera, cesta: &Path) -> Result<usize, String> 
         // pozicia` pri prvom otvorení môže byť aj 0, teda celý stomegový
         // log), sa nesmie správať ako práve prebiehajúca udalosť.
         stav.povodna_velkost_logu = Some(velkost);
+        // TLI 68 bod e): jednorazový prepočet nafúknutej histórie. Beží na
+        // vlákne trackera (nie pri štarte UI) a vnútri si sám overí zarážku
+        // `tracker_meta.prepocet_tli68` aj to, že sa podarila záloha DB.
+        #[cfg(not(test))]
+        prepocitaj_historiu_tli68(stav, cesta);
     }
     let teraz = unixovy_cas();
     // TLI 61: kontrola nečinnosti beží PRED early-returnom nižšie — má
@@ -656,6 +772,21 @@ pub fn precitaj(stav: &mut StavTrackera, cesta: &Path) -> Result<usize, String> 
         for (_, text, cas) in stav.sledovac.odober_raw() {
             let _ = db::uloz_raw(conn, None, &text, cas.as_ref());
         }
+    }
+
+    // TLI 68: čo sa nezapočítalo do dropov a prečo. Ide to do denníka appky
+    // (nie do DB a nie do štatistík) — bez toho by hráč videl len „drop sa
+    // nezobrazil" a nemal by kde zistiť, že appke po reštarte chýba základ.
+    for (stranka, slot, polozka, num, cas) in stav.sledovac.odober_neznamy_zaklad() {
+        crate::denik::zapis(
+            "tracker",
+            &format!(
+                "neznámy základ: stránka {stranka} slot {slot} položka {polozka} \
+                 Num={num}{} — zmena sa do dropov NEzapočítala (appka tento slot \
+                 v tejto session ešte nevidela; sortni inventár v hre)",
+                cas.as_ref().map(|c| format!(" ({})", c.text())).unwrap_or_default()
+            ),
+        );
     }
 
     // Beh sa do DB ukladá AŽ TERAZ (nie priamo v slučke vyššie) — ceny
@@ -781,6 +912,15 @@ pub struct PrehladProUi {
     /// čase hráča (`new Date(s * 1000).toLocaleTimeString()`); appka
     /// časové pásmo nikde inde neprevádza a nemá začínať práve tu.
     pub ceny_synchronizovane_o: Option<u64>,
+    /// **TLI 68.** `false`, keď appka v tejto session ešte nevidela dump
+    /// aspoň jednej stránky batohu (`BagMgr@:InitBagData`) — typicky po
+    /// reštarte appky uprostred hrania. Dovtedy sa prvá zmena každého
+    /// neznámeho slotu do dropov NEzapočítava (inak by z nej vyšiel celý
+    /// stack z batohu) a UI má ukázať „Sortni inventár pre presné dropy".
+    pub zaklad_dropov_uplny: bool,
+    /// **TLI 68.** Koľko zmien slotu appka od svojho štartu vynechala pre
+    /// neznámy základ — koľko dropov teda dnes v štatistikách CHÝBA.
+    pub dropov_bez_zakladu: u64,
     /// TLI 61: unixový čas posledného (ručného alebo automatického) resetu
     /// session (`tracker_meta.stat_reset_unix`) — `None`, kým appka ešte
     /// nikdy nič nereportovala. Mini-panel aj hlavné okno z neho ukážu
@@ -1045,6 +1185,8 @@ pub fn prehlad_pre_ui(stav: &StavTrackera, zapnuty: bool, dan: bool, skryte_polo
         batoh,
         net_worth_fe,
         materialy_sortovane,
+        zaklad_dropov_uplny: stav.sledovac.zaklad_dropov_uplny(),
+        dropov_bez_zakladu: stav.sledovac.pocet_dropov_bez_zakladu(),
         batoh_cache_cas,
         ceny_synchronizovane_o: stav.posledna_synchronizacia_cien,
         session_od_unix: stav
@@ -2420,6 +2562,106 @@ mod testy {
         stav.behy.push(prazdny_beh_pre_test("Mapa1"));
         stav.resetuj_zive_staty();
         assert!(stav.behy.is_empty());
+    }
+
+    // ─── TLI 68 (`2026-10-20-1213-mcp.md`): základ dropov po reštarte ──────
+    //
+    // Bod b) zadania: stav v DB s Voidlands Beacon 48, reštart appky, log
+    // zmení slot na 49 → drop je ×0 (neznámy základ), alebo ×1, ak základ
+    // v session existoval. NIKDY ×49.
+
+    #[test]
+    fn tli68_snimka_batohu_z_db_nie_je_zakladom_dropov() {
+        // „Reštartovaná" appka: `Sledovac` je čistý, DB má snímku batohu
+        // z predošlej session (Voidlands Beacon 48).
+        let mut stav = StavTrackera::default();
+        let conn = db::otvor_v_pamati().unwrap();
+        let mut snimka = std::collections::BTreeMap::new();
+        snimka.insert(400033u32, 48i64);
+        db::uloz_batoh_snapshot(&conn, STRANKA_BATOHU_OSTATNE, &snimka, 1_000).unwrap();
+        stav.db = Some(conn);
+
+        stav.sledovac.riadok(
+            "[2026.10.20-10.10.00:000][1]GameLog: Display: [Game] SceneLevelMgr@ OpenMainWorld END! InMainLevelPath = /Game/Art/Maps/01SD/SD_ShengHuoLing0203/SD_ShengHuoLing0203",
+        );
+        stav.sledovac.riadok("[2026.10.20-10.11.00:000][1]GameLog: Display: [Game] ItemChange@ ProtoName=PickItem start");
+        stav.sledovac.riadok(
+            "[2026.10.20-10.11.00:000][1]GameLog: Display: [Game] BagMgr@:Modfy BagItem PageId = 103 SlotId = 3 ConfigBaseId = 400033 Num = 49",
+        );
+        stav.sledovac.riadok("[2026.10.20-10.11.00:000][1]GameLog: Display: [Game] ItemChange@ ProtoName=PickItem end");
+
+        let beh = stav.sledovac.aktualny().unwrap();
+        assert_eq!(
+            beh.dropy.get(&400033),
+            None,
+            "snímka z DB slúži LEN na Inventory/Net Worth — ako základ dropov sa použiť nesmie, a bez základu sa nepočíta nič (nikdy ×49)"
+        );
+        let p = prehlad_pre_ui(&stav, true, false, &[]);
+        assert!(!p.zaklad_dropov_uplny, "UI má ukázať výzvu na Sort");
+        assert_eq!(p.dropov_bez_zakladu, 1);
+    }
+
+    #[test]
+    fn tli68_so_zakladom_zo_session_je_to_drop_jeden() {
+        let mut stav = StavTrackera::default();
+        // Dump stránky v TEJTO session (prihlásenie alebo Sort) — 48 kusov.
+        stav.sledovac.riadok(
+            "[2026.10.20-10.00.00:000][1]GameLog: Display: [Game] BagMgr@:InitBagData PageId = 103 SlotId = 3 ConfigBaseId = 400033 Num = 48",
+        );
+        stav.sledovac.riadok(
+            "[2026.10.20-10.10.00:000][1]GameLog: Display: [Game] SceneLevelMgr@ OpenMainWorld END! InMainLevelPath = /Game/Art/Maps/01SD/SD_ShengHuoLing0203/SD_ShengHuoLing0203",
+        );
+        stav.sledovac.riadok("[2026.10.20-10.11.00:000][1]GameLog: Display: [Game] ItemChange@ ProtoName=PickItem start");
+        stav.sledovac.riadok(
+            "[2026.10.20-10.11.00:000][1]GameLog: Display: [Game] BagMgr@:Modfy BagItem PageId = 103 SlotId = 3 ConfigBaseId = 400033 Num = 49",
+        );
+        stav.sledovac.riadok("[2026.10.20-10.11.00:000][1]GameLog: Display: [Game] ItemChange@ ProtoName=PickItem end");
+
+        let beh = stav.sledovac.aktualny().unwrap();
+        assert_eq!(beh.dropy.get(&400033), Some(&1), "48 -> 49 je presne jeden kus");
+    }
+
+    // Bod c) zadania: reset session (ručný aj automatický) nuluje LEN
+    // štatistiky session — nikdy nie stav batohu ani základ dropov.
+
+    #[test]
+    fn tli68_reset_session_nemeni_zaklad_dropov() {
+        let mut stav = StavTrackera::default();
+        stav.db = Some(db::otvor_v_pamati().unwrap());
+        for stranka in [100u32, 101, 102, 103] {
+            stav.sledovac.riadok(&format!(
+                "[2026.10.20-10.00.00:000][1]GameLog: Display: [Game] BagMgr@:InitBagData PageId = {stranka} SlotId = 3 ConfigBaseId = 400033 Num = 48"
+            ));
+        }
+        stav.sledovac.riadok(
+            "[2026.10.20-10.10.00:000][1]GameLog: Display: [Game] SceneLevelMgr@ OpenMainWorld END! InMainLevelPath = /Game/Art/Maps/01SD/SD_ShengHuoLing0203/SD_ShengHuoLing0203",
+        );
+        assert!(stav.sledovac.zaklad_dropov_uplny());
+
+        // Uprostred mapy: ručný aj automatický reset session.
+        stav.resetuj_zive_staty();
+        db::nastav_meta(stav.db.as_ref().unwrap(), "posledna_aktivita_unix", "1000").unwrap();
+        stav.behy.push(prazdny_beh_pre_test("Mapa1"));
+        stav.over_automaticky_reset_session(1000 + SESSION_NECINNOST_S + 1);
+
+        assert!(
+            stav.sledovac.zaklad_dropov_uplny(),
+            "reset session sa nesmie dotknúť základu dropov"
+        );
+        assert_eq!(
+            stav.sledovac.batoh_stranka(STRANKA_BATOHU_OSTATNE).get(&400033),
+            Some(&48),
+            "reset session sa nesmie dotknúť stavu batohu"
+        );
+
+        // A drop po resete je stále ×1, nie ×49.
+        stav.sledovac.riadok("[2026.10.20-10.12.00:000][1]GameLog: Display: [Game] ItemChange@ ProtoName=PickItem start");
+        stav.sledovac.riadok(
+            "[2026.10.20-10.12.00:000][1]GameLog: Display: [Game] BagMgr@:Modfy BagItem PageId = 103 SlotId = 3 ConfigBaseId = 400033 Num = 49",
+        );
+        stav.sledovac.riadok("[2026.10.20-10.12.00:000][1]GameLog: Display: [Game] ItemChange@ ProtoName=PickItem end");
+        let beh = stav.sledovac.aktualny().unwrap();
+        assert_eq!(beh.dropy.get(&400033), Some(&1));
     }
 
     // ─── TLI 61: automatický reset session po 30 min nečinnosti ────────────

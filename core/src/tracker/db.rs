@@ -604,6 +604,57 @@ pub fn uloz_beh(
     Ok((beh_id, true))
 }
 
+/// **TLI 68 bod e)** — PREPÍŠE položky už uloženého behu prepočítanými.
+///
+/// Behy uložené medzi TLI 56 (0.20.9, 19.10.2026) a touto opravou môžu mať
+/// nafúknuté dropy: keď sa appka reštartovala uprostred hrania, nepoznala
+/// základ slotov a prvú zmenu každého z nich zapísala ako celý stack
+/// z batohu (Richardova mapa „Sheng Huo Ling", Voidlands Beacon ×49 namiesto
+/// ×1). Prepočet prejde logy znova s opraveným `Sledovac`om a položky
+/// prepíše.
+///
+/// **Beh, ktorý v DB nie je, sa NEVYTVÁRA** — na pridávanie histórie slúži
+/// `uloz_beh`/`import::importuj_text`. Prepočet má len opravovať, nie
+/// zjavovať mapy, ktoré používateľ v Analýze nikdy nevidel.
+///
+/// Mení sa VÝHRADNE tabuľka `polozky` a ocenené hodnoty v `behy` — monštrá,
+/// modifikátory, bossovia ani Canvas akcie sa nemažú (tie chyba nikdy
+/// netrápila a ich opätovné vkladanie by ich zdvojilo).
+///
+/// Vracia `true`, keď sa beh v DB našiel a prepísal.
+pub fn prepis_polozky_behu(
+    conn: &mut Connection,
+    beh: &Beh,
+    identita: &HracSnimka,
+) -> rusqlite::Result<Option<i64>> {
+    let player_id = identita.player_id.clone().unwrap_or_default();
+    let season_id = identita.season_id.clone().unwrap_or_default();
+    let zaciatok_cas = cas_text(&beh.zaciatok).unwrap_or_default();
+
+    let beh_id: Option<i64> = conn
+        .query_row(
+            "SELECT id FROM behy WHERE
+                player_id = ?1 AND season_id = ?2 AND zona = ?3 AND zaciatok_cas = ?4",
+            params![player_id, season_id, beh.zona, zaciatok_cas],
+            |r| r.get(0),
+        )
+        .optional()?;
+    let Some(beh_id) = beh_id else {
+        return Ok(None);
+    };
+
+    let tx = conn.transaction()?;
+    tx.execute("DELETE FROM polozky WHERE beh_id = ?1", params![beh_id])?;
+    for zmena in &beh.vsetky_zmeny {
+        tx.execute(
+            "INSERT INTO polozky (beh_id, config_base_id, mnozstvo, typ, cas) VALUES (?1,?2,?3,?4,?5)",
+            params![beh_id, zmena.polozka, zmena.mnozstvo, dovod_text(zmena.dovod), cas_text(&zmena.cas)],
+        )?;
+    }
+    tx.commit()?;
+    Ok(Some(beh_id))
+}
+
 /// Posledná známa neprázdna identita hráča z predošlého uloženého behu
 /// (TLI 19 bug E) — záloha pre `uloz_beh_do_db` v `src-tauri`, keď živé
 /// čítanie v AKTUÁLNEJ session ešte nevidelo žiadny `+player+...`/

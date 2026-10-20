@@ -1,6 +1,6 @@
 use super::log::{Cas, Smer, Udalost, parsuj_riadok, parsuj_telo};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Flame Elementium — hlavná mena, v ktorej sa počíta zisk.
 pub const POLOZKA_FE: u32 = 100300;
@@ -311,6 +311,34 @@ pub struct Sledovac {
     posledny_init_stranka: Option<u32>,
     /// Čas posledného `InitBagData` riadku (pozri `posledny_init_stranka`).
     posledny_init_cas: Option<Cas>,
+    /// **TLI 68.** Stránky batohu, ktorých obsah appka v TEJTO session reálne
+    /// videla v logu (prišiel pre ne `InitBagData` dump — pri prihlásení alebo
+    /// po Sorte). Len pre ne vie appka povedať, že slot, o ktorom nič nevie, je
+    /// naozaj PRÁZDNY (základ 0) — a teda že prvý `BagMgr@:Modfy` v ňom je
+    /// skutočný drop celého `Num`.
+    ///
+    /// Pre stránku, ktorá tu NIE JE, je základ každého slotu **neznámy**:
+    /// `Num` v logu je absolútne číslo (celý stack v slote), takže „`Num` − 0"
+    /// by z jedinej padnutej Voidlands Beacon spravilo drop ×49. Presne to sa
+    /// stalo 20.10.2026 po reštarte appky uprostred hrania — `StavChvosta` si
+    /// drží pozíciu v logu cez reštart, ale stav batohu nie, takže appka
+    /// pokračovala v čítaní uprostred súboru s PRÁZDNYM `batoh`om.
+    ///
+    /// Snímka batohu z DB (TLI 56, `batoh_snapshot`) sa na základ dropov
+    /// **zámerne nepoužíva** — slúži LEN na zobrazenie Current Inventory a
+    /// Net Worth. Hráč mohol medzitým čokoľvek predať, presortovať alebo hrať
+    /// bez appky, takže „posledný známy stav" nie je stav, ktorý by appka
+    /// v tejto session videla.
+    stranky_so_zakladom: BTreeSet<u32>,
+    /// **TLI 68.** Zmeny slotov, ktoré sa NEzapočítali, lebo appka pre ne
+    /// nemala v tejto session potvrdený základ — `(stránka, slot, položka,
+    /// Num, čas)`. Appka ich vypíše do vlastného denníka (nie do dropov),
+    /// nech je dohľadateľné, čo presne sa vynechalo a prečo.
+    neznamy_zaklad: Vec<(u32, u32, u32, i64, Option<Cas>)>,
+    /// Koľko zmien slotu sa od štartu appky vynechalo pre neznámy základ
+    /// (kumulatívne, `odober_neznamy_zaklad` ho NEnuluje) — UI z neho vie
+    /// povedať, koľko dropov je dnes mimo štatistík.
+    pocet_bez_zakladu: u64,
     aktualny_dovod: Dovod,
     aktualny_beh: Option<Beh>,
     dalsi_id_behu: u64,
@@ -445,6 +473,35 @@ impl Sledovac {
         vysledok
     }
 
+    /// **TLI 68.** Má appka v TEJTO session potvrdený základ dropov pre
+    /// všetky stránky batohu, z ktorých sa loot počíta? Kým je `false`, prvá
+    /// zmena neznámeho slotu sa do dropov nezapočíta (inak by z nej vzišiel
+    /// celý stack z batohu) a UI má ukázať výzvu „Sortni inventár pre presné
+    /// dropy" — v hre stačí Sort, hra nato vypíše `InitBagData` dump stránky.
+    ///
+    /// Kontrolujú sa stránky, na ktorých loot reálne pristáva: 100 výstroj,
+    /// 101 zručnosti, 102 meny/materiály, 103 ostatné. Pri prihlásení do hry
+    /// ich hra vypisuje všetky štyri naraz, takže hráč, ktorý appku spustí
+    /// PRED hrou, výzvu nikdy neuvidí.
+    pub fn zaklad_dropov_uplny(&self) -> bool {
+        [100u32, 101, 102, 103]
+            .iter()
+            .all(|s| self.stranky_so_zakladom.contains(s))
+    }
+
+    /// Koľko zmien slotu appka od svojho štartu vynechala preto, že pre ne
+    /// nemala v tejto session potvrdený základ (TLI 68).
+    pub fn pocet_dropov_bez_zakladu(&self) -> u64 {
+        self.pocet_bez_zakladu
+    }
+
+    /// Odoberie vynechané zmeny od posledného volania (TLI 68) —
+    /// `(stránka, slot, položka, Num, čas)`. Appka ich zapisuje do vlastného
+    /// denníka; počítadlo `pocet_dropov_bez_zakladu` sa tým NEnuluje.
+    pub fn odober_neznamy_zaklad(&mut self) -> Vec<(u32, u32, u32, i64, Option<Cas>)> {
+        std::mem::take(&mut self.neznamy_zaklad)
+    }
+
     /// Odoberie nazbierané „zaujímavé, ale nerozobrané" riadky (`raw`) od
     /// posledného volania — `(beh_id, text, cas)`.
     pub fn odober_raw(&mut self) -> Vec<(Option<u64>, String, Option<Cas>)> {
@@ -506,23 +563,69 @@ impl Sledovac {
                     }
                     self.posledny_init_stranka = Some(zmena.stranka);
                     self.posledny_init_cas = cas;
+                    // TLI 68: od tejto chvíle vieme o CELEJ stránke — slot,
+                    // ktorý v dumpe nebol, je naozaj prázdny (základ 0).
+                    self.stranky_so_zakladom.insert(zmena.stranka);
 
                     self.batoh
                         .insert((zmena.stranka, zmena.slot), (zmena.polozka, zmena.num));
                 } else {
-                    let stary = self
-                        .batoh
-                        .get(&(zmena.stranka, zmena.slot))
-                        .copied()
-                        .unwrap_or((0, 0));
+                    let stary = self.batoh.get(&(zmena.stranka, zmena.slot)).copied();
                     let dovod = self.aktualny_dovod;
+                    let zaklad_je_znamy =
+                        stary.is_some() || self.stranky_so_zakladom.contains(&zmena.stranka);
 
-                    if stary.0 == zmena.polozka || stary.0 == 0 {
-                        let delta = zmena.num - stary.1;
-                        self.zaznamenaj_zmenu(zmena.polozka, delta, dovod, cas.clone(), &cas);
-                    } else {
-                        self.zaznamenaj_zmenu(stary.0, -stary.1, dovod, cas.clone(), &cas);
-                        self.zaznamenaj_zmenu(zmena.polozka, zmena.num, dovod, cas.clone(), &cas);
+                    match stary {
+                        // Ten istý item v slote: drop = kladný rozdiel `Num`.
+                        Some((stara_polozka, stary_num)) if stara_polozka == zmena.polozka => {
+                            let delta = zmena.num - stary_num;
+                            self.zaznamenaj_zmenu(zmena.polozka, delta, dovod, cas.clone(), &cas);
+                        }
+                        // Slot drží INÝ item než predtým. TLI 68 bod 4
+                        // (zadanie `2026-10-20-1213-mcp.md`): presne ako
+                        // TITrack (`DeltaCalculator.process_event`, vetva
+                        // „Different item type") — zaznamená sa LEN zisk
+                        // nového itemu, starý sa nezapíše ako strata. Starý
+                        // item sa totiž nestratil, hra ho len presunula do
+                        // iného slotu (pri Sorte je to úplne bežné) a mínus
+                        // na ňom by z presunu spravil fiktívnu stratu.
+                        Some(_) => {
+                            self.zaznamenaj_zmenu(
+                                zmena.polozka,
+                                zmena.num,
+                                dovod,
+                                cas.clone(),
+                                &cas,
+                            );
+                        }
+                        // Slot, o ktorom appka nič nevie, na stránke, ktorej
+                        // dump už v tejto session videla → slot bol prázdny,
+                        // základ je 0 a celé `Num` je skutočný drop.
+                        None if zaklad_je_znamy => {
+                            self.zaznamenaj_zmenu(
+                                zmena.polozka,
+                                zmena.num,
+                                dovod,
+                                cas.clone(),
+                                &cas,
+                            );
+                        }
+                        // TLI 68: NEZNÁMY ZÁKLAD. Stránku appka v tejto
+                        // session nevidela (typicky reštart appky uprostred
+                        // hrania), takže netušíme, koľko toho v slote už
+                        // ležalo — `Num` je absolútne číslo. Zmena sa do
+                        // dropov NEZAPOČÍTA; len sa poznačí a slot odteraz
+                        // základ má, takže ďalšia zmena už je presná.
+                        None => {
+                            self.neznamy_zaklad.push((
+                                zmena.stranka,
+                                zmena.slot,
+                                zmena.polozka,
+                                zmena.num,
+                                cas.clone(),
+                            ));
+                            self.pocet_bez_zakladu += 1;
+                        }
                     }
 
                     if zmena.num > 0 {
@@ -980,6 +1083,14 @@ mod testy {
     #[test]
     fn test_delta_absolutne_num_pridanie() {
         let mut sledovac = Sledovac::novy();
+        // TLI 68: najprv dump stránky (hra ho vypíše pri prihlásení aj po
+        // Sorte) — až potom appka vie, že slot 1 bol prázdny, a celé `Num`
+        // smie brať ako drop. Bez neho je základ neznámy a zmena sa
+        // nezapočíta (`tli68_*` testy nižšie).
+        sledovac.spracuj_udalost(
+            None,
+            Udalost::Batoh(BatohZmena { stranka: 1, slot: 99, polozka: 1, num: 1, je_init: true }),
+        );
         sledovac.spracuj_udalost(None, Udalost::Zona { cesta: "Mapa".to_string() });
         sledovac.aktualny_dovod = Dovod::Drop;
 
@@ -1090,6 +1201,12 @@ mod testy {
     #[test]
     fn test_vstupy_z_hubu_priradene_nasledujucej_mape() {
         let mut sledovac = Sledovac::novy();
+        // TLI 68: základ stránky musí byť známy, inak sa prvá zmena slotu
+        // zámerne nezapočíta (pozri `test_delta_absolutne_num_pridanie`).
+        sledovac.spracuj_udalost(
+            None,
+            Udalost::Batoh(BatohZmena { stranka: 1, slot: 99, polozka: 1, num: 1, je_init: true }),
+        );
         sledovac.spracuj_udalost(None, Udalost::Zona { cesta: "Town".to_string() });
         sledovac.aktualny_dovod = Dovod::VstupMapy;
         sledovac.spracuj_udalost(cas(100), Udalost::Batoh(BatohZmena { stranka: 1, slot: 1, polozka: 10, num: -1, je_init: false }));
@@ -1766,5 +1883,143 @@ mod testy {
         assert_eq!(batoh103.get(&400021), Some(&9));
         assert_eq!(batoh103.get(&400014), Some(&12));
         assert_eq!(batoh103.len(), 2);
+    }
+
+    // ─── TLI 68 (zadanie `2026-10-20-1213-mcp.md`): základ dropov ──────────
+    //
+    // Richard 20.10.2026 nahlásil mapu „Sheng Huo Ling" s dropom
+    // „Voidlands Beacon (Timemark 8) ×49" za 1 m 36 s — v batohu mal presne
+    // 49 kusov a padol jeden. Príčina: o 11:54 (09:54 UTC) reštartoval appku.
+    // `StavChvosta` si drží POZÍCIU v logu cez reštart, `Sledovac` stav
+    // batohu nie, takže appka pokračovala v čítaní uprostred súboru
+    // s prázdnym `batoh`om a prvý `BagMgr@:Modfy` v každom slote vyrátala ako
+    // `Num − 0`, teda celý stack. Reprodukované nad Richardovým skutočným
+    // logom (`core/examples/tli_dropy_dump.rs --restart 09:54:00`): pred
+    // opravou 5140 ×155, 6002 ×49, 400007 ×16, 400033 ×49 — presne tie čísla
+    // zo screenshotu.
+
+    #[test]
+    fn tli68_prva_zmena_slotu_bez_zakladu_nie_je_drop() {
+        let mut sledovac = Sledovac::novy();
+        // Appka sa práve naštartovala uprostred hrania: žiadny `InitBagData`
+        // ešte nevidela, len pokračuje v čítaní logu.
+        sledovac.riadok(&riadok_s_casom(10, 10, 0,
+            "SceneLevelMgr@ OpenMainWorld END! InMainLevelPath = /Game/Art/Maps/01SD/SD_ShengHuoLing0203/SD_ShengHuoLing0203"));
+        sledovac.riadok(&riadok_s_casom(10, 11, 0, "ItemChange@ ProtoName=PickItem start"));
+        sledovac.riadok(&riadok_s_casom(10, 11, 0,
+            "BagMgr@:Modfy BagItem PageId = 103 SlotId = 3 ConfigBaseId = 400033 Num = 49"));
+        sledovac.riadok(&riadok_s_casom(10, 11, 0, "ItemChange@ ProtoName=PickItem end"));
+
+        let beh = sledovac.aktualny().unwrap();
+        assert_eq!(
+            beh.dropy.get(&400033),
+            None,
+            "bez potvrdeného základu sa prvá zmena slotu NESMIE započítať (nikdy nie ×49)"
+        );
+        assert_eq!(sledovac.pocet_dropov_bez_zakladu(), 1);
+        assert!(!sledovac.zaklad_dropov_uplny());
+
+        // Druhá zmena TOHO ISTÉHO slotu už základ má — a je to drop ×1.
+        sledovac.riadok(&riadok_s_casom(10, 11, 30, "ItemChange@ ProtoName=PickItem start"));
+        sledovac.riadok(&riadok_s_casom(10, 11, 30,
+            "BagMgr@:Modfy BagItem PageId = 103 SlotId = 3 ConfigBaseId = 400033 Num = 50"));
+        sledovac.riadok(&riadok_s_casom(10, 11, 30, "ItemChange@ ProtoName=PickItem end"));
+        let beh = sledovac.aktualny().unwrap();
+        assert_eq!(beh.dropy.get(&400033), Some(&1));
+        assert_eq!(sledovac.pocet_dropov_bez_zakladu(), 1, "počítadlo rastie len pri vynechaní");
+    }
+
+    #[test]
+    fn tli68_so_zakladom_zo_session_je_drop_presne_jeden() {
+        let mut sledovac = Sledovac::novy();
+        // Prihlásenie/Sort: hra vypíše dump stránky 103 — appka vie, že
+        // v slote 3 leží 48 kusov.
+        sledovac.riadok(&riadok_s_casom(10, 0, 0,
+            "BagMgr@:InitBagData PageId = 103 SlotId = 3 ConfigBaseId = 400033 Num = 48"));
+        sledovac.riadok(&riadok_s_casom(10, 10, 0,
+            "SceneLevelMgr@ OpenMainWorld END! InMainLevelPath = /Game/Art/Maps/01SD/SD_ShengHuoLing0203/SD_ShengHuoLing0203"));
+        sledovac.riadok(&riadok_s_casom(10, 11, 0, "ItemChange@ ProtoName=PickItem start"));
+        sledovac.riadok(&riadok_s_casom(10, 11, 0,
+            "BagMgr@:Modfy BagItem PageId = 103 SlotId = 3 ConfigBaseId = 400033 Num = 49"));
+        sledovac.riadok(&riadok_s_casom(10, 11, 0, "ItemChange@ ProtoName=PickItem end"));
+
+        let beh = sledovac.aktualny().unwrap();
+        assert_eq!(beh.dropy.get(&400033), Some(&1), "48 -> 49 je drop ×1, nikdy ×49");
+        assert_eq!(sledovac.pocet_dropov_bez_zakladu(), 0);
+    }
+
+    #[test]
+    fn tli68_po_dumpe_stranky_je_novy_slot_drop_v_plnej_vyske() {
+        // Opačná strana tej istej mince: keď appka dump stránky VIDELA,
+        // slot, ktorý v ňom nebol, je naozaj prázdny — a prvý drop doň patrí
+        // celý. Bez tohto rozlíšenia by oprava zožrala väčšinu dropov (nový
+        // loot padá takmer vždy do dovtedy prázdneho slotu).
+        let mut sledovac = Sledovac::novy();
+        sledovac.riadok(&riadok_s_casom(10, 0, 0,
+            "BagMgr@:InitBagData PageId = 103 SlotId = 1 ConfigBaseId = 400021 Num = 3"));
+        sledovac.riadok(&riadok_s_casom(10, 10, 0,
+            "SceneLevelMgr@ OpenMainWorld END! InMainLevelPath = /Game/Art/Maps/01SD/SD_ShengHuoLing0203/SD_ShengHuoLing0203"));
+        sledovac.riadok(&riadok_s_casom(10, 11, 0, "ItemChange@ ProtoName=PickItem start"));
+        sledovac.riadok(&riadok_s_casom(10, 11, 0,
+            "BagMgr@:Modfy BagItem PageId = 103 SlotId = 44 ConfigBaseId = 6002 Num = 2"));
+        sledovac.riadok(&riadok_s_casom(10, 11, 0, "ItemChange@ ProtoName=PickItem end"));
+
+        let beh = sledovac.aktualny().unwrap();
+        assert_eq!(beh.dropy.get(&6002), Some(&2));
+        assert_eq!(sledovac.pocet_dropov_bez_zakladu(), 0);
+    }
+
+    #[test]
+    fn tli68_zaklad_je_uplny_az_po_dumpe_vsetkych_styroch_stranok() {
+        let mut sledovac = Sledovac::novy();
+        assert!(!sledovac.zaklad_dropov_uplny());
+        for stranka in [100u32, 101, 102] {
+            sledovac.riadok(&riadok_s_casom(10, 0, 0, &format!(
+                "BagMgr@:InitBagData PageId = {stranka} SlotId = 1 ConfigBaseId = 400021 Num = 1"
+            )));
+            assert!(!sledovac.zaklad_dropov_uplny());
+        }
+        sledovac.riadok(&riadok_s_casom(10, 0, 0,
+            "BagMgr@:InitBagData PageId = 103 SlotId = 1 ConfigBaseId = 400021 Num = 1"));
+        assert!(sledovac.zaklad_dropov_uplny());
+    }
+
+    #[test]
+    fn tli68_vynechane_zmeny_sa_daju_odobrat_pre_denik() {
+        let mut sledovac = Sledovac::novy();
+        sledovac.riadok(&riadok_s_casom(10, 10, 0,
+            "SceneLevelMgr@ OpenMainWorld END! InMainLevelPath = /Game/Art/Maps/01SD/SD_ShengHuoLing0203/SD_ShengHuoLing0203"));
+        sledovac.riadok(&riadok_s_casom(10, 11, 0, "ItemChange@ ProtoName=PickItem start"));
+        sledovac.riadok(&riadok_s_casom(10, 11, 0,
+            "BagMgr@:Modfy BagItem PageId = 103 SlotId = 3 ConfigBaseId = 400033 Num = 49"));
+        sledovac.riadok(&riadok_s_casom(10, 11, 0, "ItemChange@ ProtoName=PickItem end"));
+
+        let vynechane = sledovac.odober_neznamy_zaklad();
+        assert_eq!(vynechane.len(), 1);
+        assert_eq!((vynechane[0].0, vynechane[0].1, vynechane[0].2, vynechane[0].3), (103, 3, 400033, 49));
+        assert!(sledovac.odober_neznamy_zaklad().is_empty(), "odobranie vyprázdni zoznam");
+        assert_eq!(sledovac.pocet_dropov_bez_zakladu(), 1, "počítadlo sa odobraním nenuluje");
+    }
+
+    #[test]
+    fn tli68_vymena_itemu_v_slote_nerobi_stratu_stareho() {
+        // Bod 4 zadania — presne ako TITrack (`DeltaCalculator.process_event`,
+        // vetva „Different item type"): zapíše sa len zisk nového itemu,
+        // starý sa NEzapíše ako strata. Hra pri Sorte položky medzi slotmi
+        // len presúva; mínus by z presunu spravil fiktívnu stratu.
+        let mut sledovac = Sledovac::novy();
+        sledovac.riadok(&riadok_s_casom(10, 0, 0,
+            "BagMgr@:InitBagData PageId = 103 SlotId = 3 ConfigBaseId = 400033 Num = 5"));
+        sledovac.riadok(&riadok_s_casom(10, 10, 0,
+            "SceneLevelMgr@ OpenMainWorld END! InMainLevelPath = /Game/Art/Maps/01SD/SD_ShengHuoLing0203/SD_ShengHuoLing0203"));
+        sledovac.riadok(&riadok_s_casom(10, 11, 0, "ItemChange@ ProtoName=PickItem start"));
+        sledovac.riadok(&riadok_s_casom(10, 11, 0,
+            "BagMgr@:Modfy BagItem PageId = 103 SlotId = 3 ConfigBaseId = 6002 Num = 2"));
+        sledovac.riadok(&riadok_s_casom(10, 11, 0, "ItemChange@ ProtoName=PickItem end"));
+
+        let beh = sledovac.aktualny().unwrap();
+        assert_eq!(beh.dropy.get(&6002), Some(&2), "nový item sa započíta celý");
+        let zmeny_stareho: Vec<_> = beh.vsetky_zmeny.iter().filter(|z| z.polozka == 400033).collect();
+        assert!(zmeny_stareho.is_empty(), "starý item sa nezapíše ani ako strata");
     }
 }

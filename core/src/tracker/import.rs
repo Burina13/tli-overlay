@@ -130,6 +130,96 @@ pub fn importuj_text(conn: &mut Connection, text: &str) -> rusqlite::Result<Vysl
     Ok(vysledok)
 }
 
+/// Výsledok jednorazového prepočtu histórie (TLI 68 bod e).
+#[derive(Debug, Clone, Default, serde::Serialize)]
+pub struct VysledokPrepoctu {
+    /// Koľko behov z logu sa v DB našlo a prepísalo.
+    pub behov_prepocitanych: usize,
+    /// Koľko behov z logu v DB vôbec nie je (nič sa pre ne nevytváralo).
+    pub behov_mimo_db: usize,
+    /// Koľko prepísaných behov dostalo aj novú ocenenú hodnotu.
+    pub behov_precenenych: usize,
+}
+
+/// **TLI 68 bod e)** — prejde CELÝ text logu opraveným `Sledovac`om
+/// a prepíše položky tých behov, ktoré už v DB sú.
+///
+/// Oproti `importuj_text` nič nevkladá: beh, ktorý v DB nie je, sa preskočí
+/// (`behov_mimo_db`). Zmysel je opraviť nafúknuté dropy z obdobia medzi
+/// TLI 56 a TLI 68, nie dopĺňať históriu — tú rieši tlačidlo „Načítať staré
+/// logy". Volajúci si MUSÍ pred týmto spraviť kópiu súboru DB (appka to robí
+/// v `src-tauri/src/tracker.rs`, `prepocitaj_historiu_tli68`).
+pub fn prepocitaj_text(conn: &mut Connection, text: &str) -> rusqlite::Result<VysledokPrepoctu> {
+    let mut sledovac = Sledovac::novy();
+    let mut vysledok = VysledokPrepoctu::default();
+    let mut identita = HracSnimka::default();
+    let mut prepisane: Vec<i64> = Vec::new();
+
+    for riadok in text.lines() {
+        if let Some(beh) = sledovac.riadok(riadok) {
+            if let Some(novsia) = sledovac.hrac_snimka() {
+                identita = novsia.clone();
+            }
+            prepis_jeden_beh(conn, &beh, &identita, &mut vysledok, &mut prepisane)?;
+        }
+    }
+    if let Some(beh) = sledovac.ukonci() {
+        if let Some(novsia) = sledovac.hrac_snimka() {
+            identita = novsia.clone();
+        }
+        prepis_jeden_beh(conn, &beh, &identita, &mut vysledok, &mut prepisane)?;
+    }
+
+    // Rovnaký druhý prechod ako pri importe: cenník z CELÉHO súboru a až
+    // potom ocenenie — inak by prepočítaný beh ostal bez hodnoty len preto,
+    // že cena jeho dropu sa v logu našla až o pár máp neskôr.
+    let mut cennik = Cennik::novy();
+    let teraz = cas_zapisu();
+    for nalez in sledovac.odober_ceny() {
+        let kedy = nalez
+            .cas
+            .as_ref()
+            .and_then(|c| c.unix_sekundy())
+            .unwrap_or(teraz.max(0) as u64);
+        cennik.vloz_v_case(
+            Cena::vlastna(nalez.polozka, nalez.p10, nalez.median, nalez.pocet_ponuk, kedy),
+            kedy,
+        );
+    }
+    let nastavenie = Nastavenie::default();
+    for beh_id in prepisane {
+        if db::precen_beh(conn, beh_id, &cennik, &nastavenie)? {
+            vysledok.behov_precenenych += 1;
+        }
+    }
+
+    Ok(vysledok)
+}
+
+/// Jeden beh prepočtu: hub sa preskakuje, zvyšok ide do `prepis_polozky_behu`.
+/// Appka volá `prepocitaj_text` nad každým súborom logu zvlášť (rotované
+/// zálohy majú stovky MB a nemá ich prečo držať v pamäti naraz), preto tu
+/// variant „nad viacerými súbormi" zámerne nie je.
+fn prepis_jeden_beh(
+    conn: &mut Connection,
+    beh: &super::stav::Beh,
+    identita: &HracSnimka,
+    vysledok: &mut VysledokPrepoctu,
+    prepisane: &mut Vec<i64>,
+) -> rusqlite::Result<()> {
+    if beh.je_hub {
+        return Ok(());
+    }
+    match db::prepis_polozky_behu(conn, beh, identita)? {
+        Some(id) => {
+            vysledok.behov_prepocitanych += 1;
+            prepisane.push(id);
+        }
+        None => vysledok.behov_mimo_db += 1,
+    }
+    Ok(())
+}
+
 /// Unixový čas zápisu. `core` systémové hodiny inak nepoužíva, tu je to
 /// nevyhnutné: podľa `zapisane` sa vyberá, ktoré ceny sa ešte neposlali partii.
 fn cas_zapisu() -> i64 {
@@ -241,6 +331,74 @@ mod testy {
 
         let riadky = vyhladaj_behy(&conn, &FilterBehov::default()).unwrap();
         assert_eq!(riadky.len(), 2);
+    }
+
+    // ─── TLI 68 bod e): prepočet nafúknutej histórie ──────────────────────
+
+    /// Log s dvoma mapami. Stránka 103 dostane dump (`InitBagData`) až PRED
+    /// druhou mapou — prvá mapa je teda presne ten prípad „appka sa
+    /// reštartovala uprostred hrania a nepozná základ".
+    const VZORKA_ZAKLAD: &str = "\
+[2026.10.20-10.10.00:000][1]GameLog: Display: [Game] SceneLevelMgr@ OpenMainWorld END! InMainLevelPath = /Game/Maps/MapaA
+[2026.10.20-10.11.00:000][1]GameLog: Display: [Game] ItemChange@ ProtoName=PickItem start
+[2026.10.20-10.11.00:000][1]GameLog: Display: [Game] BagMgr@:Modfy BagItem PageId = 103 SlotId = 3 ConfigBaseId = 400033 Num = 49
+[2026.10.20-10.11.00:000][1]GameLog: Display: [Game] ItemChange@ ProtoName=PickItem end
+[2026.10.20-10.12.00:000][1]GameLog: Display: [Game] SceneLevelMgr@ OpenMainWorld END! InMainLevelPath = /Game/Maps/MapaB
+";
+
+    #[test]
+    fn tli68_prepocet_prepise_nafuknute_dropy_a_nevytvori_nove_behy() {
+        let mut conn = otvor_v_pamati().unwrap();
+
+        // 1) Do DB sa dostane nafúknutý beh — simulujeme ho tak, že ho
+        //    uložíme s položkou 400033 ×49 ručne cez bežný import, ktorému
+        //    podstrčíme text so ZNÁMYM základom 0 (presne to appka pred
+        //    opravou robila).
+        let nafukla = VZORKA_ZAKLAD.replace(
+            "[2026.10.20-10.10.00:000][1]GameLog: Display: [Game] SceneLevelMgr@",
+            "[2026.10.20-10.09.00:000][1]GameLog: Display: [Game] BagMgr@:InitBagData PageId = 103 SlotId = 99 ConfigBaseId = 1 Num = 1\n[2026.10.20-10.10.00:000][1]GameLog: Display: [Game] SceneLevelMgr@",
+        );
+        let vysledok = importuj_text(&mut conn, &nafukla).unwrap();
+        assert_eq!(vysledok.pocet_novych_behov, 2);
+        let pred: i64 = conn
+            .query_row(
+                "SELECT SUM(mnozstvo) FROM polozky p JOIN behy b ON b.id = p.beh_id
+                  WHERE b.zona LIKE '%MapaA' AND p.config_base_id = 400033",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(pred, 49, "test predpokladá nafúknutú hodnotu, inak nič nedokazuje");
+
+        // 2) Prepočet nad logom BEZ dumpu — prvá zmena slotu je neznámy
+        //    základ, drop sa teda nezapočíta vôbec.
+        let prepocet = prepocitaj_text(&mut conn, VZORKA_ZAKLAD).unwrap();
+        assert_eq!(prepocet.behov_prepocitanych, 2);
+        assert_eq!(prepocet.behov_mimo_db, 0);
+
+        let po: Option<i64> = conn
+            .query_row(
+                "SELECT SUM(mnozstvo) FROM polozky p JOIN behy b ON b.id = p.beh_id
+                  WHERE b.zona LIKE '%MapaA' AND p.config_base_id = 400033",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(po, None, "nafúknutý drop ×49 sa má prepočtom odstrániť");
+
+        // 3) Prepočet nikdy nepridá beh, ktorý v DB nie je.
+        let pocet_behov: i64 = conn.query_row("SELECT COUNT(*) FROM behy", [], |r| r.get(0)).unwrap();
+        assert_eq!(pocet_behov, 2);
+    }
+
+    #[test]
+    fn tli68_prepocet_nad_neznamou_historiou_nic_nevytvori() {
+        let mut conn = otvor_v_pamati().unwrap();
+        let prepocet = prepocitaj_text(&mut conn, VZORKA_ZAKLAD).unwrap();
+        assert_eq!(prepocet.behov_prepocitanych, 0);
+        assert_eq!(prepocet.behov_mimo_db, 2);
+        let pocet_behov: i64 = conn.query_row("SELECT COUNT(*) FROM behy", [], |r| r.get(0)).unwrap();
+        assert_eq!(pocet_behov, 0, "prepočet nesmie zjaviť mapy, ktoré v Analýze nikdy neboli");
     }
 
     #[test]

@@ -1277,9 +1277,22 @@ function vykresliPatickaUploadu(p) {
 /// Sortu (TLI 53 ich pridalo do `p.batoh`/`net_worth_fe`), takže
 /// `p.batoh.length === 0` už nie je spoľahlivý signál — appka preto dostala
 /// vlastné pole `p.materialy_sortovane`.
+///
+/// **TLI 68** pridalo DRUHÝ, naliehavejší dôvod na tú istú výzvu: keď appka
+/// v tejto session nevidela dump stránok batohu (typicky reštart appky
+/// uprostred hrania), nepozná ZÁKLAD slotov a prvú zmenu každého z nich
+/// zámerne nezapočíta do dropov — inak by z jednej padnutej Voidlands Beacon
+/// spravila drop ×49 (celý stack z batohu, nahlásené 20.10.2026). Nesprávne
+/// čísla sú horšie než neúplný Net Worth, preto má táto hláška prednosť.
 function vykresliVyzvuNaSort(p) {
     const hraBezi = Boolean(p.zivo) || (p.behy && p.behy.length > 0);
-    if (hraBezi && !p.materialy_sortovane) {
+    if (hraBezi && p.zaklad_dropov_uplny === false) {
+        const kolko = p.dropov_bez_zakladu || 0;
+        const chybajuce = kolko > 0 ? ` (zatiaľ nezapočítaných zmien: ${kolko})` : "";
+        pitaSortVyzva.textContent =
+            "⚠ Sortni inventár pre presné dropy — appka po štarte nepozná stav batohu, "
+            + "prvú zmenu každého slotu preto nepočíta" + chybajuce;
+    } else if (hraBezi && !p.materialy_sortovane) {
         pitaSortVyzva.textContent = "⚠ Sortni inventár v hre — appka ešte nevidela materiály (Net Worth je neúplný)";
     } else {
         pitaSortVyzva.textContent = "";

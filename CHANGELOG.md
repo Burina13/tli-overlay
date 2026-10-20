@@ -2,6 +2,55 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.26.0 — 20.10.2026 (TLI 68 — dropy po reštarte appky sa už nerátajú ako celý stack z batohu)
+
+**Chyba, ktorú Richard nahlásil 20.10.2026 krátko po 12:00.** Mapa
+„Sheng Huo Ling", čas 1 m 36 s, a v zozname „ČO PADLO" stálo
+*Voidlands Beacon (Timemark 8) ×49*, *Glacial Abyss Beacon ×16*,
+*Secret of the Glacial Abyss ×49* a *Memory Scrap ×155*. V skutočnosti padol
+jeden Voidlands Beacon — appka započítala **celý stack, ktorý mal v batohu**.
+ZISK 214 FE, FE/h 8 034 aj čísla session boli preto nezmyselne vysoké.
+
+**Príčina.** Appka sa o 11:54 reštartovala. `StavChvosta` si cez reštart drží
+**pozíciu v logu**, ale stav batohu nie — appka teda pokračovala v čítaní
+uprostred súboru s PRÁZDNYM batohom. Riadok `BagMgr@:Modfy` pritom nenesie
+prírastok, ale **absolútne `Num`** (koľko kusov je v slote teraz), takže prvá
+zmena každého slotu vyšla ako `Num − 0`, teda celý stack. Reprodukované nad
+Richardovým skutočným logom: `6002 ×49`, `400033 ×49`, `400007 ×16`,
+`5140 ×155` — presne čísla zo screenshotu.
+
+**Oprava.** Appka si odteraz vedie zoznam stránok batohu, ktorých dump
+(`BagMgr@:InitBagData` — hra ho vypíše pri prihlásení a po **Sorte**) v TEJTO
+session naozaj videla:
+
+- Slot na stránke so známym dumpom, ktorý v ňom nebol, je naozaj prázdny →
+  prvý drop doň sa počíta **celý**.
+- Slot na stránke **bez** dumpu má **neznámy základ** → jeho prvá zmena sa do
+  dropov **nezapočíta vôbec** (radšej chýbajúci drop než drop ×49). Zapíše sa
+  do denníka appky a v hlavnom okne sa ukáže **„Sortni inventár pre presné
+  dropy"** aj s počtom vynechaných zmien. Druhá zmena toho istého slotu už
+  základ má a je presná — jeden Sort v hre to vyrieši naraz pre celú stránku.
+- **Snímka batohu z DB** (TLI 56) ostáva **len** pre Current Inventory a Net
+  Worth. Ako základ dropov sa **nepoužíva nikdy**: hráč mohol medzitým predať,
+  presortovať alebo hrať bez appky.
+- **Reset session** — ručný aj automatický po 30 min — nuluje **len**
+  štatistiky session. Stavu batohu ani základu dropov sa nedotkne.
+- Keď slot zmení položku za **inú** (iné `ConfigBaseId`), zapíše sa len zisk
+  novej; stará sa **nezapíše ako strata** (hra pri Sorte položky len presúva).
+  Rovnako to robí referenčný TITrack.
+
+**Overené proti TITracku** (`astockman99/TITrack`) na Richardových skutočných
+logoch, per mapu, zoznam dropov 1:1 — vrátane archivovaných rotácií. Bez
+reštartu: **74/74 máp zhoda pred opravou aj po nej** (nič, čo fungovalo, sa
+nepokazilo). So simulovaným reštartom o 11:54: pred opravou 12 máp
+s nafúknutými číslami, po oprave už ani jedna.
+
+**Jednorazový prepočet histórie.** Pri prvom štarte si appka spraví **kópiu
+databázy** (`tracker.sqlite3.pred-tli68-<čas>`, overí, že nie je prázdna — bez
+nej prepočet vôbec nespustí) a prejde logy, ktoré má hráč na disku, opraveným
+výpočtom. Prepíše **len** položky behov, ktoré v databáze naozaj sú; nové mapy
+nevytvára a nič nemaže.
+
 ## 0.25.2 — 20.10.2026 (TLI 67 — rada sa po kliku skryje vždy; migrácia zo starej MSI)
 
 **Chyba, ktorú Richard nahlásil 20.10.2026 o 11:53: „Prečo mi teraz po kliknutí

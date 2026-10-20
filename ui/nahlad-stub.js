@@ -85,6 +85,8 @@ const UKAZKA_TRACKER = {
   net_worth_fe: 971.8,
   // TLI 53 — appka v tomto náhľade už videla Sort materiálov.
   materialy_sortovane: true,
+  zaklad_dropov_uplny: true,
+  dropov_bez_zakladu: 0,
   // TLI 49 bod 2 — footer „ceny aktualizované HH:MM".
   ceny_synchronizovane_o: 1760866800,
   // TLI 61 — „session od HH:MM" v mini-paneli (bez tohto by bol nový riadok
