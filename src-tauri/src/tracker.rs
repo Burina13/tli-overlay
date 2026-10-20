@@ -540,10 +540,17 @@ fn prepocitaj_historiu_tli68(stav: &mut StavTrackera, cesta_logu: &Path) {
     }
 
     let zdroj = crate::stav::cesta_db_suboru();
-    let kam = zdroj.with_extension(format!("sqlite3.pred-tli68-{}", unixovy_cas()));
+    // Meno zálohy je ZÁMERNE bez času: keď prepočet spadne alebo ho hráč
+    // zavretím appky preruší, zarážka sa nenastaví a pri ďalšom štarte sa
+    // skúsi znova — s časom v mene by po každom pokuse pribudla ďalšia plná
+    // kópia databázy a nikdy by sa nezmazala. Takto existuje najviac jedna
+    // a je to tá spred PRVÉHO pokusu, teda tá, ktorú treba.
+    let kam = zdroj.with_extension("sqlite3.pred-tli68");
     // WAL: časť zápisov môže ležať v `-wal`, preto sa pred kópiou
     // checkpointuje — inak by záloha bola staršia než to, čo appka ukazuje.
     let _ = conn.pragma_update(None, "wal_checkpoint", "TRUNCATE");
+    let uz_zalohovane = std::fs::metadata(&kam).map(|m| m.len() > 0).unwrap_or(false);
+    if !uz_zalohovane {
     if let Err(e) = std::fs::copy(&zdroj, &kam) {
         crate::denik::zapis(
             "tracker",
@@ -561,6 +568,7 @@ fn prepocitaj_historiu_tli68(stav: &mut StavTrackera, cesta_logu: &Path) {
             return;
         }
     }
+    }
 
     let subory = match najdi_logy_v_priecinku(cesta_logu) {
         Ok(o) => o,
@@ -576,14 +584,18 @@ fn prepocitaj_historiu_tli68(stav: &mut StavTrackera, cesta_logu: &Path) {
     let mut spolu = tli_overlay_core::tracker::import::VysledokPrepoctu::default();
     let mut chyba: Option<String> = None;
     for cesta in &subory {
-        let Ok(bajty) = std::fs::read(cesta) else { continue };
-        let text = tli_overlay_core::tracker::log::dekoduj(&bajty);
-        drop(bajty);
-        match tli_overlay_core::tracker::import::prepocitaj_text(conn, &text) {
-            Ok(v) => {
+        match prepocitaj_jeden_subor(conn, cesta) {
+            Ok(Some(v)) => {
                 spolu.behov_prepocitanych += v.behov_prepocitanych;
                 spolu.behov_mimo_db += v.behov_mimo_db;
                 spolu.behov_precenenych += v.behov_precenenych;
+            }
+            // Súbor sa nedá otvoriť/prečítať. Nie je to dôvod zahodiť celý
+            // prepočet, ale JE to dôvod nenastaviť zarážku — inak by sa
+            // behy z neho už nikdy neopravili a nikto by o tom nevedel.
+            Ok(None) => {
+                chyba = Some(format!("súbor {} sa nedá prečítať", cesta.display()));
+                break;
             }
             Err(e) => {
                 chyba = Some(e.to_string());
@@ -611,6 +623,42 @@ fn prepocitaj_historiu_tli68(stav: &mut StavTrackera, cesta_logu: &Path) {
             &format!("TLI 68: prepočet zlyhal ({e}) — pôvodné dáta ostávajú, zarážka sa nenastavila"),
         ),
     }
+}
+
+/// Prepočíta JEDEN súbor logu po 8 MB dávkach (TLI 68 bod e).
+///
+/// Nečíta sa `std::fs::read` + `dekoduj` nad celým súborom: Richardove
+/// rotované logy majú cez 900 MB a to by znamenalo vyše 2 GB v pamäti naraz,
+/// v čase, keď beží hra. Zlyhaná alokácia je v Ruste `abort`, teda pád appky
+/// — a keďže zarážka `prepocet_tli68` sa nastavuje až po úspechu, appka by
+/// padala pri každom ďalšom štarte.
+///
+/// `Ok(None)` znamená „súbor sa nedá otvoriť/prečítať" — volajúci to berie
+/// ako dôvod zarážku NEnastaviť.
+#[cfg(not(test))]
+fn prepocitaj_jeden_subor(
+    conn: &mut rusqlite::Connection,
+    cesta: &Path,
+) -> rusqlite::Result<Option<tli_overlay_core::tracker::import::VysledokPrepoctu>> {
+    use std::io::Read;
+
+    const DAVKA: usize = 8 * 1024 * 1024;
+    let Ok(mut subor) = std::fs::File::open(cesta) else { return Ok(None) };
+    let mut chvost = tli_overlay_core::tracker::chvost::StavChvosta::novy();
+    let mut prepocet = tli_overlay_core::tracker::import::Prepocet::novy();
+    let mut buf = vec![0u8; DAVKA];
+
+    loop {
+        let precitane = match subor.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => n,
+            Err(_) => return Ok(None),
+        };
+        for riadok in chvost.priprav_riadky(&buf[..precitane]) {
+            prepocet.riadok(conn, &riadok)?;
+        }
+    }
+    prepocet.dokonci(conn).map(Some)
 }
 
 /// Nájde všetky `UE_game*.log` v priečinku daného logu, zoradené
@@ -699,6 +747,13 @@ fn nazhav_zaklad_batohu(stav: &mut StavTrackera, cesta: &Path) {
             pomocny.riadok(&riadok);
             riadkov += 1;
         }
+        // Pomocný sledovač zbiera aj ceny z trhu a „raw" riadky — nás z neho
+        // zaujíma VÝHRADNE stav batohu, takže sa po každej dávke zahodia.
+        // Bez toho by sa pri 900 MB logu nazbierali stovky tisíc záznamov,
+        // ktoré aj tak nikto neprečíta.
+        let _ = pomocny.odober_ceny();
+        let _ = pomocny.odober_raw();
+        let _ = pomocny.odober_neznamy_zaklad();
         zostava -= precitane as u64;
     }
 

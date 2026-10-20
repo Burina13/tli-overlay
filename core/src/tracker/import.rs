@@ -150,25 +150,81 @@ pub struct VysledokPrepoctu {
 /// logy". Volajúci si MUSÍ pred týmto spraviť kópiu súboru DB (appka to robí
 /// v `src-tauri/src/tracker.rs`, `prepocitaj_historiu_tli68`).
 pub fn prepocitaj_text(conn: &mut Connection, text: &str) -> rusqlite::Result<VysledokPrepoctu> {
-    let mut sledovac = Sledovac::novy();
-    let mut vysledok = VysledokPrepoctu::default();
-    let mut identita = HracSnimka::default();
-    let mut prepisane: Vec<i64> = Vec::new();
-
+    let mut prepocet = Prepocet::novy();
     for riadok in text.lines() {
-        if let Some(beh) = sledovac.riadok(riadok) {
-            if let Some(novsia) = sledovac.hrac_snimka() {
-                identita = novsia.clone();
+        prepocet.riadok(conn, riadok)?;
+    }
+    prepocet.dokonci(conn)
+}
+
+/// Prepočet kŕmený RIADOK PO RIADKU — to isté, čo `prepocitaj_text`, len bez
+/// toho, aby volajúci musel mať celý súbor v pamäti naraz.
+///
+/// Appka to takto robiť MUSÍ: Richardove rotované logy majú bežne cez 900 MB
+/// a `std::fs::read` + dekódovanie na `String` by z toho spravilo cez 2 GB
+/// naraz — v Ruste je zlyhaná alokácia `abort`, teda pád appky, a keďže
+/// zarážka `prepocet_tli68` sa nastavuje až po úspechu, appka by padala pri
+/// každom ďalšom štarte.
+pub struct Prepocet {
+    sledovac: Sledovac,
+    identita: HracSnimka,
+    prepisane: Vec<i64>,
+    vysledok: VysledokPrepoctu,
+}
+
+impl Default for Prepocet {
+    fn default() -> Self {
+        Self::novy()
+    }
+}
+
+impl Prepocet {
+    pub fn novy() -> Self {
+        Self {
+            sledovac: Sledovac::novy(),
+            identita: HracSnimka::default(),
+            prepisane: Vec::new(),
+            vysledok: VysledokPrepoctu::default(),
+        }
+    }
+
+    /// Jeden riadok logu. Keď ním skončil beh, hneď sa prepíše v DB.
+    pub fn riadok(&mut self, conn: &mut Connection, riadok: &str) -> rusqlite::Result<()> {
+        if let Some(beh) = self.sledovac.riadok(riadok) {
+            if let Some(novsia) = self.sledovac.hrac_snimka() {
+                self.identita = novsia.clone();
             }
-            prepis_jeden_beh(conn, &beh, &identita, &mut vysledok, &mut prepisane)?;
+            prepis_jeden_beh(
+                conn,
+                &beh,
+                &self.identita,
+                &mut self.vysledok,
+                &mut self.prepisane,
+            )?;
         }
+        Ok(())
     }
-    if let Some(beh) = sledovac.ukonci() {
-        if let Some(novsia) = sledovac.hrac_snimka() {
-            identita = novsia.clone();
+
+    /// Uzavrie posledný beh a precení všetko prepísané. Volá sa po KAŽDOM
+    /// súbore — cenník sa skladá z toho istého súboru, rovnako ako pri
+    /// importe.
+    pub fn dokonci(mut self, conn: &mut Connection) -> rusqlite::Result<VysledokPrepoctu> {
+        self.dokonci_vnutorne(conn)?;
+        Ok(self.vysledok)
+    }
+
+    fn dokonci_vnutorne(&mut self, conn: &mut Connection) -> rusqlite::Result<()> {
+        let sledovac = &mut self.sledovac;
+        let vysledok = &mut self.vysledok;
+        let prepisane = &mut self.prepisane;
+        let identita = &mut self.identita;
+
+        if let Some(beh) = sledovac.ukonci() {
+            if let Some(novsia) = sledovac.hrac_snimka() {
+                *identita = novsia.clone();
+            }
+            prepis_jeden_beh(conn, &beh, identita, vysledok, prepisane)?;
         }
-        prepis_jeden_beh(conn, &beh, &identita, &mut vysledok, &mut prepisane)?;
-    }
 
     // Rovnaký druhý prechod ako pri importe: cenník z CELÉHO súboru a až
     // potom ocenenie — inak by prepočítaný beh ostal bez hodnoty len preto,
@@ -187,13 +243,14 @@ pub fn prepocitaj_text(conn: &mut Connection, text: &str) -> rusqlite::Result<Vy
         );
     }
     let nastavenie = Nastavenie::default();
-    for beh_id in prepisane {
+    for beh_id in std::mem::take(prepisane) {
         if db::precen_beh(conn, beh_id, &cennik, &nastavenie)? {
             vysledok.behov_precenenych += 1;
         }
     }
 
-    Ok(vysledok)
+        Ok(())
+    }
 }
 
 /// Jeden beh prepočtu: hub sa preskakuje, zvyšok ide do `prepis_polozky_behu`.
@@ -389,6 +446,35 @@ mod testy {
         // 3) Prepočet nikdy nepridá beh, ktorý v DB nie je.
         let pocet_behov: i64 = conn.query_row("SELECT COUNT(*) FROM behy", [], |r| r.get(0)).unwrap();
         assert_eq!(pocet_behov, 2);
+    }
+
+    #[test]
+    fn tli68_prepocet_vynuluje_stary_zisk_ked_sa_necena_neda_dopocitat() {
+        // Nález z review diffu (20.10.2026): `precen_beh` nezapíše nič, keď
+        // v tom istom súbore logu nie je ani jedna cena dropu. Bez vynulovania
+        // by v `behy` ostal starý, nafúknutý ZISK vedľa už opravených položiek
+        // — teda presne to číslo, na ktoré sa Richard sťažoval.
+        let mut conn = otvor_v_pamati().unwrap();
+        let nafukla = VZORKA_ZAKLAD.replace(
+            "[2026.10.20-10.10.00:000][1]GameLog: Display: [Game] SceneLevelMgr@",
+            "[2026.10.20-10.09.00:000][1]GameLog: Display: [Game] BagMgr@:InitBagData PageId = 103 SlotId = 99 ConfigBaseId = 1 Num = 1\n[2026.10.20-10.10.00:000][1]GameLog: Display: [Game] SceneLevelMgr@",
+        );
+        importuj_text(&mut conn, &nafukla).unwrap();
+        let beh_id: i64 = conn
+            .query_row("SELECT id FROM behy WHERE zona LIKE '%MapaA'", [], |r| r.get(0))
+            .unwrap();
+        conn.execute("UPDATE behy SET cisty_zisk_fe = 214.0, fe_za_hodinu = 8034.0 WHERE id = ?1", [beh_id])
+            .unwrap();
+
+        prepocitaj_text(&mut conn, VZORKA_ZAKLAD).unwrap();
+
+        let (zisk, za_hodinu): (Option<f64>, Option<f64>) = conn
+            .query_row("SELECT cisty_zisk_fe, fe_za_hodinu FROM behy WHERE id = ?1", [beh_id], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .unwrap();
+        assert_eq!(zisk, None, "starý ZISK nesmie prežiť prepočet položiek");
+        assert_eq!(za_hodinu, None, "ani FE/h");
     }
 
     #[test]

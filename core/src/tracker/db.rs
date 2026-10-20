@@ -617,7 +617,8 @@ pub fn uloz_beh(
 /// `uloz_beh`/`import::importuj_text`. Prepočet má len opravovať, nie
 /// zjavovať mapy, ktoré používateľ v Analýze nikdy nevidel.
 ///
-/// Mení sa VÝHRADNE tabuľka `polozky` a ocenené hodnoty v `behy` — monštrá,
+/// Mení sa VÝHRADNE tabuľka `polozky` a ocenené hodnoty v `behy` (tie sa tu
+/// vynulujú a doplní ich až `precen_beh`) — monštrá,
 /// modifikátory, bossovia ani Canvas akcie sa nemažú (tie chyba nikdy
 /// netrápila a ich opätovné vkladanie by ich zdvojilo).
 ///
@@ -645,6 +646,18 @@ pub fn prepis_polozky_behu(
 
     let tx = conn.transaction()?;
     tx.execute("DELETE FROM polozky WHERE beh_id = ?1", params![beh_id])?;
+    // Ocenené hodnoty sa VYNULUJÚ, nie ponechajú. Ocenenie vzniká až druhým
+    // prechodom (`precen_beh`) a ten vie skončiť bez zápisu — keď v tom
+    // súbore logu nie je ani jedna cena dropu z tohto behu. Nechať tam starú
+    // hodnotu by znamenalo presne to, na čo sa Richard sťažoval: položky ×1,
+    // ale ZISK stále 214 FE. `NULL` je navyše to, čo si pri najbližšej
+    // synchronizácii cien samo vyzdvihne `precen_nevycislene`.
+    tx.execute(
+        "UPDATE behy SET hodnota_dropov_fe = NULL, hodnota_vstupov_fe = NULL,
+                         cisty_zisk_fe = NULL, fe_za_hodinu = NULL
+          WHERE id = ?1",
+        params![beh_id],
+    )?;
     for zmena in &beh.vsetky_zmeny {
         tx.execute(
             "INSERT INTO polozky (beh_id, config_base_id, mnozstvo, typ, cas) VALUES (?1,?2,?3,?4,?5)",
