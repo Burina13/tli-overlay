@@ -162,9 +162,14 @@ jobs:
             throw "HKCU DisplayVersion $($zaznam.DisplayVersion) nesedí s tagom $env:VERZIA"
           }
 
-          $instalDir = $zaznam.InstallLocation
+          # `InstallLocation` z NSIS šablóny nesie hodnotu VRÁTANE úvodzoviek
+          # (`"C:\Users\...\Tvoj Tatko TLI Overlay"`) — bez orezania by
+          # `Test-Path` vždy vrátil false a test by zakaždým spadol do
+          # (zbytočného) fallbacku.
+          $instalDir = $zaznam.InstallLocation.Trim('"')
           if (-not $instalDir -or -not (Test-Path $instalDir)) {
-            $najdeny = Get-ChildItem -Path $env:LOCALAPPDATA -Recurse -Filter "Tvoj Tatko TLI Overlay.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+            $najdeny = Get-ChildItem -Path $env:LOCALAPPDATA -Recurse -Filter "*.exe" -ErrorAction SilentlyContinue |
+                       Where-Object { $_.VersionInfo.ProductName -eq "Tvoj Tatko TLI Overlay" } | Select-Object -First 1
             if (-not $najdeny) { throw "exe novej perUser appky sa nenašlo pod $env:LOCALAPPDATA" }
             $instalDir = $najdeny.DirectoryName
           }
