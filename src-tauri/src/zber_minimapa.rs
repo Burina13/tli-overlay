@@ -64,7 +64,7 @@ const DLZKA_ZBERU: u32 = 1280;
 const KVALITA_ZBERU: u8 = 75;
 
 /// Priečinok fronty vedľa nastavení appky — VLASTNÝ, nezdieľaný s Canvasom
-/// (`zber_canvas::cesta_fronty` má iný priečinok `canvas-zber`).
+/// (`zber_canvas::cesta_fronty_pre` má iné priečinky `canvas-zber`/`tartarus-zber`).
 pub fn cesta_fronty() -> PathBuf {
     let mut c = crate::stav::cesta_suboru();
     c.pop(); // preč "nastavenia.json"
@@ -124,6 +124,12 @@ fn cakajuce() -> Vec<PathBuf> {
         .collect();
     subory.sort();
     subory
+}
+
+/// Koľko snímok minimapy práve čaká vo fronte — pre riadok „Učenie: …"
+/// v Nastaveniach (TLI 70, bod 5).
+pub fn pocet_cakajucich() -> u32 {
+    cakajuce().len() as u32
 }
 
 fn nastavenia_appky(app: &AppHandle) -> Nastavenia {
@@ -398,6 +404,14 @@ fn odosielac(app: AppHandle, dost_dat: Arc<Mutex<fronta::DostDatStav>>) {
                     // Prestaň fotiť TÚTO mapu hneď, nečakaj na ďalší GET /stav.
                     dost_dat.lock().unwrap().zapamataj_odmietnutie(&meta.mapa);
                 }
+                {
+                    // TLI 70, bod 5 — nech hráč v Nastaveniach vidí, že
+                    // sa fronta naozaj posiela.
+                    let stav = app.state::<Stav>();
+                    let mut s = stav.stav_zberu.lock().unwrap();
+                    s.minimapa.odoslane += 1;
+                    s.minimapa.posledna_chyba = None;
+                }
                 denik::zapis(
                     "minimapa",
                     &format!("odoslané ({}), vo fronte ostáva {}", meta.mapa, pripravene.len() - 1),
@@ -407,6 +421,11 @@ fn odosielac(app: AppHandle, dost_dat: Arc<Mutex<fronta::DostDatStav>>) {
             Err(e) => {
                 zlyhani = zlyhani.saturating_add(1);
                 let odstup = fronta::odstup_po_zlyhani(zlyhani);
+                {
+                    let stav = app.state::<Stav>();
+                    let mut s = stav.stav_zberu.lock().unwrap();
+                    s.minimapa.posledna_chyba = Some(e.clone());
+                }
                 denik::zapis(
                     "minimapa",
                     &format!("odoslanie zlyhalo ({e}) — {} snímok čaká, skúsim o {odstup} s", pripravene.len()),

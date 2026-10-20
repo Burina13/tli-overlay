@@ -69,6 +69,20 @@ pub struct Stav {
     /// vzor ako `posledna_synchronizacia_cien` v trackeri) — po reštarte sa
     /// kontrola spustí hneď znova, netreba to prenášať cez reštart appky.
     pub posledna_kontrola_aktualizacie: Mutex<Option<KontrolaAktualizacie>>,
+    /// TLI 70 — POSLEDNÁ obrazovka, ktorú server naozaj prečítal, a kedy.
+    /// Zapisuje sa po každej úspešnej ručnej analýze (Ctrl+Q/Ctrl+W/F8/F9);
+    /// číta to zber na pozadí (`zber_canvas`), keď mu lokálna detekcia
+    /// z pixelov nepovie „toto je Canvas".
+    ///
+    /// Richard 20.10.2026 v zadaní: „Canvas je otvorený, keď posledná Ctrl+W
+    /// analýza (alebo server) vrátila obrazovku canvas, a to platí do zmeny
+    /// obrazovky alebo 5 min bez kliku." Platnosť je v
+    /// `zber_stav::PLATNOST_POTVRDENIA_S`, „zmena obrazovky" je tým, že sem
+    /// každá ďalšia analýza prepíše novú hodnotu.
+    pub potvrdena_obrazovka: Mutex<Option<(String, Instant)>>,
+    /// TLI 70 (bod 5) — čo zber na pozadí odoslal, čo mu čaká a prečo
+    /// prípadne nefotí. Len v pamäti; `caka` sa pri čítaní dopočíta z disku.
+    pub stav_zberu: Mutex<tli_overlay_core::zber_stav::StavZberu>,
 }
 
 /// Pozri `Stav::posledna_kontrola_aktualizacie`. `cas` je unixový čas

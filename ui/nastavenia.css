@@ -212,3 +212,14 @@ button:active {
     font-weight: 600;
 }
 .stav-skratky.chyba { color: var(--cervena); }
+
+/* TLI 70, bod 5 — riadok „Učenie: Canvas X odoslaných / Y čaká, …". */
+.stav-zberu {
+    font-variant-numeric: tabular-nums;
+    line-height: 1.5;
+    word-break: break-word;
+}
+.stav-zberu-detail {
+    display: block;
+    opacity: 0.8;
+}

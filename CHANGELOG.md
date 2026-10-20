@@ -2,6 +2,54 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.28.0 — 20.10.2026 (TLI 70 — zber dát na učenie naozaj zbiera)
+
+**Čo Richard nahlásil 20.10.2026 ~12:4x** (v0.24.0, `tli-overlay.log`): zber na
+učenie nefunguje ani jednou cestou. Minimapa fotí („minimapa KuangDuZhiYuan
+odfotená (104133 B)"), ale KAŽDÉ odoslanie vráti „Server má poruchu a analýzu
+teraz nespraví…" a vo fronte čaká 1488 snímok. Frozen Canvas hlási „automatické
+učenie Canvasu beží (čaká 0 snímok)" — a priečinok `canvas-zber` je PRÁZDNY,
+hoci Canvas hral a klikal celý deň.
+
+**Minimapa — príčina bola na SERVERI, nie v appke.** `tli-web.service` má
+`ProtectSystem=strict` a `/srv/games/tli/minimapa` chýbal v `ReadWritePaths`
+(presne tá istá chyba ako pri `tracker` v TLI 25): endpoint padal na
+`OSError: [Errno 30] Read-only file system` a vracal 500. Appka sa správala
+správne — poruchu rozpoznala a frontu držala. Opravené na serveri; nič sa
+nestratilo, fronta sa po oprave sama vyprázdnila.
+
+**Canvas — appka sa odteraz nespolieha len na pixely.** Lokálna detekcia
+(`canvas_detekcia`, pomer farieb) ostáva prvou, lacnou cestou, ale keď
+nepovie „Canvas", appka sa oprie o to, **čo server naposledy naozaj
+PREČÍTAL**: po každej úspešnej ručnej analýze (Ctrl+Q/Ctrl+W/F8/F9) si appka
+pamätá názov obrazovky a 5 minút ho berie ako platný
+(`core/src/zber_stav.rs`). Zároveň klik, ktorým hráč zhasína radu, už nie je
+stratený — appka počká až 900 ms, kým panel zmizne, namiesto toho, aby snímku
+ticho zahodila.
+
+**Doska Tartaru sa zbiera tiež** (dovtedy len Canvas) — vlastná fronta
+`tartarus-zber`, vlastný denný strop, endpoint `/api/analyza?zber=1`.
+
+**Každé zamietnutie má odteraz dôvod.** Do TLI 70 vracalo všetkých šesť
+podmienok `false` ticho, takže z denníka sa nedalo zistiť, prečo sa nefotí —
+a presne preto sa táto porucha nedala diagnostikovať na diaľku. Teraz sa
+dôvody počítajú (`hra-nie-je-v-popredi`, `panel-appky-svieti`,
+`obrazovka-sa-nezbiera`, …), raz za 5 minút sa to, čo PRIBUDLO, zhrnie do
+denníka (bežný stav „nehrám" sa nevypisuje) a vidno ich aj v Nastaveniach.
+
+**Nové v Nastaveniach: „Stav zberu na učenie"** (bod 5 zadania) — riadok
+„Učenie: Canvas X odoslaných / Y čaká, Tartarus …, Minimapa …, posledná
+chyba …", pod ním posledná obrazovka potvrdená serverom a dôvody, prečo sa
+po kliku nefotilo. Obnovuje sa sám každých 5 s, kým sú Nastavenia otvorené.
+
+**Odstup medzi odosielanými snímkami zberu je 3 s** (bolo 0,5 s) a server má
+preň **vlastný rate-limit kôš** (`zber_za_minutu`). Dovtedy zber na pozadí
+jedol ten istý limit ako Richardove ručné F8/Ctrl+W — pri vyprázdňovaní
+fronty by mu ručná analýza prestala chodiť.
+
+**Nič sa nemaže** (nezmenené od TLI 60): pri plnej fronte appka len prestane
+pridávať; zo spoolu mizne výhradne snímka, ktorú server práve prijal.
+
 ## 0.27.0 — 20.10.2026 (TLI 69 — Frozen Canvas radí pre VŠETKY smery, lebo cieľové bunky kreslí sama hra)
 
 **Čo Richard nahlásil 20.10.2026 ~12:2x.** Pri cieli „Fill a Vertical Cell with

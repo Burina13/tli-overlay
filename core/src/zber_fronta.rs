@@ -119,14 +119,27 @@ pub fn smie_pribudnut(cakajucich: usize) -> bool {
 /// v Canvase môžu za jednu sekundu vzniknúť aj štyri snímky a rovnaké meno
 /// by jednu z nich prepísalo.
 pub fn nazov_snimky(unix_s: u64, poradie: u64) -> String {
-    format!("canvas-{unix_s:010}-{:04}.jpg", poradie % 10_000)
+    nazov_snimky_pre("canvas", unix_s, poradie)
+}
+
+/// To isté pre ľubovoľný druh zberu (TLI 70 — pribudla fronta `tartarus`).
+/// Každý druh má VLASTNÝ priečinok, takže prefix v mene je navyše — ale
+/// nechávame ho, aby sa dvojica súborov pri ručnom kopírovaní medzi
+/// priečinkami nedala zameniť.
+pub fn nazov_snimky_pre(prefix: &str, unix_s: u64, poradie: u64) -> String {
+    format!("{prefix}-{unix_s:010}-{:04}.jpg", poradie % 10_000)
 }
 
 /// Je to súbor našej fronty? Používa sa pri počítaní čakajúcich aj pri
 /// výbere ďalšieho na odoslanie — nech sa appka nepokúsi poslať niečo,
 /// čo si do priečinka odložil niekto iný.
 pub fn je_subor_fronty(nazov: &str) -> bool {
-    nazov.starts_with("canvas-") && nazov.ends_with(".jpg")
+    je_subor_fronty_pre("canvas", nazov)
+}
+
+/// To isté pre ľubovoľný druh zberu (TLI 70).
+pub fn je_subor_fronty_pre(prefix: &str, nazov: &str) -> bool {
+    nazov.starts_with(&format!("{prefix}-")) && nazov.ends_with(".jpg")
 }
 
 #[cfg(test)]
@@ -241,5 +254,32 @@ mod testy {
     fn denny_stav_prezije_stary_json_bez_poli() {
         let s: DennyStav = serde_json::from_str("{}").unwrap();
         assert_eq!(s, DennyStav::default());
+    }
+}
+
+#[cfg(test)]
+mod testy_tli70 {
+    use super::*;
+
+    #[test]
+    fn prefix_oddeluje_fronty_canvasu_a_tartaru() {
+        let c = nazov_snimky_pre("canvas", 1_760_000_000, 3);
+        let t = nazov_snimky_pre("tartarus", 1_760_000_000, 3);
+        assert_eq!(c, "canvas-1760000000-0003.jpg");
+        assert_eq!(t, "tartarus-1760000000-0003.jpg");
+        assert!(je_subor_fronty_pre("canvas", &c));
+        assert!(je_subor_fronty_pre("tartarus", &t));
+        // Krížom NIE — inak by odosielač tartaru poslal canvas snímku na
+        // zlý endpoint (a naopak).
+        assert!(!je_subor_fronty_pre("canvas", &t));
+        assert!(!je_subor_fronty_pre("tartarus", &c));
+    }
+
+    #[test]
+    fn stare_funkcie_sa_spravaju_presne_ako_predtym() {
+        assert_eq!(nazov_snimky(1_760_000_000, 3), "canvas-1760000000-0003.jpg");
+        assert!(je_subor_fronty("canvas-1760000000-0003.jpg"));
+        assert!(!je_subor_fronty("canvas-1760000000-0003.jpg.tmp"));
+        assert!(!je_subor_fronty("stav.json"));
     }
 }

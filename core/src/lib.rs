@@ -26,6 +26,7 @@ pub mod tartarus;
 pub mod tartarus_engine;
 pub mod tartarus_solver;
 pub mod zber_fronta;
+pub mod zber_stav;
 pub mod zmensenie;
 
 pub mod tracker;

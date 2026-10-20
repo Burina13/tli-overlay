@@ -1022,6 +1022,22 @@ pub(crate) fn stav_tlacidiel_mysi() -> StavMysi {
     StavMysi::default()
 }
 
+/// TLI 70 — zapamätaj si, akú obrazovku server naposledy POTVRDIL.
+///
+/// Toto je druhý, nezávislý zdroj pravdy pre zber na pozadí: keď lokálna
+/// detekcia z pixelov (`canvas_detekcia`) z akéhokoľvek dôvodu nepovie
+/// „Canvas", zber sa oprie o to, čo server naozaj prečítal vision modelom.
+/// Richard 20.10.2026: „Canvas je otvorený, keď posledná Ctrl+W analýza
+/// (alebo server) vrátila obrazovku canvas." Prepisuje sa pri KAŽDEJ
+/// úspešnej analýze, takže zmena obrazovky potvrdenie sama zruší.
+fn zapamataj_obrazovku(app: &AppHandle, obrazovka: &str) {
+    let stav = app.state::<Stav>();
+    let mut m = stav.potvrdena_obrazovka.lock().unwrap();
+    *m = Some((obrazovka.to_string(), Instant::now()));
+    drop(m);
+    denik::zapis("zber", &format!("server potvrdil obrazovku „{obrazovka}“"));
+}
+
 /// Overlay ostane svietiť, kým hráč neklikne (ľavým alebo pravým tlačidlom
 /// kdekoľvek na obrazovke). Poistky: `SKRYTIE_KLIKOM_POISTKA_S` sekúnd bez
 /// kliku a Esc (ten rieši handler skratiek, nie toto vlákno).
@@ -1255,6 +1271,13 @@ V hre prepni Nastavenia → Zobrazenie → Režim okna na „Okno bez okrajov“
                 match &vysledok {
                     Ok(v) => denik::zapis("http", &format!("analyza OK, {} ms", v.trvanie_ms)),
                     Err(e) => denik::zapis("http", &format!("analyza CHYBA: {e}")),
+                }
+                // TLI 70: server práve prečítal, čo je na obrazovke — zber na
+                // pozadí sa o to oprie, kým nepríde ďalšia analýza.
+                if let Ok(v) = &vysledok {
+                    if v.analyza.ok {
+                        zapamataj_obrazovku(&app, &v.analyza.obrazovka);
+                    }
                 }
                 match vysledok {
                     // TLI 25: tá istá klávesa chodí na viac obrazoviek mechaniky
@@ -1608,6 +1631,13 @@ V hre prepni Nastavenia → Zobrazenie → Režim okna na „Okno bez okrajov“
                 match &vysledok {
                     Ok(v) => denik::zapis("http", &format!("canvas OK, {} ms", v.trvanie_ms)),
                     Err(e) => denik::zapis("http", &format!("canvas CHYBA: {e}")),
+                }
+                // TLI 70: odpoveď `modul=canvas` pole `obrazovka` nenesie —
+                // že ide o Frozen Canvas, je dané samotným modulom.
+                if let Ok(v) = &vysledok {
+                    if v.analyza.ok {
+                        zapamataj_obrazovku(&app, "canvas");
+                    }
                 }
                 match vysledok {
                     Ok(v) => {
@@ -3332,6 +3362,31 @@ fn posledna_kontrola_aktualizacie(app: AppHandle) -> Option<KontrolaAktualizacie
     app.state::<Stav>().posledna_kontrola_aktualizacie.lock().unwrap().clone()
 }
 
+/// TLI 70 (bod 5) — viditeľný stav zberu na učenie pre Nastavenia.
+///
+/// Richard 20.10.2026: „pridaj viditeľný stav zberu: »Učenie: Canvas X
+/// odoslaných / Y čaká, Tartarus …, Minimapa …, posledná chyba …«, aby bolo
+/// vidieť, že sa to posiela." Počty čakajúcich sa čítajú z disku pri každom
+/// volaní (zdroj pravdy je priečinok fronty, nie počítadlo v pamäti —
+/// to by sa po reštarte appky rozišlo s realitou).
+#[tauri::command]
+fn stav_zberu(app: AppHandle) -> tli_overlay_core::zber_stav::StavZberu {
+    let (canvas_caka, tartarus_caka) = zber_canvas::pocty_cakajucich();
+    let minimapa_caka = zber_minimapa::pocet_cakajucich();
+    let stav = app.state::<Stav>();
+    let potvrdena = {
+        let m = stav.potvrdena_obrazovka.lock().unwrap();
+        m.as_ref().map(|(co, kedy)| (co.clone(), kedy.elapsed().as_secs()))
+    };
+    let mut s = stav.stav_zberu.lock().unwrap();
+    s.canvas.caka = canvas_caka;
+    s.tartarus.caka = tartarus_caka;
+    s.minimapa.caka = minimapa_caka;
+    s.potvrdena_obrazovka = potvrdena.as_ref().map(|(c, _)| c.clone());
+    s.potvrdena_pred_s = potvrdena.map(|(_, k)| k);
+    s.clone()
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 fn main() {
@@ -3444,6 +3499,8 @@ fn main() {
             hotkey_upozornenia: Mutex::new(Vec::new()),
             posledny_hotkey: Mutex::new(None),
             posledna_kontrola_aktualizacie: Mutex::new(None),
+            potvrdena_obrazovka: Mutex::new(None),
+            stav_zberu: Mutex::new(Default::default()),
         })
         .manage(tracker::Tracker::default())
         // Sprievodca sa načíta z disku hneď pri štarte — záložka Guide
@@ -3459,6 +3516,7 @@ fn main() {
             verzia,
             skontroluj_aktualizaciu,
             posledna_kontrola_aktualizacie,
+            stav_zberu,
             tracker_prehlad,
             tracker_economy,
             tracker_csv,

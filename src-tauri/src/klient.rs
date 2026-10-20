@@ -149,6 +149,26 @@ pub fn posli_canvas_zber(n: &Nastavenia, jpeg: Vec<u8>) -> Result<(), String> {
     }
 }
 
+/// Automatický zber DOSKY Tartaru na učenie (TLI 70, bod 3) — to isté, čo
+/// `posli_canvas_zber`, len iný modul. Odpoveď nás nezaujíma; stačí vedieť,
+/// či ju server prijal.
+pub fn posli_tartarus_zber(n: &Nastavenia, jpeg: Vec<u8>) -> Result<(), String> {
+    let odpoved = ureq::post(&n.adresa_analyza_tartarus_zber())
+        .set("Authorization", &format!("Bearer {}", n.kluc))
+        .set("Content-Type", "image/jpeg")
+        .timeout(std::time::Duration::from_secs(30))
+        .send_bytes(&jpeg);
+
+    match odpoved {
+        Ok(_) => Ok(()),
+        Err(ureq::Error::Status(kod, odpoved)) => {
+            let telo = odpoved.into_string().unwrap_or_default();
+            Err(api::sprava_chyby(kod, &telo))
+        }
+        Err(ina) => Err(api::sprava_siete(&ina.to_string())),
+    }
+}
+
 /// Pošle jeden výrez minimapy na `POST /api/minimapa` (TLI 62/3,
 /// `minimapa-api-kontrakt.md`). Vracia vždy rozobraté telo, aj keď server
 /// snímku odmietol (`prijate: false`) — to NIE JE chyba, len pokyn „prestaň

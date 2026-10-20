@@ -305,6 +305,14 @@ impl Nastavenia {
         self.adresa("/api/analyza?modul=canvas&zber=1")
     }
 
+    /// Automatický zber DOSKY Tartaru na učenie (TLI 70, bod 3) — ten istý
+    /// endpoint ako `adresa_analyza`, navyše `zber=1`. Do TLI 70 sa doska na
+    /// pozadí nezbierala vôbec (TLI 60 postavilo len Canvas), takže dataset
+    /// pre učenie rástol len z Richardových ručných F8.
+    pub fn adresa_analyza_tartarus_zber(&self) -> String {
+        self.adresa("/api/analyza?zber=1")
+    }
+
     /// Ceny z obrazovky trhu (TLI 22) — ten istý endpoint, iný modul.
     pub fn adresa_analyza_ceny(&self) -> String {
         self.adresa("/api/analyza?modul=ceny")

@@ -21,6 +21,8 @@ const inpZberDat = document.getElementById("inp-zber-dat");
 const inpUcenieCanvas = document.getElementById("inp-ucenie-canvas");
 const inpMinimapaZber = document.getElementById("inp-minimapa-zber");
 const inpMinimapaRezim = document.getElementById("inp-minimapa-rezim");
+const elStavZberu = document.getElementById("stav-zberu");
+const elStavZberuDetail = document.getElementById("stav-zberu-detail");
 
 const btnUkazatKluc = document.getElementById("btn-ukazat-kluc");
 const btnTest = document.getElementById("btn-test");
@@ -307,7 +309,48 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     await obnovStavHotkeys();
+    await obnovStavZberu();
+    // TLI 70, bod 5: kým sú Nastavenia otvorené, riadok sa sám obnovuje —
+    // inak by Richard musel okno zavrieť a otvoriť, aby videl, či fronta
+    // ubúda. 5 s je dosť pomaly na to, aby to nič nestálo (číta sa len
+    // počet súborov v dvoch priečinkoch a pár čísel z pamäte).
+    setInterval(obnovStavZberu, 5000);
 });
+
+/// Zloží vetu „Učenie: …" zo stavu, ktorý vráti Rust (`stav_zberu`).
+/// Samotnú vetu skladá Rust (`StavZberu::veta`, tam je aj jej test) — tu sa
+/// dopĺňa len to, čo je navyše pre človeka: posledná potvrdená obrazovka
+/// a dôvody, prečo sa prípadne nefotí.
+async function obnovStavZberu() {
+    if (!elStavZberu) return;
+    try {
+        const s = await invoke("stav_zberu");
+        const kus = (meno, j) => `${meno} ${j.odoslane} odoslaných / ${j.caka} čaká`;
+        const chyba = (s.canvas.posledna_chyba || s.tartarus.posledna_chyba
+                       || s.minimapa.posledna_chyba);
+        elStavZberu.textContent =
+            `Učenie: ${kus("Canvas", s.canvas)}, ${kus("Tartarus", s.tartarus)}, `
+            + `${kus("Minimapa", s.minimapa)}, posledná chyba: ${chyba || "žiadna"}`;
+
+        const detaily = [];
+        if (s.potvrdena_obrazovka) {
+            detaily.push(`Server naposledy prečítal obrazovku „${s.potvrdena_obrazovka}“`
+                         + ` (pred ${s.potvrdena_pred_s} s).`);
+        } else {
+            detaily.push("Server zatiaľ v tomto behu appky žiadnu obrazovku nepotvrdil"
+                         + " — stlač Ctrl+W nad Frozen Canvasom alebo F8 nad doskou.");
+        }
+        const dovody = Object.entries(s.dovody || {});
+        if (dovody.length) {
+            dovody.sort((a, b) => b[1] - a[1]);
+            detaily.push("Prečo sa po kliku nefotilo: "
+                         + dovody.map(([k, v]) => `${k} ×${v}`).join(", ") + ".");
+        }
+        elStavZberuDetail.textContent = detaily.join(" ");
+    } catch (chyba) {
+        console.error("Chyba pri čítaní stavu zberu:", chyba);
+    }
+}
 
 // --- Ukázať/skryť heslo ---
 btnUkazatKluc.addEventListener("click", () => {

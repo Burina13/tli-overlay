@@ -21,6 +21,28 @@ Aplikácia je neverejná, určená výhradne pre našu partiu (Tvoj Tatko). Na j
 2. Spusti aplikáciu. Zobrazí sa tray ikona (pri hodinách). Klikni na ňu, otvor Nastavenia a vlož svoj osobný kľúč.
 3. Otvor hru a stlač **F8**.
 
+## Učenie na pozadí a jeho stav (TLI 60, TLI 62, TLI 70)
+
+Keď je v Nastaveniach zapnuté **„Učenie Canvas na pozadí"**, appka po každom
+kliku myšou odfotí okno hry — ale len vtedy, keď je na ňom **Frozen Canvas**
+alebo (od TLI 70) **doska Tartaru** — a snímku na pozadí pošle na server na
+učenie (`?zber=1`). Hráčovi neukazuje nič a na nič nečaká. Prepínač **„Zber
+minimapy"** robí to isté pre výrez minimapy počas behu mapy.
+
+Že je obrazovka otvorená, appka zisťuje **dvoma nezávislými cestami**:
+lokálne z pomeru farieb (`core/src/canvas_detekcia.rs`, lacné, beží pri
+každom kliku) a — keď to prvá cesta nepovie — podľa toho, **čo server
+naposledy naozaj prečítal** pri ručnej analýze (`core/src/zber_stav.rs`,
+platnosť 5 minút). Druhá cesta pribudla v TLI 70 po tom, čo celodenné
+hranie Frozen Canvasu nenazbieralo ani jednu snímku.
+
+**Stav zberu je vidieť v Nastaveniach** v riadku „Stav zberu na učenie":
+koľko snímok odišlo, koľko čaká vo fronte na disku, aká bola posledná chyba,
+ktorú obrazovku server naposledy potvrdil a prečo sa po kliku prípadne
+nefotilo. Fronty sú v `%APPDATA%\sk.tvojtatko.tli-overlay\` v priečinkoch
+`canvas-zber`, `tartarus-zber` a `minimapa-zber`; **nič sa z nich nemaže** —
+mizne výhradne snímka, ktorú server práve prijal.
+
 ## Ako sa to používa
 Aplikácia beží na pozadí a čaká na klávesovú skratku. 
 
