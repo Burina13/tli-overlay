@@ -21,11 +21,16 @@ nestratilo, fronta sa po oprave sama vyprázdnila.
 **Canvas — appka sa odteraz nespolieha len na pixely.** Lokálna detekcia
 (`canvas_detekcia`, pomer farieb) ostáva prvou, lacnou cestou, ale keď
 nepovie „Canvas", appka sa oprie o to, **čo server naposledy naozaj
-PREČÍTAL**: po každej úspešnej ručnej analýze (Ctrl+Q/Ctrl+W/F8/F9) si appka
-pamätá názov obrazovky a 5 minút ho berie ako platný
-(`core/src/zber_stav.rs`). Zároveň klik, ktorým hráč zhasína radu, už nie je
-stratený — appka počká až 900 ms, kým panel zmizne, namiesto toho, aby snímku
-ticho zahodila.
+PREČÍTAL**: po každej úspešnej ručnej analýze (Ctrl+Q/Ctrl+W/F8/F9/F10) si
+appka pamätá názov obrazovky **aj to, ako obrazovka vtedy vyzerala**, a 5
+minút to berie ako platné (`core/src/zber_stav.rs`). Uložený „podpis"
+obrazovky je tam preto, že zadanie hovorí „platí **do zmeny obrazovky** alebo
+5 min bez kliku" — keď hráč Canvas zavrie a odíde bojovať, pomer farieb sa
+zmení rádovo (plátno ~0,50 ľadových bodov, mapa ~0,02) a potvrdenie prestane
+platiť okamžite, nie až o päť minút. Bez toho by appka fotila boj ako Canvas
+a na každú takú snímku minula jedno vision volanie na serveri.
+Zároveň klik, ktorým hráč zhasína radu, už nie je stratený — appka počká až
+900 ms, kým panel zmizne, namiesto toho, aby snímku ticho zahodila.
 
 **Doska Tartaru sa zbiera tiež** (dovtedy len Canvas) — vlastná fronta
 `tartarus-zber`, vlastný denný strop, endpoint `/api/analyza?zber=1`.
@@ -49,6 +54,16 @@ fronty by mu ručná analýza prestala chodiť.
 
 **Nič sa nemaže** (nezmenené od TLI 60): pri plnej fronte appka len prestane
 pridávať; zo spoolu mizne výhradne snímka, ktorú server práve prijal.
+
+**Opravené z review diffu (Opus 5.5 cez mesačný API kredit):** denný strop sa
+kontroluje PRED zápisom na disk a pre ten druh zberu, ktorý sa naozaj
+rozpoznal (inak by sa vyčerpaný strop Canvasu dal obísť a snímky by odišli aj
+tak); každá fronta má vlastné počítadlo zlyhaní (so spoločným by úspech
+jednej vynuloval backoff druhej a trvale odmietaná snímka by sa skúšala
+donekonečna); „posledná chyba" je naozaj posledná, nie prvá neprázdna
+v poradí Canvas → Tartarus → Minimapa; prepínač v Nastaveniach sa volá
+**„Učenie na pozadí (Frozen Canvas + doska Tartaru)"**, nech je z názvu
+jasné, že od 0.28.0 zapína aj dosku.
 
 ## 0.27.0 — 20.10.2026 (TLI 69 — Frozen Canvas radí pre VŠETKY smery, lebo cieľové bunky kreslí sama hra)
 

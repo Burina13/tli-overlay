@@ -63,7 +63,7 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager};
 use tli_overlay_core::nastavenia::Nastavenia;
 use tli_overlay_core::zber_fronta as fronta;
-use tli_overlay_core::zber_stav::{CoZbierat, Potvrdenie};
+use tli_overlay_core::zber_stav::{CoZbierat, Podpis, Potvrdenie};
 
 use crate::denik;
 use crate::klient;
@@ -187,9 +187,10 @@ fn nastavenia_appky(app: &AppHandle) -> Nastavenia {
 fn potvrdenie(app: &AppHandle) -> Option<Potvrdenie> {
     let stav = app.state::<Stav>();
     let m = stav.potvrdena_obrazovka.lock().unwrap();
-    m.as_ref().map(|(co, kedy)| Potvrdenie {
+    m.as_ref().map(|(co, kedy, podpis)| Potvrdenie {
         co: co.clone(),
         pred_s: kedy.elapsed().as_secs(),
+        podpis: *podpis,
     })
 }
 
@@ -293,6 +294,7 @@ fn pokus_o_zber(
     app: &AppHandle,
     n: &Nastavenia,
     posledna_bola_zbierana: &mut bool,
+    smie: &dyn Fn(CoZbierat) -> bool,
 ) -> Option<CoZbierat> {
     if !pockaj_na_volnu_obrazovku(app) {
         zapocitaj_dovod(app, "panel-appky-svieti");
@@ -321,13 +323,28 @@ fn pokus_o_zber(
     }
 
     let crty = canvas_detekcia::crty(&snimok.rgb, snimok.sirka, snimok.vyska);
-    let Some(co) = tli_overlay_core::zber_stav::co_zbierat(crty.je_canvas(), potvrdenie(app).as_ref())
+    let teraz = Podpis {
+        ladovy: crty.ladovy,
+        mriezka_modra: crty.mriezka_modra,
+        mriezka_tmava: crty.mriezka_tmava,
+    };
+    let Some(co) = tli_overlay_core::zber_stav::co_zbierat(
+        crty.je_canvas(), potvrdenie(app).as_ref(), Some(teraz))
     else {
         *posledna_bola_zbierana = false;
         zapocitaj_dovod(app, "obrazovka-sa-nezbiera");
         return None;
     };
     *posledna_bola_zbierana = true;
+
+    // Denný strop sa kontroluje PRED zápisom na disk a pre TEN druh, ktorý
+    // sa naozaj rozpoznal. Keby sa kontroloval až po zápise (ako v prvej
+    // verzii TLI 70), vyčerpaný strop Canvasu by snímku stále zapísal do
+    // fronty a odosielač by ju aj tak poslal — strop by neplatil vôbec.
+    if !smie(co) {
+        zapocitaj_dovod(app, "denny-strop-vycerpany");
+        return None;
+    }
 
     let cakajucich = cakajuce(co).len();
     if !fronta::smie_pribudnut(cakajucich) {
@@ -400,6 +417,7 @@ fn pokus_o_zber(
     _app: &AppHandle,
     _n: &Nastavenia,
     posledna_bola_zbierana: &mut bool,
+    _smie: &dyn Fn(CoZbierat) -> bool,
 ) -> Option<CoZbierat> {
     *posledna_bola_zbierana = false;
     None
@@ -441,8 +459,9 @@ fn sledovac(app: AppHandle) {
 
         let cas = crate::tracker::unixovy_cas();
         // Strop je denný a per-druh; keď je vyčerpaný ten pre Canvas, doska
-        // sa ešte zbierať môže (a naopak). Pozerá sa nasucho — ktorý z nich
-        // sa reálne zaráta, sa vie až po odfotení.
+        // sa ešte zbierať môže (a naopak). Tu sa len ušetrí odfotenie, keď
+        // sú vyčerpané OBA — pre konkrétny druh rozhoduje `smie` nižšie,
+        // ešte pred zápisom na disk.
         if !denny_canvas.clone().smie_zbierat(cas) && !denny_tartarus.clone().smie_zbierat(cas) {
             zapocitaj_dovod(&app, "denny-strop-vycerpany");
             continue;
@@ -453,17 +472,18 @@ fn sledovac(app: AppHandle) {
         std::thread::sleep(Duration::from_millis(fronta::ONESKORENIE_PO_KLIKU_MS));
         posledna_kontrola = Some(Instant::now());
 
-        if let Some(co) = pokus_o_zber(&app, &n, &mut posledna_bola_zbierana) {
+        let smie_canvas = denny_canvas.clone().smie_zbierat(cas);
+        let smie_tartarus = denny_tartarus.clone().smie_zbierat(cas);
+        let smie = move |co: CoZbierat| match co {
+            CoZbierat::Canvas => smie_canvas,
+            CoZbierat::Tartarus => smie_tartarus,
+        };
+
+        if let Some(co) = pokus_o_zber(&app, &n, &mut posledna_bola_zbierana, &smie) {
             let denny = match co {
                 CoZbierat::Canvas => &mut denny_canvas,
                 CoZbierat::Tartarus => &mut denny_tartarus,
             };
-            if !denny.smie_zbierat(cas) {
-                // Doteraz sa to nestalo — strop sa kontroluje vyššie — ale
-                // keď je vyčerpaný práve TEN druh, ktorý sa odfotil, zápis
-                // sa zaráta a ďalší klik ho už chytí.
-                continue;
-            }
             denny.zapocitaj(cas);
             uloz_denny_stav(co, denny);
             if denny.zostava() == 0 {
@@ -504,10 +524,7 @@ fn kolo_odosielania(app: &AppHandle, n: &Nastavenia, co: CoZbierat, zlyhani: &mu
             let _ = std::fs::remove_file(&cesta);
             {
                 let stav = app.state::<Stav>();
-                let mut s = stav.stav_zberu.lock().unwrap();
-                let jeden = s.pre(co);
-                jeden.odoslane += 1;
-                jeden.posledna_chyba = None;
+                stav.stav_zberu.lock().unwrap().zapis_uspech(co);
             }
             denik::zapis(
                 "zber",
@@ -525,8 +542,7 @@ fn kolo_odosielania(app: &AppHandle, n: &Nastavenia, co: CoZbierat, zlyhani: &mu
             let odstup = fronta::odstup_po_zlyhani(*zlyhani);
             {
                 let stav = app.state::<Stav>();
-                let mut s = stav.stav_zberu.lock().unwrap();
-                s.pre(co).posledna_chyba = Some(e.clone());
+                stav.stav_zberu.lock().unwrap().zapis_chybu(co, &e);
             }
             denik::zapis(
                 "zber",
@@ -544,7 +560,11 @@ fn kolo_odosielania(app: &AppHandle, n: &Nastavenia, co: CoZbierat, zlyhani: &mu
 
 /// Vlákno odosielača: fronty z disku na server, jeden súbor po druhom.
 fn odosielac(app: AppHandle) {
-    let mut zlyhani: u32 = 0;
+    // Každá fronta má VLASTNÉ počítadlo zlyhaní. So spoločným by úspech
+    // jednej vynuloval backoff druhej: snímka, ktorú server trvale odmieta,
+    // by sa skúšala donekonečna v najkratšom odstupe.
+    let mut zlyhani_canvas: u32 = 0;
+    let mut zlyhani_tartarus: u32 = 0;
     loop {
         let n = nastavenia_appky(&app);
         // Vypnutý prepínač zastaví aj odosielanie — hráč, ktorý si zber
@@ -555,8 +575,9 @@ fn odosielac(app: AppHandle) {
             continue;
         }
 
-        let mut nieco_islo = kolo_odosielania(&app, &n, CoZbierat::Canvas, &mut zlyhani);
-        nieco_islo |= kolo_odosielania(&app, &n, CoZbierat::Tartarus, &mut zlyhani);
+        let mut nieco_islo =
+            kolo_odosielania(&app, &n, CoZbierat::Canvas, &mut zlyhani_canvas);
+        nieco_islo |= kolo_odosielania(&app, &n, CoZbierat::Tartarus, &mut zlyhani_tartarus);
         if !nieco_islo {
             std::thread::sleep(Duration::from_secs(ODOSIELAC_NECINNY_S));
         }

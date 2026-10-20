@@ -317,20 +317,16 @@ document.addEventListener("DOMContentLoaded", async () => {
     setInterval(obnovStavZberu, 5000);
 });
 
-/// Zloží vetu „Učenie: …" zo stavu, ktorý vráti Rust (`stav_zberu`).
-/// Samotnú vetu skladá Rust (`StavZberu::veta`, tam je aj jej test) — tu sa
-/// dopĺňa len to, čo je navyše pre človeka: posledná potvrdená obrazovka
-/// a dôvody, prečo sa prípadne nefotí.
+// Ukáže vetu „Učenie: …" zo stavu, ktorý vráti Rust (`stav_zberu`).
+// Samotnú vetu skladá Rust (`StavZberu::veta`) a posiela ju hotovú v poli
+// `veta` — JS ju zámerne NESKLADÁ druhýkrát, aby to, čo hráč naozaj vidí,
+// chránil ten istý test ako v jadre. Tu sa dopĺňa len to, čo je navyše:
+// posledná potvrdená obrazovka a dôvody, prečo sa prípadne nefotí.
 async function obnovStavZberu() {
     if (!elStavZberu) return;
     try {
         const s = await invoke("stav_zberu");
-        const kus = (meno, j) => `${meno} ${j.odoslane} odoslaných / ${j.caka} čaká`;
-        const chyba = (s.canvas.posledna_chyba || s.tartarus.posledna_chyba
-                       || s.minimapa.posledna_chyba);
-        elStavZberu.textContent =
-            `Učenie: ${kus("Canvas", s.canvas)}, ${kus("Tartarus", s.tartarus)}, `
-            + `${kus("Minimapa", s.minimapa)}, posledná chyba: ${chyba || "žiadna"}`;
+        elStavZberu.textContent = s.veta;
 
         const detaily = [];
         if (s.potvrdena_obrazovka) {

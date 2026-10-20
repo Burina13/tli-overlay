@@ -79,7 +79,12 @@ pub struct Stav {
     /// obrazovky alebo 5 min bez kliku." Platnosť je v
     /// `zber_stav::PLATNOST_POTVRDENIA_S`, „zmena obrazovky" je tým, že sem
     /// každá ďalšia analýza prepíše novú hodnotu.
-    pub potvrdena_obrazovka: Mutex<Option<(String, Instant)>>,
+    /// Trojica: názov obrazovky, kedy to server potvrdil, a ako obrazovka
+    /// v tej chvíli VYZERALA (hrubý pomer farieb). Podpis je tam preto,
+    /// že „platí do zmeny obrazovky" sa inak splniť nedá — čas sám o sebe
+    /// nevie, že hráč Canvas medzitým zavrel.
+    pub potvrdena_obrazovka:
+        Mutex<Option<(String, Instant, Option<tli_overlay_core::zber_stav::Podpis>)>>,
     /// TLI 70 (bod 5) — čo zber na pozadí odoslal, čo mu čaká a prečo
     /// prípadne nefotí. Len v pamäti; `caka` sa pri čítaní dopočíta z disku.
     pub stav_zberu: Mutex<tli_overlay_core::zber_stav::StavZberu>,

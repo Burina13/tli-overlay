@@ -1030,10 +1030,18 @@ pub(crate) fn stav_tlacidiel_mysi() -> StavMysi {
 /// Richard 20.10.2026: „Canvas je otvorený, keď posledná Ctrl+W analýza
 /// (alebo server) vrátila obrazovku canvas." Prepisuje sa pri KAŽDEJ
 /// úspešnej analýze, takže zmena obrazovky potvrdenie sama zruší.
-fn zapamataj_obrazovku(app: &AppHandle, obrazovka: &str) {
+/// `podpis` je hrubý pomer farieb TEJ snímky, ktorú server videl — bez neho
+/// by „platí do zmeny obrazovky" (zadanie) nebolo splniteľné: čas sám o sebe
+/// nevie, že hráč medzitým Canvas zavrel a odišiel bojovať do mapy.
+#[cfg(windows)]
+fn zapamataj_obrazovku(
+    app: &AppHandle,
+    obrazovka: &str,
+    podpis: Option<tli_overlay_core::zber_stav::Podpis>,
+) {
     let stav = app.state::<Stav>();
     let mut m = stav.potvrdena_obrazovka.lock().unwrap();
-    *m = Some((obrazovka.to_string(), Instant::now()));
+    *m = Some((obrazovka.to_string(), Instant::now(), podpis));
     drop(m);
     denik::zapis("zber", &format!("server potvrdil obrazovku „{obrazovka}“"));
 }
@@ -1222,6 +1230,21 @@ ak sa hra volá inak, dopíš jej názov v nastaveniach do poľa „Okno hry“.
     };
     denik::zapis("snimka", &format!("zachytená, {}x{}", snimok.sirka, snimok.vyska));
 
+    // TLI 70: podpis obrazovky (hrubý pomer farieb) sa počíta TU, nad tou
+    // istou snímkou, ktorú uvidí server. Keď server povie, čo na nej je,
+    // uloží sa dvojica „názov obrazovky + ako vyzerala" a zber na pozadí
+    // podľa toho vie, či sa medzitým obrazovka nezmenila. Je to jeden
+    // prechod vzorkovanou mriežkou bodov — zlomok milisekundy.
+    let podpis_snimky = {
+        let c = tli_overlay_core::canvas_detekcia::crty(
+            &snimok.rgb, snimok.sirka, snimok.vyska);
+        Some(tli_overlay_core::zber_stav::Podpis {
+            ladovy: c.ladovy,
+            mriezka_modra: c.mriezka_modra,
+            mriezka_tmava: c.mriezka_tmava,
+        })
+    };
+
     if snimka::je_cierna(&snimok) {
         denik::zapis("snimka", "obraz je takmer čierny (exkluzívny fullscreen?)");
         ukaz_chybu(
@@ -1276,7 +1299,7 @@ V hre prepni Nastavenia → Zobrazenie → Režim okna na „Okno bez okrajov“
                 // pozadí sa o to oprie, kým nepríde ďalšia analýza.
                 if let Ok(v) = &vysledok {
                     if v.analyza.ok {
-                        zapamataj_obrazovku(&app, &v.analyza.obrazovka);
+                        zapamataj_obrazovku(&app, &v.analyza.obrazovka, podpis_snimky);
                     }
                 }
                 match vysledok {
@@ -1636,7 +1659,7 @@ V hre prepni Nastavenia → Zobrazenie → Režim okna na „Okno bez okrajov“
                 // že ide o Frozen Canvas, je dané samotným modulom.
                 if let Ok(v) = &vysledok {
                     if v.analyza.ok {
-                        zapamataj_obrazovku(&app, "canvas");
+                        zapamataj_obrazovku(&app, "canvas", podpis_snimky);
                     }
                 }
                 match vysledok {
@@ -1726,6 +1749,10 @@ V hre prepni Nastavenia → Zobrazenie → Režim okna na „Okno bez okrajov“
                 match vysledok {
                     Ok(v) => {
                         denik::zapis("http", &format!("ceny OK, {} ms", v.trvanie_ms));
+                        // TLI 70: obrazovka trhu NIE JE nič, čo sa zbiera —
+                        // ale prepísaním potvrdenia zruší staré „canvas"/
+                        // „doska", takže zber na pozadí nemá o čo sa oprieť.
+                        zapamataj_obrazovku(&app, "trh", podpis_snimky);
                         let a = &v.analyza;
                         if let (Some(cena), Some(cbid)) = (a.p10, a.config_base_id) {
                             let tracker = app.state::<tracker::Tracker>();
@@ -3376,7 +3403,7 @@ fn stav_zberu(app: AppHandle) -> tli_overlay_core::zber_stav::StavZberu {
     let stav = app.state::<Stav>();
     let potvrdena = {
         let m = stav.potvrdena_obrazovka.lock().unwrap();
-        m.as_ref().map(|(co, kedy)| (co.clone(), kedy.elapsed().as_secs()))
+        m.as_ref().map(|(co, kedy, _)| (co.clone(), kedy.elapsed().as_secs()))
     };
     let mut s = stav.stav_zberu.lock().unwrap();
     s.canvas.caka = canvas_caka;
@@ -3384,6 +3411,7 @@ fn stav_zberu(app: AppHandle) -> tli_overlay_core::zber_stav::StavZberu {
     s.minimapa.caka = minimapa_caka;
     s.potvrdena_obrazovka = potvrdena.as_ref().map(|(c, _)| c.clone());
     s.potvrdena_pred_s = potvrdena.map(|(_, k)| k);
+    s.veta = s.veta();
     s.clone()
 }
 

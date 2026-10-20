@@ -61,7 +61,11 @@ async function pockajNaInit() {
     for (let i = 0; i < 6; i++) await new Promise((r) => setTimeout(r, 0));
 }
 
-test("veta má tvar zo zadania a ukáže poslednú chybu", async (t) => {
+test("veta sa ukáže presne tak, ako ju zložil Rust", async (t) => {
+    // JS vetu ZÁMERNE neskladá — `StavZberu::veta` je otestovaná v jadre
+    // a toto overuje, že sa naozaj použije tá hotová.
+    const VETA = "Učenie: Canvas 12 odoslaných / 3 čaká, Tartarus 1 odoslaných / 0 čaká, "
+        + "Minimapa 0 odoslaných / 1488 čaká, posledná chyba: Server má poruchu";
     const { document, dom } = postav({
         canvas: { odoslane: 12, caka: 3, posledna_chyba: null },
         tartarus: { ...PRAZDNY, odoslane: 1 },
@@ -69,15 +73,13 @@ test("veta má tvar zo zadania a ukáže poslednú chybu", async (t) => {
         dovody: {},
         potvrdena_obrazovka: "canvas",
         potvrdena_pred_s: 7,
+        posledna_chyba: "Server má poruchu",
+        veta: VETA,
     });
     t.after(() => dom.window.close());
     await pockajNaInit();
 
-    assert.equal(
-        document.getElementById("stav-zberu").textContent,
-        "Učenie: Canvas 12 odoslaných / 3 čaká, Tartarus 1 odoslaných / 0 čaká, "
-        + "Minimapa 0 odoslaných / 1488 čaká, posledná chyba: Server má poruchu",
-    );
+    assert.equal(document.getElementById("stav-zberu").textContent, VETA);
     assert.match(document.getElementById("stav-zberu-detail").textContent,
                  /obrazovku „canvas“ \(pred 7 s\)/);
 });
@@ -86,6 +88,9 @@ test("bez chyby sa napíše „žiadna“, nie prázdno", async (t) => {
     const { document, dom } = postav({
         canvas: { ...PRAZDNY }, tartarus: { ...PRAZDNY }, minimapa: { ...PRAZDNY },
         dovody: {}, potvrdena_obrazovka: null, potvrdena_pred_s: null,
+        posledna_chyba: null,
+        veta: "Učenie: Canvas 0 odoslaných / 0 čaká, Tartarus 0 odoslaných / 0 čaká, "
+            + "Minimapa 0 odoslaných / 0 čaká, posledná chyba: žiadna",
     });
     t.after(() => dom.window.close());
     await pockajNaInit();
@@ -100,6 +105,7 @@ test("dôvody, prečo sa nefotilo, sú vidieť a zoradené od najčastejšieho",
         canvas: { ...PRAZDNY }, tartarus: { ...PRAZDNY }, minimapa: { ...PRAZDNY },
         dovody: { "obrazovka-sa-nezbiera": 2, "hra-nie-je-v-popredi": 9 },
         potvrdena_obrazovka: "doska", potvrdena_pred_s: 400,
+        posledna_chyba: null, veta: "Učenie: …",
     });
     t.after(() => dom.window.close());
     await pockajNaInit();

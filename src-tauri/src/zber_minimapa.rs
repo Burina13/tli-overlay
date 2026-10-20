@@ -408,9 +408,7 @@ fn odosielac(app: AppHandle, dost_dat: Arc<Mutex<fronta::DostDatStav>>) {
                     // TLI 70, bod 5 — nech hráč v Nastaveniach vidí, že
                     // sa fronta naozaj posiela.
                     let stav = app.state::<Stav>();
-                    let mut s = stav.stav_zberu.lock().unwrap();
-                    s.minimapa.odoslane += 1;
-                    s.minimapa.posledna_chyba = None;
+                    stav.stav_zberu.lock().unwrap().zapis_uspech_minimapy();
                 }
                 denik::zapis(
                     "minimapa",
@@ -423,8 +421,7 @@ fn odosielac(app: AppHandle, dost_dat: Arc<Mutex<fronta::DostDatStav>>) {
                 let odstup = fronta::odstup_po_zlyhani(zlyhani);
                 {
                     let stav = app.state::<Stav>();
-                    let mut s = stav.stav_zberu.lock().unwrap();
-                    s.minimapa.posledna_chyba = Some(e.clone());
+                    stav.stav_zberu.lock().unwrap().zapis_chybu_minimapy(&e);
                 }
                 denik::zapis(
                     "minimapa",
