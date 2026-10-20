@@ -212,8 +212,13 @@ impl Default for Nastavenia {
 ///
 /// Bezpečnostne sa tým nič nestráca: prevádzka na loopback adresu z počítača
 /// NIKDY neodíde, takže ju nemá kto odpočúvať. Výnimka je zámerne úzka —
-/// `127.0.0.1`, `[::1]` a `localhost`, nič iné. `http://192.168.0.5` ani
-/// `http://localhost.utocnik.sk` cez ňu NEPREJDÚ.
+/// hostiteľ musí byť presne `127.0.0.1`, `[::1]` alebo `localhost`, nič iné;
+/// adresa v LAN ani meno, ktoré sa na `localhost` len končí, cez ňu NEPREJDÚ
+/// (testy v tomto súbore to overujú menovite).
+///
+/// Pozn.: v tomto komentári zámerne nie sú celé adresy aj so schémou —
+/// `ci.yml` § „Updater pozná len náš latest-tli.json" prehľadáva NETESTOVÝ kód
+/// na cudzie URL a je to poistka, ktorú netreba obchádzať kvôli príkladu.
 pub fn je_lokalna_slucka(url: &str) -> bool {
     let Some(zvysok) = url.strip_prefix("http://") else {
         return false;
