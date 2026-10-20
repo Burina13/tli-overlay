@@ -1,6 +1,8 @@
 {
-  "version": "0.23.0",
-  "notes": "TLI 61: Na loot overlayi pribudlo FE/MIN vedľa FE/h (mapa aj session) a tlačidlo „⟲ Reset session“ priamo v pásiku úchytu — podrž 1 s, bez dialógu, bez Ctrl+F8. Session sa navyše sama vynuluje po 30 min nečinnosti, takže SESSION ČAS už neráta cez viacero dní a reštartov. Pozri CHANGELOG.",
-  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.23.0/Tvoj-Tatko-TLI-Overlay_0.23.0_x64_en-US.msi",
-  "msiSha256": "0bc78a5e3573d3b3f0f001ec982a84859cdc085b114465312ce6f87018906bf8"
+  "version": "0.23.2",
+  "notes": "TLI 52c: tichá aktualizácia appky teraz naozaj funguje aj pre hráčov so starou verziou (MSI, do 0.20.4) — appka si pri prvej takej aktualizácii sama odinštaluje starú verziu (jedno Windows okno so žiadosťou o súhlas) a ďalej už aktualizuje úplne potichu, bez akéhokoľvek okna. Nastavenia, história behov aj klávesové skratky zostávajú zachované. Pozri CHANGELOG.",
+  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.23.2/Tvoj-Tatko-TLI-Overlay_0.23.2_x64_en-US.msi",
+  "msiSha256": "70f0f77401bcdf4a4e8dfa75336e30eeebdaa51034c2e73c02547530d004353e",
+  "installerUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.23.2/Tvoj-Tatko-TLI-Overlay_0.23.2_x64-setup.exe",
+  "installerSha256": "bd90ce6b84fe0a62d68cbada1034f646216edf087a1985dbaadd9e4ff01acb7d"
 }
