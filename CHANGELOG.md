@@ -2,6 +2,65 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.25.2 — 20.10.2026 (TLI 67 — rada sa po kliku skryje vždy; migrácia zo starej MSI)
+
+**Chyba, ktorú Richard nahlásil 20.10.2026 o 11:53: „Prečo mi teraz po kliknutí
+nezmizol overlay?"** Panel s radou pre dosku Tartarusu ostal visieť nad hrou,
+hoci rovnaké panely pri `Objective` a pri výbere nástroja predtým zmizli
+správne. Príčina **nebola viazaná na typ obrazovky** — cesta v kóde je pre
+všetky (doska, nástroj, poklad, objective, poradca, Frozen Canvas aj chyba)
+jedna a tá istá. Bolo to ČASOVANIE a boli to dve nezávislé chyby naraz:
+
+1. **Sledovanie kliku sa armovalo neskoro.** Spúšťalo sa až po kontrole, či sa
+   panel naozaj dostal na obrazovku (TLI 40/44) — a tá obsahuje jedno až dve
+   čakania po 400 ms plus dve odfotenia celého okna hry, teda 0,4–1,6 s. Každý
+   klik v tom čase sa stratil a rada potom čakala na DRUHÝ klik. Prejavovalo sa
+   to hlavne pri doske, kde appka zvýrazní tlačidlo, ktoré hráč aj tak chcel
+   stlačiť, takže klikne hneď; pri kartičkách si ich najprv prečíta.
+   Teraz sa sledovanie armuje v tej istej chvíli, ako sa rada zobrazí, a
+   kontrola prezentácie beží až po ňom (a keď panel medzitým zhasne, preskočí
+   sa, nech do denníka nepíše zavádzajúce „frame prezentovaný: NIE").
+2. **Krátky klik sa dal minúť.** Stav tlačidiel sa čítal každých 25 ms a len
+   cez „tlačidlo je práve dole" — klik kratší než jeden odber teda appka
+   nevidela vôbec. Odber je odteraz každých 10 ms a okrem toho sa číta aj
+   „stlačené od posledného odberu". Dozvuk kliku spred zobrazenia rady sa
+   naďalej nepočíta (zadanie: klik počas „analyzujem/odosielam" sa neráta).
+
+**Pravidlo je teraz pre všetky rady a zvýraznenia rovnaké:** zhasnú pri PRVOM
+kliku, pri Esc, alebo po 120 sekundách. Rámiky ciel na doske aj dvojice rámikov
+na Frozen Canvase sú súčasťou toho istého okna ako panel, takže miznú spolu
+s ním.
+
+**Denník odteraz píše, že sledovanie naozaj beží** („sledujem klik (skryje sa
+pri prvom kliku, Esc, alebo o 120 s)"). Presne tento riadok 20.10. chýbal a bez
+neho sa z logu nedalo rozlíšiť, či sa sledovanie nespustilo, alebo spustilo
+a klik minulo.
+
+**Frozen Canvas ide konečne tou istou cestou ako ostatné výsledky.** Bol
+jediný, ktorý emitoval výsledok priamo, teda bez pulzu, ktorým sa budí WebView2
+(TLI 44), a bez druhého poslania polohy panela.
+
+**Migrácia zo starej MSI (TLI 52c) opravená.** Na Richardovom PC ostali po
+aktualizácii na 0.24.0 nainštalované OBE verzie — stará perMachine 0.21.1
+v `Program Files` aj nová perUser v `AppData\Local`. Hook bežal, ale:
+`msiexec /X{GUID} /qn` z neelevovaného inštalátora UAC **nevyvolá** a tiché
+odinštalovanie perMachine produktu zlyhá; a marker „už sme to skúšali" sa
+zapisoval aj po neúspechu, takže sa to nemalo ako zopakovať. Odteraz sa
+o eleváciu žiada výslovne (`runas` — jedno UAC okno), úspech sa overuje
+prečítaním registra (nie návratovým kódom) a marker sa zapíše len po skutočnom
+odinštalovaní; inak sa to skúsi pri nasledujúcej aktualizácii. Marker má nové
+meno, takže stroj, kde starý pokus zlyhal, dostane ešte jednu šancu. Zvyšné
+zástupce po starej verzii (pre všetkých používateľov) sa zmažú a autostart,
+ak ho hráč mal, sa prepíše na novú appku.
+
+K tomu dve poistky z review diffu (druhý názor cez API kredit): hook si teraz
+výslovne prepína pohľad na register (`SetRegView 64`/`32`) — NSIS je
+32-bitový proces, takže bez toho sa `HKLM\SOFTWARE\…` ticho presmeruje do
+`WOW6432Node` a 64-bitová vetva, kam sa x64 MSI zapisuje, by sa nemusela
+prehľadať vôbec. A pokusy o odinštalovanie sú zastropované na **tri**: hráč
+bez práv správcu by inak dostával UAC okno pri každej tichej aktualizácii
+donekonečna, teda typicky uprostred hry.
+
 ## 0.25.1 — 20.10.2026 (TLI 65 — `http://` na lokálnu slučku, core-0.17.1)
 
 `Nastavenia::chyba_konfiguracie()` odteraz prepustí `http://` adresu servera,

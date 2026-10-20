@@ -603,9 +603,19 @@ fn vyhodnot_prezentaciu(podiel: Option<f64>) -> VysledokPrezentacie {
 /// TLI 40) ešte raz a po rovnakom oneskorení overí znova. Je to fallback pre
 /// prípad, že by WebView2 zaspalo aj NAPRIEK pulzu v `zobraz_vysledok` — appka
 /// vtedy neostane ticho stáť pri známom zlyhaní, skúsi sa prebrať sama.
+///
+/// TLI 67: berie aj `znacka` zobrazenia. Odkedy sa sledovanie kliku armuje
+/// PRED týmto overením (nie po ňom), môže hráč stihnúť kliknúť ešte počas
+/// `sleep`-u nižšie — panel vtedy správne zhasne a overovať jeho prezentáciu
+/// už nemá zmysel (odfotili by sme hru bez panela a zapísali zavádzajúce
+/// „frame prezentovaný: NIE" aj s ďalším zbytočným budením WebView2).
 #[cfg(windows)]
-fn over_prezentaciu(app: &AppHandle, obdlznik: &OknoFyz, pred: &[u8], zdroj: &'static str) {
+fn over_prezentaciu(app: &AppHandle, obdlznik: &OknoFyz, pred: &[u8], zdroj: &'static str, znacka: Instant) {
     std::thread::sleep(std::time::Duration::from_millis(OVERENIE_PREZENTACIE_ONESKORENIE_MS));
+    if *app.state::<Stav>().zobrazene_od.lock().unwrap() != Some(znacka) {
+        denik::zapis("zobraz", "overenie prezentácie preskočené — panel medzitým zhasol");
+        return;
+    }
     let podiel = match zmena_oproti(obdlznik, pred) {
         Ok(podiel) => podiel,
         Err(e) => {
@@ -635,6 +645,13 @@ skúšam fallback aktiváciu",
                     podiel.unwrap_or(0.0) * 100.0
                 ),
             );
+            // TLI 67: medzi kontrolou vyššie a týmto miestom je jedno
+            // odfotenie okna hry — hráč doň stihne kliknúť a panel správne
+            // zhasne. Budiť potom WebView2 v skrytom okne nemá zmysel.
+            if *app.state::<Stav>().zobrazene_od.lock().unwrap() != Some(znacka) {
+                denik::zapis("zobraz", "fallback aktivácia preskočená — panel medzitým zhasol");
+                return;
+            }
             // TLI 44, bod 2: presne tá istá poistka ako pri prvom zobrazení
             // (`aktivuj_a_vrat_fokus`, TLI 40), skúsená ešte raz — pre prípad,
             // že by WebView2 zaspalo aj NAPRIEK pulzu v `zobraz_vysledok`.
@@ -642,6 +659,10 @@ skúšam fallback aktiváciu",
                 aktivuj_a_vrat_fokus(&overlay);
             }
             std::thread::sleep(std::time::Duration::from_millis(OVERENIE_PREZENTACIE_ONESKORENIE_MS));
+            if *app.state::<Stav>().zobrazene_od.lock().unwrap() != Some(znacka) {
+                denik::zapis("zobraz", "overenie prezentácie po fallbacku preskočené — panel medzitým zhasol");
+                return;
+            }
             match zmena_oproti(obdlznik, pred) {
                 Ok(podiel2) => denik::zapis(
                     "zobraz",
@@ -667,7 +688,7 @@ skúšam fallback aktiváciu",
 }
 
 #[cfg(not(windows))]
-fn over_prezentaciu(_app: &AppHandle, _obdlznik: &OknoFyz, _pred: &[u8], _zdroj: &'static str) {}
+fn over_prezentaciu(_app: &AppHandle, _obdlznik: &OknoFyz, _pred: &[u8], _zdroj: &'static str, _znacka: Instant) {}
 
 /// Postaví overlay presne nad okno hry a ukáže ho. Pozícia aj veľkosť idú vo
 /// FYZICKÝCH pixeloch — logické by sa na monitore so 150 % DPI rozišli s hrou.
@@ -883,10 +904,16 @@ fn naplanuj_skrytie(app: AppHandle, znacka: Instant, sekundy: u64) {
 /// vstup než myš), ostal by panel nad hrou svietiť navždy.
 const SKRYTIE_KLIKOM_POISTKA_S: u64 = 120;
 
-/// Ako často sa pýtame Windowsu na stav tlačidiel myši. 25 ms je pod prahom
-/// postrehnuteľnosti a stojí rádovo nič — `GetAsyncKeyState` je len čítanie
-/// stavovej tabuľky, nie práca so vstupnou frontou.
-const KROK_POLLINGU_MS: u64 = 25;
+/// Ako často sa pýtame Windowsu na stav tlačidiel myši. `GetAsyncKeyState` je
+/// len čítanie stavovej tabuľky, nie práca so vstupnou frontou, takže to stojí
+/// rádovo nič.
+///
+/// TLI 67: znížené z 25 ms na 10 ms. Pri 25 ms sa dal krátky klik (stlačenie
+/// a pustenie medzi dvoma odbermi) minúť úplne — a panel potom čakal na
+/// DRUHÝ klik, presne ako to 20.10.2026 videl Richard pri doske. Samotné
+/// zrýchlenie by ale nestačilo, preto sa k vysokému bitu pridáva ešte nízky
+/// („stlačené od posledného odberu", `StavMysi::stlacene_odvtedy`).
+const KROK_POLLINGU_MS: u64 = 10;
 
 /// Fáza čakania na klik. Rozdelené na dve preto, že overlay sa často zobrazí
 /// PRÁVE počas kliku (hráč klikne na položku v tray menu „Odfotiť teraz",
@@ -901,16 +928,43 @@ pub(crate) enum FazaKliku {
     CakamNaStlacenie,
 }
 
+/// Jeden odber stavu tlačidiel myši (TLI 67).
+///
+/// Dve polia preto, že `GetAsyncKeyState` vracia dve nezávislé informácie a
+/// samotná prvá na spoľahlivé zachytenie kliku nestačí: hráč vie stlačiť a
+/// pustiť tlačidlo rýchlejšie, než je jeden krok pollingu, a vtedy je
+/// `dole` pri KAŽDOM odbere `false`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) struct StavMysi {
+    /// Vysoký bit — niektoré tlačidlo je PRÁVE dole.
+    pub dole: bool,
+    /// Nízky bit — od predošlého odberu niektoré tlačidlo stlačené BOLO, aj
+    /// keď je už zase hore. Je to „best effort": bit si Windows nuluje pri
+    /// každom čítaní, takže oň súperí aj vlákno zberu (`zber_canvas`). Preto
+    /// sa používa len ako DOPLNOK k `dole`, nikdy ako jediný zdroj — keď ho
+    /// stihne prečítať niekto iný, klik zachytí vysoký bit pri 10 ms odbere.
+    pub stlacene_odvtedy: bool,
+}
+
 /// Jeden krok stavového automatu: vráti novú fázu a `true`, keď sa má skryť.
 ///
 /// Oddelené od Windows API zámerne — takto sa dá otestovať na Linuxe v CI
 /// (rovnaký vzor ako `hotkey_debounovany`), bez myši a bez `GetAsyncKeyState`.
-pub(crate) fn krok_cakania_na_klik(faza: FazaKliku, stlacene: bool) -> (FazaKliku, bool) {
-    match (faza, stlacene) {
-        (FazaKliku::CakamNaPustenie, true) => (FazaKliku::CakamNaPustenie, false),
-        (FazaKliku::CakamNaPustenie, false) => (FazaKliku::CakamNaStlacenie, false),
-        (FazaKliku::CakamNaStlacenie, true) => (FazaKliku::CakamNaStlacenie, true),
-        (FazaKliku::CakamNaStlacenie, false) => (FazaKliku::CakamNaStlacenie, false),
+pub(crate) fn krok_cakania_na_klik(faza: FazaKliku, m: StavMysi) -> (FazaKliku, bool) {
+    match faza {
+        // Vo fáze „čakám na pustenie" sa nízky bit ZÁMERNE ignoruje — je to
+        // dozvuk kliku, ktorý padol ešte pred zobrazením rady (zadanie TLI 67:
+        // „klik, ktorý padne počas analyzujem/odosielam, sa nepočíta").
+        FazaKliku::CakamNaPustenie => {
+            if m.dole {
+                (FazaKliku::CakamNaPustenie, false)
+            } else {
+                (FazaKliku::CakamNaStlacenie, false)
+            }
+        }
+        FazaKliku::CakamNaStlacenie => {
+            (FazaKliku::CakamNaStlacenie, m.dole || m.stlacene_odvtedy)
+        }
     }
 }
 
@@ -928,14 +982,31 @@ pub(crate) fn krok_cakania_na_klik(faza: FazaKliku, stlacene: bool) -> (FazaKlik
 /// „hook nič neblokuje").
 #[cfg(windows)]
 pub(crate) fn tlacidlo_mysi_dole() -> bool {
+    stav_tlacidiel_mysi().dole
+}
+
+/// Jeden odber oboch bitov naraz (TLI 67).
+///
+/// Vysoký bit = tlačidlo je PRÁVE dole. Nízky bit = „stlačené od posledného
+/// volania"; do TLI 67 sa zámerne nepoužíval, lebo si ho Windows pri každom
+/// čítaní nuluje a súperia oň aj iné vlákna. Lenže bez neho sa krátky klik
+/// medzi dvoma odbermi STRATÍ ÚPLNE a panel čaká na druhý klik — to je presne
+/// chyba, ktorú Richard nahlásil 20.10.2026. Preto sa teraz číta aj on, ale
+/// len ako doplnok: keď ho stihne zobrať niekto iný, klik zachytí vysoký bit.
+#[cfg(windows)]
+pub(crate) fn stav_tlacidiel_mysi() -> StavMysi {
     use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON, VK_RBUTTON};
-    // Vysoký bit = klávesa/tlačidlo je PRÁVE dole. Nízky bit („stlačené od
-    // posledného volania") sa zámerne nepoužíva — ten si Windows nuluje pri
-    // každom čítaní, takže by sa oň pretekali iné procesy aj naše vlastné
-    // vlákno a stlak by sa občas stratil.
-    unsafe {
-        (GetAsyncKeyState(VK_LBUTTON.0 as i32) as u16 & 0x8000) != 0
-            || (GetAsyncKeyState(VK_RBUTTON.0 as i32) as u16 & 0x8000) != 0
+    // BEZPECNOST: len CITANIE stavovej tabulky klaves — ziadny hook, ziadna
+    // simulacia vstupu, do cesty kliku sa nevstupuje (pozri komentar vyssie).
+    let (l, r) = unsafe {
+        (
+            GetAsyncKeyState(VK_LBUTTON.0 as i32) as u16,
+            GetAsyncKeyState(VK_RBUTTON.0 as i32) as u16,
+        )
+    };
+    StavMysi {
+        dole: (l & 0x8000) != 0 || (r & 0x8000) != 0,
+        stlacene_odvtedy: (l & 0x0001) != 0 || (r & 0x0001) != 0,
     }
 }
 
@@ -944,6 +1015,11 @@ pub(crate) fn tlacidlo_mysi_dole() -> bool {
 #[cfg(not(windows))]
 pub(crate) fn tlacidlo_mysi_dole() -> bool {
     false
+}
+
+#[cfg(not(windows))]
+pub(crate) fn stav_tlacidiel_mysi() -> StavMysi {
+    StavMysi::default()
 }
 
 /// Overlay ostane svietiť, kým hráč neklikne (ľavým alebo pravým tlačidlom
@@ -956,7 +1032,11 @@ fn naplanuj_skrytie_po_kliku(app: AppHandle, znacka: Instant) {
     std::thread::spawn(move || {
         let zaciatok = Instant::now();
         let poistka = std::time::Duration::from_secs(SKRYTIE_KLIKOM_POISTKA_S);
-        let mut faza = if tlacidlo_mysi_dole() {
+        // Prvý odber je ZÁROVEŇ vyprázdnenie nízkeho bitu: keby v ňom ostal
+        // dozvuk kliku spred zobrazenia rady (hráč klikal, kým appka
+        // analyzovala), panel by zhasol hneď v prvom kroku slučky. Z tohto
+        // jediného odberu sa preto berie len `dole`.
+        let mut faza = if stav_tlacidiel_mysi().dole {
             FazaKliku::CakamNaPustenie
         } else {
             FazaKliku::CakamNaStlacenie
@@ -971,7 +1051,7 @@ fn naplanuj_skrytie_po_kliku(app: AppHandle, znacka: Instant) {
                 skry(&app, "timeout");
                 return;
             }
-            let (nova, skryt) = krok_cakania_na_klik(faza, tlacidlo_mysi_dole());
+            let (nova, skryt) = krok_cakania_na_klik(faza, stav_tlacidiel_mysi());
             faza = nova;
             if skryt {
                 skry(&app, "klik");
@@ -984,11 +1064,22 @@ fn naplanuj_skrytie_po_kliku(app: AppHandle, znacka: Instant) {
 
 /// Naplánuje skrytie podľa nastavenia hráča (TLI 58): buď čaká na klik myšou
 /// (predvolené), alebo odpočítava `autoskrytie_s` sekúnd ako doteraz.
+///
+/// TLI 67: zapisuje do denníka, že sledovanie naozaj BEŽÍ. Keď sa 20.10.2026
+/// panel dosky po kliku neschoval, z logu sa nedalo zistiť, či sa sledovanie
+/// vôbec spustilo, alebo spustilo a klik minulo — chýbal práve tento riadok.
 fn naplanuj_skrytie_podla_nastavenia(app: AppHandle, znacka: Instant, n: &Nastavenia) {
     if n.skryt_radu_klikom {
+        denik::zapis(
+            "zobraz",
+            &format!("sledujem klik (skryje sa pri prvom kliku, Esc, alebo o {SKRYTIE_KLIKOM_POISTKA_S} s)"),
+        );
         naplanuj_skrytie_po_kliku(app, znacka);
-    } else {
+    } else if n.autoskrytie_s > 0 {
+        denik::zapis("zobraz", &format!("zhasne sám o {} s", n.autoskrytie_s));
         naplanuj_skrytie(app, znacka, n.autoskrytie_s);
+    } else {
+        denik::zapis("zobraz", "nezhasne sám (autoskrytie_s=0, zostáva Esc a hotkey)");
     }
 }
 
@@ -1540,8 +1631,22 @@ V hre prepni Nastavenia → Zobrazenie → Režim okna na „Okno bez okrajov“
                             .collect();
 
                         let (sirka_log, vyska_log) = suradnice::logicka_velkost(&obdlznik, mierka);
-                        let _ = app.emit(
-                            "stav",
+                        // TLI 67: Frozen Canvas bol JEDINÝ výsledok, ktorý
+                        // obchádzal `zobraz_vysledok` a emitoval `stav` priamo
+                        // — teda bez pulzu, ktorým sa budí WebView2 (TLI 44),
+                        // a bez druhého poslania polohy panela. Odteraz ide tou
+                        // istou cestou ako doska a kartičky; rámiky na plátne
+                        // sú súčasťou toho istého okna `overlay`, takže ich
+                        // skrýva ten istý klik ako panel.
+                        denik::zapis(
+                            "zobraz",
+                            &format!("canvas: {} krokov, emitujem stav=hotovo_canvas", kroky.len()),
+                        );
+                        zobraz_vysledok(
+                            &app,
+                            PANEL_CANVAS,
+                            &obdlznik,
+                            mierka,
                             json!({
                                 "faza": "hotovo_canvas",
                                 "analyza": v.analyza,
@@ -1606,8 +1711,20 @@ V hre prepni Nastavenia → Zobrazenie → Režim okna na „Okno bez okrajov“
 
         let znacka = *app.state::<Stav>().zobrazene_od.lock().unwrap();
         if let Some(znacka) = znacka {
-            over_prezentaciu(&app, &obdlznik, &snimok.rgb, zdroj);
+            // TLI 67 — PORADIE JE PODSTATA OPRAVY, NEPREHADZUJ TO SPÄŤ.
+            // Do 20.10.2026 sa sledovanie kliku armovalo až PO
+            // `over_prezentaciu`, teda o 0,4–1,6 s neskôr (jeden až dva
+            // `sleep`-y po 400 ms plus dve odfotenia a porovnanie celého okna
+            // hry). Každý klik v tom okne sa stratil a rada potom čakala na
+            // DRUHÝ klik. Prejavilo sa to presne tam, kde hráč klikne hneď —
+            // pri doske, kde appka zvýrazní tlačidlo, ktoré aj tak chcel
+            // stlačiť; pri `objective`/`nastroj` si kartičky najprv prečíta,
+            // takže sa do mŕtveho okna netrafil a skrývanie „fungovalo".
+            // Cesta v kóde je pre všetky stavy JEDNA A TÁ ISTÁ (doska,
+            // nástroj, poklad, objective, poradca, canvas, chyba) — nebolo to
+            // teda viazané na `hotovo_*`, len na časovanie.
             naplanuj_skrytie_podla_nastavenia(app.clone(), znacka, &nastavenia);
+            over_prezentaciu(&app, &obdlznik, &snimok.rgb, zdroj, znacka);
         }
 
         // TLI 41: požiadavka zdržaná počas tohto behu (pozri `cakajuci_dalsi`
@@ -3716,12 +3833,29 @@ mod testy {
 
     // ── krok_cakania_na_klik (TLI 58) ──────────────────────────────────────
 
-    /// Pomocník: prehrá postupnosť stavov tlačidla a vráti, po koľkých
-    /// krokoch sa panel skryl (`None` = nikdy).
+    /// Pomocník: prehrá postupnosť stavov tlačidla (len vysoký bit, nízky
+    /// nikde) a vráti, po koľkých krokoch sa panel skryl (`None` = nikdy).
     fn prehraj(start: FazaKliku, stavy: &[bool]) -> Option<usize> {
         let mut faza = start;
-        for (i, stlacene) in stavy.iter().enumerate() {
-            let (nova, skryt) = krok_cakania_na_klik(faza, *stlacene);
+        for (i, dole) in stavy.iter().enumerate() {
+            let (nova, skryt) =
+                krok_cakania_na_klik(faza, StavMysi { dole: *dole, stlacene_odvtedy: false });
+            faza = nova;
+            if skryt {
+                return Some(i);
+            }
+        }
+        None
+    }
+
+    /// To isté, ale s oboma bitmi — `(dole, stlacene_odvtedy)` na odber.
+    fn prehraj_oba(start: FazaKliku, stavy: &[(bool, bool)]) -> Option<usize> {
+        let mut faza = start;
+        for (i, (dole, odvtedy)) in stavy.iter().enumerate() {
+            let (nova, skryt) = krok_cakania_na_klik(
+                faza,
+                StavMysi { dole: *dole, stlacene_odvtedy: *odvtedy },
+            );
             faza = nova;
             if skryt {
                 return Some(i);
@@ -3761,11 +3895,72 @@ mod testy {
     /// Po pustení sa fáza už nevracia — druhé „hore" nesmie automat zresetovať.
     #[test]
     fn opakovane_hore_drzi_fazu_cakania_na_stlacenie() {
-        let (f1, _) = krok_cakania_na_klik(FazaKliku::CakamNaPustenie, false);
+        let (f1, _) = krok_cakania_na_klik(FazaKliku::CakamNaPustenie, StavMysi::default());
         assert_eq!(f1, FazaKliku::CakamNaStlacenie);
-        let (f2, skryt) = krok_cakania_na_klik(f1, false);
+        let (f2, skryt) = krok_cakania_na_klik(f1, StavMysi::default());
         assert_eq!(f2, FazaKliku::CakamNaStlacenie);
         assert!(!skryt);
+    }
+
+    // ── TLI 67: krátky klik a dozvuk kliku spred zobrazenia rady ───────────
+
+    /// JADRO OPRAVY TLI 67. Klik kratší než jeden krok pollingu — vysoký bit
+    /// nie je dole ani v jednom odbere, zachytí ho len nízky („stlačené od
+    /// posledného odberu"). Do TLI 67 sa taký klik stratil a rada ostala nad
+    /// hrou svietiť, kým hráč neklikol druhý raz.
+    #[test]
+    fn kratky_klik_medzi_odbermi_sa_nestrati() {
+        assert_eq!(
+            prehraj_oba(
+                FazaKliku::CakamNaStlacenie,
+                &[(false, false), (false, true), (false, false)]
+            ),
+            Some(1)
+        );
+    }
+
+    /// Opak predošlého testu: nízky bit sa NESMIE brať, kým sa čaká na
+    /// pustenie. Vtedy je to dozvuk kliku, ktorý padol ešte počas
+    /// „analyzujem/odosielam" — zadanie hovorí, že sa nepočíta.
+    #[test]
+    fn dozvuk_kliku_spred_zobrazenia_panel_nezhasne() {
+        // dole + nízky bit (hráč práve klikol), potom pustené, potom ticho
+        assert_eq!(
+            prehraj_oba(
+                FazaKliku::CakamNaPustenie,
+                &[(true, true), (false, true), (false, false), (false, false)]
+            ),
+            None
+        );
+    }
+
+    /// A po pustení už prvý NOVÝ klik zhasne — dozvuk sa ignoruje, nie
+    /// celé sledovanie.
+    #[test]
+    fn po_dozvuku_prvy_novy_klik_zhasne() {
+        assert_eq!(
+            prehraj_oba(
+                FazaKliku::CakamNaPustenie,
+                &[(true, true), (false, true), (false, false), (true, false)]
+            ),
+            Some(3)
+        );
+    }
+
+    /// Oba bity naraz (bežný dosť dlhý klik) je tiež klik, nie dvojitý.
+    #[test]
+    fn oba_bity_naraz_je_jeden_klik() {
+        assert_eq!(
+            prehraj_oba(FazaKliku::CakamNaStlacenie, &[(false, false), (true, true)]),
+            Some(1)
+        );
+    }
+
+    /// Polling musí byť dosť hustý na bežný ľudský klik (~30 ms a viac).
+    /// Pri 25 ms sa klik mohol minúť celý; 10 ms dáva aspoň tri odbery.
+    #[test]
+    fn polling_je_dost_husty_na_ludsky_klik() {
+        assert!(KROK_POLLINGU_MS <= 10, "krok pollingu je {KROK_POLLINGU_MS} ms");
     }
 
     /// Poistka musí byť kratšia než „navždy" a dlhšia než bežné prečítanie

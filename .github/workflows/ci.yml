@@ -80,6 +80,53 @@ jobs:
               sys.exit(1)
           print("OK — žiadny cudzí endpoint.")
           PY
+      - name: Rada sa skrýva rovnako vo všetkých stavoch (TLI 67)
+        run: |
+          # 20.10.2026 ostal panel dosky visieť nad hrou po kliku, kým panely
+          # `objective`/`nastroj` zhasli správne. Príčina nebola v type
+          # obrazovky — bolo to časovanie. Tento krok drží obe veci, ktoré sa
+          # vtedy opravili, aby sa nedali nenápadne vrátiť:
+          #  (a) KAŽDÝ hotový výsledok ide cez `zobraz_vysledok` (tým aj cez
+          #      rovnaké prebudenie WebView2 a rovnakú polohu panela),
+          #  (b) sledovanie kliku sa armuje PRED overením prezentácie, nie po
+          #      ňom — po ňom by sa stratil každý klik v prvej ~1,6 s.
+          python3 - <<'PY'
+          import pathlib, re, sys
+          zdroj = pathlib.Path("src-tauri/src/main.rs").read_text(encoding="utf-8")
+          riadky = zdroj.splitlines()
+          chyby = []
+
+          # (a) každý `"faza": "hotovo…"` musí patriť volaniu `zobraz_vysledok(`.
+          #     Výnimka: `test_overlay` (tray → „Test overlayu") si sledovanie
+          #     armuje sám hneď za emitom, nie je to cesta reálnej analýzy.
+          vynimky = {"test_overlay"}
+          for i, r in enumerate(riadky):
+              if not re.search(r'"faza"\s*:\s*"hotovo', r):
+                  continue
+              volanie = funkcia = None
+              for j in range(i, -1, -1):
+                  if volanie is None and re.search(r"(zobraz_vysledok\(|app\.emit\(|emit_to\()", riadky[j]):
+                      volanie = riadky[j].strip()
+                  m = re.match(r"(?:pub(?:\(crate\))? )?fn (\w+)", riadky[j])
+                  if m:
+                      funkcia = m.group(1)
+                      break
+              if funkcia in vynimky:
+                  continue
+              if volanie is None or "zobraz_vysledok(" not in volanie:
+                  chyby.append(f"main.rs:{i+1}: {r.strip()} nejde cez zobraz_vysledok() (fn {funkcia})")
+
+          # (b) poradie v chvoste `spusti_analyzu`
+          a = zdroj.find("naplanuj_skrytie_podla_nastavenia(app.clone(), znacka, &nastavenia);\n            over_prezentaciu(")
+          if a < 0:
+              chyby.append("v spusti_analyzu sa sledovanie kliku nearmuje PRED over_prezentaciu()")
+
+          if chyby:
+              print("::error::TLI 67 — skrývanie rady sa rozišlo medzi stavmi:")
+              print("\n".join(chyby))
+              sys.exit(1)
+          print("OK — všetky stavy sa skrývajú rovnako.")
+          PY
       - name: Manifest latest-tli.json je platný JSON a ukazuje na nás
         run: |
           python3 - <<'PY'
