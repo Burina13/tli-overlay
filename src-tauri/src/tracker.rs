@@ -2728,10 +2728,14 @@ mod testy {
         );
         nazhav_zaklad_batohu(&mut po_restarte, &cesta);
 
-        // Hráč zdvihne JEDEN kus; hra zapíše absolútne `Num = 49`.
+        // Hráč vojde do ďalšej mapy a zdvihne JEDEN kus; hra zapíše absolútne
+        // `Num = 49`. (Mapa sa začína nanovo zámerne: appka reštartovaná
+        // uprostred mapy nemá pre tú mapu `OpenMainWorld`, takže v nej beh
+        // ani pred TLI 68 nevznikol — to je iná vec než tento bug.)
         pripis(
             &cesta,
-            "[2026.10.20-09.54.30:000][1]GameLog: Display: [Game] ItemChange@ ProtoName=PickItem start\n\
+            "[2026.10.20-09.54.20:000][1]GameLog: Display: [Game] SceneLevelMgr@ OpenMainWorld END! InMainLevelPath = /Game/Maps/SD_ShengHuoLing0203\n\
+             [2026.10.20-09.54.30:000][1]GameLog: Display: [Game] ItemChange@ ProtoName=PickItem start\n\
              [2026.10.20-09.54.30:000][1]GameLog: Display: [Game] BagMgr@:Modfy BagItem PageId = 103 SlotId = 3 ConfigBaseId = 400033 Num = 49\n\
              [2026.10.20-09.54.30:000][1]GameLog: Display: [Game] ItemChange@ ProtoName=PickItem end\n",
         );
