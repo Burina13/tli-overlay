@@ -4,7 +4,11 @@
 //! s referenčným parserom TITrack nad TÝM ISTÝM súborom.
 //! Nie je súčasť appky — žiadny release ho nepoužíva.
 //!
-//! Použitie: `tli_dropy_dump <cesta-k-logu> [--restart <HH:MM:SS>]`
+//! Použitie: `tli_dropy_dump <cesta-k-logu> [--restart <HH:MM:SS>] [--nazhav]`
+//!
+//! `--nazhav` k tomu simuluje aj opravu TLI 68: reštartovaná appka si
+//! základ dropov nažhaví z už spracovanej časti logu (to isté, čo robí
+//! `nazhav_zaklad_batohu` v `src-tauri`).
 //!
 //! `--restart` simuluje REŠTART APPKY uprostred logu: od prvého riadku s
 //! daným (alebo vyšším) časom sa pokračuje s ČERSTVÝM `Sledovac`om, presne
@@ -60,6 +64,7 @@ fn main() {
     let bajty = std::fs::read(&cesta).unwrap_or_else(|e| panic!("čítanie {cesta}: {e}"));
     eprintln!("načítaný {cesta}: {} bajtov", bajty.len());
 
+    let nazhavit = args.iter().any(|a| a == "--nazhav");
     let mut chvost = StavChvosta::novy();
     let riadky = chvost.priprav_riadky(&bajty);
     eprintln!("riadkov: {}", riadky.len());
@@ -75,7 +80,18 @@ fn main() {
                     let hhmmss = riadok[12..20].replace('.', ":");
                     if hhmmss.as_str() >= cas {
                         eprintln!("--restart: čerstvý Sledovac od {hhmmss}");
-                        sledovac = Sledovac::novy();
+                        let stary = std::mem::replace(&mut sledovac, Sledovac::novy());
+                        if nazhavit {
+                            // TLI 68: presne to, čo robí appka v
+                            // `src-tauri::tracker::nazhav_zaklad_batohu` —
+                            // už spracovanú časť logu prejde ešte raz do
+                            // zahoditeľného sledovača a prevezme z neho LEN
+                            // základ dropov (stav batohu + potvrdené stránky).
+                            // Tu je ten zahoditeľný sledovač rovno ten, čo
+                            // práve dobehol po reštartový riadok.
+                            eprintln!("--nazhav: základ dropov prevzatý z už prečítanej časti");
+                            sledovac.prevezmi_zaklad_batohu(&stary);
+                        }
                         restart_hotovy = true;
                     }
                 }

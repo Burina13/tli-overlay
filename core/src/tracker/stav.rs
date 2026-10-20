@@ -489,6 +489,27 @@ impl Sledovac {
             .all(|s| self.stranky_so_zakladom.contains(s))
     }
 
+    /// **TLI 68.** Prevezme z „nažhavovacieho" sledovača VÝHRADNE stav batohu
+    /// a zoznam stránok s potvrdeným základom — žiadne behy, dropy, ceny ani
+    /// štatistiky.
+    ///
+    /// Na čo to je: `StavChvosta` si cez reštart appky drží POZÍCIU v logu,
+    /// takže appka po reštarte pokračuje v čítaní uprostred súboru. Stav
+    /// batohu si ale neprenáša, a tým vznikol bug TLI 68 (z jednej padnutej
+    /// Voidlands Beacon drop ×49). Volajúci preto prečíta tú už spracovanú
+    /// časť logu ešte raz do ZAHODITEĽNÉHO sledovača a odtiaľ si sem prenesie
+    /// len základ.
+    ///
+    /// Je to presne to, čo rukopis zadania žiada — základ pochádza z toho, čo
+    /// appka reálne videla **v logu**, nie zo snímky batohu v DB. Snímka z DB
+    /// slúži naďalej len na Current Inventory a Net Worth.
+    pub fn prevezmi_zaklad_batohu(&mut self, zdroj: &Sledovac) {
+        self.batoh = zdroj.batoh.clone();
+        self.stranky_so_zakladom = zdroj.stranky_so_zakladom.clone();
+        self.posledny_init_stranka = zdroj.posledny_init_stranka;
+        self.posledny_init_cas = zdroj.posledny_init_cas.clone();
+    }
+
     /// Koľko zmien slotu appka od svojho štartu vynechala preto, že pre ne
     /// nemala v tejto session potvrdený základ (TLI 68).
     pub fn pocet_dropov_bez_zakladu(&self) -> u64 {

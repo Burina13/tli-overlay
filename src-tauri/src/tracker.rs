@@ -647,6 +647,73 @@ fn precitaj_logy_v_priecinku(cesta_logu: &Path) -> Result<Vec<Vec<u8>>, String> 
     Ok(obsahy)
 }
 
+/// **TLI 68** — znovu prečíta UŽ SPRACOVANÚ časť logu len preto, aby appka
+/// po reštarte poznala ZÁKLAD dropov (čo v ktorom slote batohu leží).
+///
+/// Prečo to treba: `StavChvosta::pozicia` prežije reštart appky (ukladá sa
+/// na disk), stav batohu nie. Appka teda pokračovala v čítaní uprostred
+/// súboru s prázdnym batohom a prvý `BagMgr@:Modfy` v každom slote vyrátala
+/// ako `Num − 0` — teda celý stack z batohu. Presne to Richard nahlásil
+/// 20.10.2026 (Voidlands Beacon ×49 namiesto ×1).
+///
+/// Číta sa po 8 MB dávkach cez vlastný `StavChvosta` (vie BOM, UTF-16 aj
+/// riadky rozdelené na hranici dávky) do ZAHODITEĽNÉHO `Sledovac`a; z neho
+/// sa prevezme výhradne stav batohu. Behy, dropy ani ceny z toho nevzniknú —
+/// appka ich za to obdobie už spracovala, keď riadky čítala prvý raz.
+///
+/// Keď sa to nepodarí (súbor sa nedá otvoriť, pozícia je 0, log sa medzitým
+/// rotoval), jednoducho sa nič neprenesie a platí druhá poistka: slot bez
+/// potvrdeného základu sa do dropov nezapočíta a UI pýta Sort.
+fn nazhav_zaklad_batohu(stav: &mut StavTrackera, cesta: &Path) {
+    use std::io::Read;
+
+    let do_pozicie = stav.chvost.pozicia;
+    if do_pozicie == 0 {
+        return;
+    }
+    let Ok(mut subor) = std::fs::File::open(cesta) else { return };
+
+    const DAVKA: usize = 8 * 1024 * 1024;
+    let mut chvost = tli_overlay_core::tracker::chvost::StavChvosta::novy();
+    let mut pomocny = tli_overlay_core::tracker::stav::Sledovac::novy();
+    let mut zostava = do_pozicie;
+    let mut buf = vec![0u8; DAVKA];
+    let mut riadkov: usize = 0;
+
+    while zostava > 0 {
+        let chcem = DAVKA.min(zostava as usize);
+        let mut precitane = 0usize;
+        // `read` smie vrátiť menej, než sme pýtali — doťahujeme, kým dávka
+        // nie je plná alebo súbor neskončí.
+        while precitane < chcem {
+            match subor.read(&mut buf[precitane..chcem]) {
+                Ok(0) => break,
+                Ok(n) => precitane += n,
+                Err(_) => return,
+            }
+        }
+        if precitane == 0 {
+            break;
+        }
+        for riadok in chvost.priprav_riadky(&buf[..precitane]) {
+            pomocny.riadok(&riadok);
+            riadkov += 1;
+        }
+        zostava -= precitane as u64;
+    }
+
+    stav.sledovac.prevezmi_zaklad_batohu(&pomocny);
+    crate::denik::zapis(
+        "tracker",
+        &format!(
+            "TLI 68: základ dropov nažhavený z {} už spracovaných bajtov logu \
+             ({riadkov} riadkov); stránky s potvrdeným základom: {}",
+            do_pozicie,
+            if stav.sledovac.zaklad_dropov_uplny() { "všetky" } else { "nie všetky" }
+        ),
+    );
+}
+
 /// Prečíta nové bajty a pretlačí ich cez `Sledovac`.
 ///
 /// Rotáciu logu (hra pri štarte súbor skráti alebo premenuje) spoznáme podľa
@@ -674,6 +741,13 @@ pub fn precitaj(stav: &mut StavTrackera, cesta: &Path) -> Result<usize, String> 
         // pozicia` pri prvom otvorení môže byť aj 0, teda celý stomegový
         // log), sa nesmie správať ako práve prebiehajúca udalosť.
         stav.povodna_velkost_logu = Some(velkost);
+        // TLI 68: appka pokračuje v čítaní UPROSTRED logu (`chvost.pozicia`
+        // prežila reštart), ale stav batohu si cez reštart neprenáša — a
+        // práve z toho vznikli dropy ×49. Prejdeme preto tú už spracovanú
+        // časť súboru ešte raz do zahoditeľného `Sledovac`a a prenesieme si
+        // z neho LEN základ dropov. Dropy, behy, ceny ani štatistiky z toho
+        // nevznikajú — tie appka za to obdobie už dávno spracovala.
+        nazhav_zaklad_batohu(stav, cesta);
         // TLI 68 bod e): jednorazový prepočet nafúknutej histórie. Beží na
         // vlákne trackera (nie pri štarte UI) a vnútri si sám overí zarážku
         // `tracker_meta.prepocet_tli68` aj to, že sa podarila záloha DB.
@@ -2562,6 +2636,84 @@ mod testy {
         stav.behy.push(prazdny_beh_pre_test("Mapa1"));
         stav.resetuj_zive_staty();
         assert!(stav.behy.is_empty());
+    }
+
+    /// Celý reťazec TLI 68 na skutočnom súbore: appka prečíta kus logu,
+    /// „reštartuje sa" (nový `StavTrackera`, ale uložená pozícia v logu
+    /// zostáva) a do logu medzitým pribudne drop do slotu, ktorý už niečo
+    /// obsahoval. Pred opravou z toho bol drop ×49, teraz musí byť ×1 —
+    /// základ sa nažhaví z už spracovanej časti súboru.
+    #[test]
+    fn tli68_po_restarte_appky_je_drop_jeden_nie_cely_stack() {
+        let cesta = docasny_subor();
+        napis(
+            &cesta,
+            "[2026.10.20-09.16.00:000][1]GameLog: Display: [Game] ItemChange@ Reset PageId=103\n\
+             [2026.10.20-09.16.00:000][1]GameLog: Display: [Game] BagMgr@:InitBagData PageId = 103 SlotId = 3 ConfigBaseId = 400033 Num = 48\n\
+             [2026.10.20-09.17.00:000][1]GameLog: Display: [Game] SceneLevelMgr@ OpenMainWorld END! InMainLevelPath = /Game/Maps/SD_ShengHuoLing0203\n",
+        );
+
+        let mut stav = StavTrackera::default();
+        precitaj(&mut stav, &cesta).unwrap();
+        let pozicia = stav.chvost.pozicia;
+        assert!(pozicia > 0);
+
+        // REŠTART appky: `StavTrackera` je úplne nový (batoh je PRÁZDNY),
+        // ale `StavChvosta` sa načíta z disku presne taký, aký bol — to je
+        // celá podstata bugu. `nazhav_zaklad_batohu` je to, čo `precitaj`
+        // v tejto chvíli zavolá; volá sa tu priamo, lebo cestu k uloženému
+        // chvostu (`$APPDATA`) test ovplyvniť nevie.
+        let chvost_z_disku = stav.chvost.clone();
+        let mut po_restarte = StavTrackera { cesta: Some(cesta.clone()), ..Default::default() };
+        po_restarte.chvost = chvost_z_disku;
+        assert_eq!(po_restarte.chvost.pozicia, pozicia);
+        assert!(
+            po_restarte.sledovac.batoh_stranka(103).is_empty(),
+            "reštartovaná appka o batohu naozaj nevie nič"
+        );
+        nazhav_zaklad_batohu(&mut po_restarte, &cesta);
+
+        // Hráč zdvihne JEDEN kus; hra zapíše absolútne `Num = 49`.
+        pripis(
+            &cesta,
+            "[2026.10.20-09.54.30:000][1]GameLog: Display: [Game] ItemChange@ ProtoName=PickItem start\n\
+             [2026.10.20-09.54.30:000][1]GameLog: Display: [Game] BagMgr@:Modfy BagItem PageId = 103 SlotId = 3 ConfigBaseId = 400033 Num = 49\n\
+             [2026.10.20-09.54.30:000][1]GameLog: Display: [Game] ItemChange@ ProtoName=PickItem end\n",
+        );
+        precitaj(&mut po_restarte, &cesta).unwrap();
+
+        let beh = po_restarte.sledovac.aktualny().expect("mapa beží ďalej");
+        assert_eq!(
+            beh.dropy.get(&400033),
+            Some(&1),
+            "po reštarte sa základ nažhaví z už spracovanej časti logu — drop je ×1, nikdy ×49"
+        );
+        assert_eq!(po_restarte.sledovac.pocet_dropov_bez_zakladu(), 0);
+        let _ = std::fs::remove_file(&cesta);
+    }
+
+    /// Keď sa nažhavenie nemá o čo oprieť (log sa medzitým rotoval, appka
+    /// číta od nuly a dump batohu v ňom ešte nebol), platí druhá poistka:
+    /// prvá zmena neznámeho slotu sa NEZAPOČÍTA a UI pýta Sort.
+    #[test]
+    fn tli68_bez_coho_nazhavit_sa_prva_zmena_nezapocita() {
+        let cesta = docasny_subor();
+        napis(
+            &cesta,
+            "[2026.10.20-09.17.00:000][1]GameLog: Display: [Game] SceneLevelMgr@ OpenMainWorld END! InMainLevelPath = /Game/Maps/SD_ShengHuoLing0203\n\
+             [2026.10.20-09.54.30:000][1]GameLog: Display: [Game] ItemChange@ ProtoName=PickItem start\n\
+             [2026.10.20-09.54.30:000][1]GameLog: Display: [Game] BagMgr@:Modfy BagItem PageId = 103 SlotId = 3 ConfigBaseId = 400033 Num = 49\n\
+             [2026.10.20-09.54.30:000][1]GameLog: Display: [Game] ItemChange@ ProtoName=PickItem end\n",
+        );
+        let mut stav = StavTrackera::default();
+        precitaj(&mut stav, &cesta).unwrap();
+
+        let beh = stav.sledovac.aktualny().unwrap();
+        assert_eq!(beh.dropy.get(&400033), None, "nikdy nie ×49");
+        let p = prehlad_pre_ui(&stav, true, false, &[]);
+        assert!(!p.zaklad_dropov_uplny);
+        assert_eq!(p.dropov_bez_zakladu, 1);
+        let _ = std::fs::remove_file(&cesta);
     }
 
     // ─── TLI 68 (`2026-10-20-1213-mcp.md`): základ dropov po reštarte ──────
