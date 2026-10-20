@@ -3,11 +3,30 @@
 //!
 //! Port `canvas_solver.py` (`stacks/games/tli/engine/canvas_solver.py` v repe `ops`)
 //! do core Rust (TLI 59, bod 2) — ÚMYSELNE riadok po riadku tá istá logika, aby
-//! lokálny výsledok pre rovnaký `CanvasStav` vyšiel identicky ako server. Implementovaný
-//! je LEN `smer: "adjacent"`, presne ako v Pythone — ostatné smery solver vedome
-//! odmieta hádať, kým pre ne nie je overené pravidlo.
+//! lokálny výsledok pre rovnaký `CanvasStav` vyšiel identicky ako server.
+//!
+//! **TLI 69 (20.10.2026) — jedno pravidlo pre všetky smery.** Do tohto dňa tu
+//! bolo implementované LEN `smer: "adjacent"` a pri každom inom solver vrátil
+//! „žiadny krok" s vetou „smer '<x>' nemá overené pravidlo miešania". Richard to
+//! nahlásil na smere `vertical` a ukázal, čo sme prehliadali: **hra platné
+//! cieľové bunky sama žlto orámuje** (`canvas_ramy.rs`). Dosah sa teda nehádá z
+//! mena smeru, berie sa z rámu — a potom je pravidlo pre `adjacent`,
+//! `vertical`, `horizontal`, `diagonal` aj čokoľvek ďalšie to isté.
+//!
+//! Poradie zdrojov pravdy (`CanvasStav::cielove_bunky`):
+//!
+//! 1. **Žltý rám hry** (`Bunka::oramovana`) — platí pre akýkoľvek smer.
+//! 2. **Geometria podľa názvu smeru** (`canvas::bunky_v_smere`) — záloha pre
+//!    snímky, kde rám nie je (hra ho nekreslí v podobrazovkách „Select the
+//!    Brushstroke direction" a „Draw").
+//!
+//! Čo sa NEZMENILO: EFEKT (o koľko levelov vyskočí položený paint) je potvrdený
+//! z párov pred/po len pre `adjacent`. Pre ostatné smery sa rada UKÁŽE,
+//! označená ako neoverená — zadanie TLI 69 bod 4 to žiada výslovne („ukáž radu
+//! s označením 'neoverené pre vertical', ale UKÁŽ ju. Nie 'žiadny krok'").
 
-use crate::canvas::{Bunka, CanvasStav, Paint};
+use crate::canvas::{kategoria_z_popisu, Bunka, CanvasStav, Paint, ZdrojDosahu,
+                    SMERY_S_OVERENYM_EFEKTOM};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -24,12 +43,49 @@ pub struct VysledokSolvera {
     pub kroky: Vec<Krok>,
     pub istota: f64,
     pub skontroluj: Vec<String>,
+    /// Odkiaľ sa vzal dosah — `"ram"` | `"smer"` | `""` (nerátalo sa).
+    #[serde(default)]
+    pub zdroj_dosahu: String,
 }
 
 impl VysledokSolvera {
     fn skontroluj(dovod: impl Into<String>) -> Self {
-        Self { kroky: vec![], istota: 0.0, skontroluj: vec![dovod.into()] }
+        Self {
+            kroky: vec![],
+            istota: 0.0,
+            skontroluj: vec![dovod.into()],
+            zdroj_dosahu: String::new(),
+        }
     }
+}
+
+/// „Level up the Vertical Monster Paint by 2 level(s)" → 2. Keď sa číslo z
+/// textu nedá vyčítať, ostáva 1 — hodnota overená pre `adjacent` z dvoch párov
+/// pred/po (15.10.2026). Zrkadlí `_pocet_levelov_efektu` na serveri; zámerne
+/// bez `regex` (jadro ho nemá a kvôli jednému hľadaniu si ho nepýta).
+fn pocet_levelov_efektu(efekt_popis: &str) -> i64 {
+    let t = efekt_popis.to_ascii_lowercase();
+    let bajty = t.as_bytes();
+    let mut i = 0usize;
+    while let Some(poz) = t[i..].find("by ") {
+        let mut j = i + poz + 3;
+        while j < bajty.len() && bajty[j] == b' ' {
+            j += 1;
+        }
+        let zac = j;
+        while j < bajty.len() && bajty[j].is_ascii_digit() {
+            j += 1;
+        }
+        if j > zac {
+            let cislo: i64 = t[zac..j].parse().unwrap_or(0);
+            let zvysok = t[j..].trim_start();
+            if zvysok.starts_with("level") && (1..=10).contains(&cislo) {
+                return cislo;
+            }
+        }
+        i = i + poz + 3;
+    }
+    1
 }
 
 pub fn navrhni_kroky(stav: &CanvasStav) -> VysledokSolvera {
@@ -42,57 +98,80 @@ pub fn navrhni_kroky(stav: &CanvasStav) -> VysledokSolvera {
         Some(c) => c,
     };
 
-    if ciel.smer != "adjacent" {
-        return VysledokSolvera::skontroluj(format!(
-            "smer '{}' nemá overené pravidlo miešania — solver preto nič nenavrhuje, \
-             nech sa nehrá podľa vymyslenej mechaniky (čaká sa na dáta z 16.10.2026)",
-            ciel.smer
-        ));
-    }
-
-    let (kluc_riadok, kluc_stlpec) = match (ciel.kluc_riadok, ciel.kluc_stlpec) {
-        (Some(r), Some(c)) => (r, c),
-        _ => {
-            return VysledokSolvera::skontroluj(
-                "cieľ smeru 'adjacent' nemá kluc_riadok/kluc_stlpec \
-                 (bunku s výkričníkom, okolo ktorej sa počíta)",
-            )
-        }
-    };
-
     let potrebne = ciel.pocet_pozadovany - ciel.pocet_aktualny;
     if potrebne <= 0 {
         return VysledokSolvera {
             kroky: vec![],
             istota: 1.0,
             skontroluj: vec!["cieľ je už splnený (pocet_aktualny >= pocet_pozadovany)".to_string()],
+            zdroj_dosahu: String::new(),
         };
     }
 
-    let mut volne: Vec<&Bunka> = stav.volne_susedne_bunky(kluc_riadok, kluc_stlpec);
-    volne.sort_by_key(|b| (b.riadok, b.stlpec));
+    let (volne, zdroj_dosahu) = stav.cielove_bunky(ciel);
+    let mut skontroluj: Vec<String> = vec![];
+    if volne.is_empty() {
+        if zdroj_dosahu == ZdrojDosahu::Ram {
+            skontroluj.push(
+                "hra síce bunky orámovala, ale ani jedna z nich nie je voľná — na plátne \
+                 nie je kam položiť ďalší paint"
+                    .to_string(),
+            );
+        } else if ciel.kluc_riadok.is_none() || ciel.kluc_stlpec.is_none() {
+            skontroluj.push(format!(
+                "appka na snímke nenašla žltý rám hry a cieľ smeru '{}' nemá \
+                 kluc_riadok/kluc_stlpec (bunku s výkričníkom), takže dosah nie je z čoho odvodiť",
+                ciel.smer
+            ));
+        } else {
+            skontroluj.push(format!(
+                "v dosahu smeru '{}' od bunky r{}c{} nie je žiadna voľná bunka",
+                ciel.smer,
+                ciel.kluc_riadok.unwrap_or(0),
+                ciel.kluc_stlpec.unwrap_or(0)
+            ));
+        }
+        return VysledokSolvera {
+            kroky: vec![],
+            istota: 0.0,
+            skontroluj,
+            zdroj_dosahu: zdroj_dosahu.nazov().to_string(),
+        };
+    }
 
-    let mut monster_sloty: Vec<(i64, &Paint)> = stav
+    let kategoria = kategoria_z_popisu(&ciel.popis);
+    let pocet_levelov = pocet_levelov_efektu(&ciel.efekt_popis);
+
+    // Painty z ruky zoradené tak, aby sekvencia maximalizovala VÝSLEDNÉ levely
+    // (`min(level + N, max_level)`). Pri zhode ide prv NIŽŠÍ vstupný level —
+    // z boostu sa tak premrhá menej. Do TLI 69 sa radilo opačne (najnižší prv),
+    // čo cieľ splnilo, ale na doske nechávalo najslabšie možné painty.
+    let mut sloty: Vec<(i64, &Paint)> = stav
         .ruka
         .iter()
-        .filter_map(|s| s.paint.as_ref().filter(|p| p.kategoria == "monster").map(|p| (s.index, p)))
+        .filter_map(|s| s.paint.as_ref().filter(|p| p.kategoria == kategoria).map(|p| (s.index, p)))
         .collect();
-    // Najnižší level prv — nech zostane rezerva pod stropom (rovnaké ako Python).
-    monster_sloty.sort_by_key(|(index, paint)| (paint.level, *index));
+    sloty.sort_by_key(|(index, paint)| {
+        (-(paint.level + pocet_levelov).min(stav.max_level), paint.level, *index)
+    });
 
-    let kluc_bunka = stav.bunka(kluc_riadok, kluc_stlpec);
+    let kluc_bunka = match (ciel.kluc_riadok, ciel.kluc_stlpec) {
+        (Some(r), Some(c)) => stav.bunka(r, c),
+        _ => None,
+    };
     let kluc_popis = match kluc_bunka.and_then(|b| b.paint.as_ref()) {
         Some(p) => format!("{} Lv{}", p.typ, p.level),
         None => "kľúčový paint".to_string(),
     };
+    let nazov_kategorie =
+        if kategoria == "gameplay" { "Gameplay Paintov" } else { "Monster Paintov" };
 
-    let pocet = (potrebne as usize).min(volne.len()).min(monster_sloty.len());
-    let mut skontroluj: Vec<String> = vec![];
+    let pocet = (potrebne as usize).min(volne.len()).min(sloty.len());
     if (pocet as i64) < potrebne {
         let chyba = if (volne.len() as i64) < potrebne {
-            "voľných susedných políčok"
+            "voľných cieľových políčok".to_string()
         } else {
-            "Monster Paintov v ruke"
+            format!("{nazov_kategorie} v ruke")
         };
         skontroluj.push(format!(
             "cieľ žiada {} umiestnení, ale k dispozícii je len {} ({}) — vrátená sekvencia cieľ nedokončí celý",
@@ -102,9 +181,9 @@ pub fn navrhni_kroky(stav: &CanvasStav) -> VysledokSolvera {
 
     let mut kroky: Vec<Krok> = vec![];
     for i in 0..pocet {
-        let (slot_index, paint) = monster_sloty[i];
-        let bunka = volne[i];
-        let po_umiestneni = (paint.level + 1).min(stav.max_level);
+        let (slot_index, paint) = sloty[i];
+        let bunka: &Bunka = volne[i];
+        let po_umiestneni = (paint.level + pocet_levelov).min(stav.max_level);
         if paint.level >= stav.max_level {
             skontroluj.push(format!(
                 "slot {} ({} Lv{}) je už na max_level {} — Color Mixing Effect naň podľa pozorovania \
@@ -112,17 +191,29 @@ pub fn navrhni_kroky(stav: &CanvasStav) -> VysledokSolvera {
                 slot_index, paint.typ, paint.level, stav.max_level
             ));
         }
+        let kde = if zdroj_dosahu == ZdrojDosahu::Ram {
+            format!(
+                "na bunku (riadok {}, stĺpec {}), ktorú hra žlto orámovala",
+                bunka.riadok, bunka.stlpec
+            )
+        } else {
+            format!(
+                "na bunku (riadok {}, stĺpec {}) v smere '{}' od {} (r{}c{})",
+                bunka.riadok,
+                bunka.stlpec,
+                ciel.smer,
+                kluc_popis,
+                ciel.kluc_riadok.unwrap_or(0),
+                ciel.kluc_stlpec.unwrap_or(0)
+            )
+        };
         let dovod = format!(
-            "Vezmi {} Lv{} zo slotu {} v ruke a polož ho na bunku (riadok {}, stĺpec {}) vedľa {} \
-             (r{}c{}) — splní krok {}/{} cieľa '{}' a umiestnený paint vyskočí na Lv{} ({}).",
+            "Vezmi {} Lv{} zo slotu {} v ruke a polož ho {} — splní krok {}/{} cieľa '{}' \
+             a umiestnený paint vyskočí na Lv{} ({}).",
             paint.typ,
             paint.level,
             slot_index,
-            bunka.riadok,
-            bunka.stlpec,
-            kluc_popis,
-            kluc_riadok,
-            kluc_stlpec,
+            kde,
             ciel.pocet_aktualny + i as i64 + 1,
             ciel.pocet_pozadovany,
             ciel.popis,
@@ -138,15 +229,46 @@ pub fn navrhni_kroky(stav: &CanvasStav) -> VysledokSolvera {
         });
     }
 
-    let istota = if pocet as i64 == potrebne {
-        0.9
+    // Istota: dosah zo žltého rámu je pozorovanie z obrazovky, dosah odvodený
+    // z názvu smeru je dohad — preto nižšie číslo. Neoverený EFEKT istotu
+    // znižuje tiež, ale radu NEPOTLÁČA (zadanie TLI 69, bod 4).
+    let smer_maly = ciel.smer.trim().to_ascii_lowercase();
+    let efekt_overeny = SMERY_S_OVERENYM_EFEKTOM.contains(&smer_maly.as_str());
+    let mut istota = if pocet as i64 == potrebne {
+        if zdroj_dosahu == ZdrojDosahu::Ram {
+            0.9
+        } else {
+            0.7
+        }
     } else if pocet > 0 {
         0.5
     } else {
         0.0
     };
+    if !efekt_overeny {
+        istota = (istota * 0.8 * 10_000.0_f64).round() / 10_000.0;
+        skontroluj.push(if zdroj_dosahu == ZdrojDosahu::Ram {
+            format!(
+                "dosah je istý (hra bunky sama orámovala), ale EFEKT pre smer '{}' zatiaľ nie je \
+                 overený z párov pred/po — o koľko levelov paint naozaj vyskočí, berie appka \
+                 z textu hry ('{}')",
+                ciel.smer, ciel.efekt_popis
+            )
+        } else {
+            format!(
+                "pre smer '{}' nie je overené ani umiestnenie (appka na snímke nenašla žltý rám \
+                 hry a dosah odvodila z názvu smeru), ani efekt — rada je návrh, nie istota",
+                ciel.smer
+            )
+        });
+    }
 
-    VysledokSolvera { kroky, istota, skontroluj }
+    VysledokSolvera {
+        kroky,
+        istota,
+        skontroluj,
+        zdroj_dosahu: zdroj_dosahu.nazov().to_string(),
+    }
 }
 
 #[cfg(test)]
@@ -161,6 +283,9 @@ mod testy {
     const VOLNE_ZO_SCREENSHOTU: [(i64, i64); 10] =
         [(2, 5), (3, 2), (3, 3), (3, 4), (3, 5), (4, 2), (4, 4), (4, 5), (5, 2), (5, 3)];
     const KLUC_BUNKA: (i64, i64) = (4, 3); // Dwarf Lv3, štartový/fixný paint
+    // Na tom istom screenshote hra ŽLTO ORÁMOVALA práve tieto štyri bunky
+    // (TLI 69) — fixture to teraz nesie, lebo to na snímke reálne bolo.
+    const ORAMOVANE_ZO_SCREENSHOTU: [(i64, i64); 4] = [(3, 3), (4, 2), (4, 4), (5, 3)];
 
     fn board_zo_screenshotu() -> CanvasStav {
         let volne: HashSet<(i64, i64)> = VOLNE_ZO_SCREENSHOTU.iter().copied().collect();
@@ -174,11 +299,26 @@ mod testy {
                         dostupna: true,
                         paint: Some(Paint::monster("dwarf", 3)),
                         oznacena_vykricnikom: true,
+                        oramovana: false,
                     });
                 } else if volne.contains(&(r, c)) {
-                    bunky.push(Bunka { riadok: r, stlpec: c, dostupna: true, paint: None, oznacena_vykricnikom: false });
+                    bunky.push(Bunka {
+                        riadok: r,
+                        stlpec: c,
+                        dostupna: true,
+                        paint: None,
+                        oznacena_vykricnikom: false,
+                        oramovana: ORAMOVANE_ZO_SCREENSHOTU.contains(&(r, c)),
+                    });
                 } else {
-                    bunky.push(Bunka { riadok: r, stlpec: c, dostupna: false, paint: None, oznacena_vykricnikom: false });
+                    bunky.push(Bunka {
+                        riadok: r,
+                        stlpec: c,
+                        dostupna: false,
+                        paint: None,
+                        oznacena_vykricnikom: false,
+                        oramovana: false,
+                    });
                 }
             }
         }
@@ -271,13 +411,18 @@ mod testy {
         assert_eq!(v.istota, 1.0);
     }
 
+    /// TLI 69: do 20.10.2026 tu solver vracal prázdno s vetou „smer nemá overené
+    /// pravidlo". Richard to nahlásil ako chybu — dosah berie hra z vlastného
+    /// žltého rámu, takže rada sa UKÁŽE pre akýkoľvek smer, len označená.
     #[test]
-    fn nepodporovany_smer_sa_vedome_odmietne() {
+    fn iny_smer_uz_radu_vracia_ale_oznacenu_ako_neoverenu() {
         let mut stav = board_zo_screenshotu();
         stav.ciel.as_mut().unwrap().smer = "horizontal".to_string();
         let v = navrhni_kroky(&stav);
-        assert!(v.kroky.is_empty());
-        assert!(v.skontroluj.iter().any(|s| s.contains("horizontal")));
+        assert_eq!(v.kroky.len(), 3, "{v:?}");
+        assert_eq!(v.zdroj_dosahu, "ram");
+        assert!(v.skontroluj.iter().any(|s| s.contains("horizontal")), "{:?}", v.skontroluj);
+        assert!(v.istota < 0.9, "{}", v.istota);
     }
 
     #[test]
@@ -289,7 +434,7 @@ mod testy {
         }
         let v = navrhni_kroky(&stav);
         assert_eq!(v.kroky.len(), 1);
-        assert!(v.skontroluj.iter().any(|s| s.contains("voľných susedných políčok")));
+        assert!(v.skontroluj.iter().any(|s| s.contains("voľných cieľových políčok")));
     }
 
     #[test]
@@ -328,5 +473,221 @@ mod testy {
         let v = navrhni_kroky(&stav);
         assert!(v.kroky.is_empty());
         assert!(v.skontroluj[0].contains("ciel"));
+    }
+    // ── TLI 69: dosah zo žltého rámu hry, všetky smery ───────────────────────
+    //
+    // Fixture je Richardova snímka z 20.10.2026 ~12:2x (analýza
+    // `2026-10-20-133046-4fa90dea` na CT 114): cieľ „Fill a Vertical Cell with a
+    // Monster Paint(0/3)", zdrojové monštrum Lv3 so značkou „!" v r6c3, hra žlto
+    // orámovala r1c3, r2c3, r4c3 a r5c3 — riadok 3 je ľad (blokovaný). Testy
+    // sú ZÁMERNE 1:1 s `testy-canvas-solver.py` (15.–27.) v repe `ops`, nech sa
+    // dá lokálny a serverový solver priamo porovnať na tom istom vstupe.
+
+    const ZDROJ_VERTICAL: (i64, i64) = (6, 3);
+    const ORAMOVANE_VERTICAL: [(i64, i64); 4] = [(1, 3), (2, 3), (4, 3), (5, 3)];
+
+    fn board_vertical(oramovat: bool, kategoria: &str) -> CanvasStav {
+        let mut bunky = vec![];
+        for r in 1..=6 {
+            for c in 1..=6 {
+                if (r, c) == ZDROJ_VERTICAL {
+                    bunky.push(Bunka {
+                        riadok: r,
+                        stlpec: c,
+                        dostupna: true,
+                        paint: Some(Paint::monster("dwarf", 3)),
+                        oznacena_vykricnikom: true,
+                        oramovana: false,
+                    });
+                } else if ORAMOVANE_VERTICAL.contains(&(r, c)) {
+                    bunky.push(Bunka {
+                        riadok: r,
+                        stlpec: c,
+                        dostupna: true,
+                        paint: None,
+                        oznacena_vykricnikom: false,
+                        oramovana: oramovat,
+                    });
+                } else {
+                    // r3c3 je ľad, zvyšok plátna mimo aktívnej plochy
+                    bunky.push(Bunka {
+                        riadok: r,
+                        stlpec: c,
+                        dostupna: false,
+                        paint: None,
+                        oznacena_vykricnikom: false,
+                        oramovana: false,
+                    });
+                }
+            }
+        }
+        let ruka: Vec<SlotRuky> = [1i64, 2, 5, 7, 3]
+            .iter()
+            .enumerate()
+            .map(|(i, lvl)| SlotRuky {
+                index: i as i64,
+                paint: Some(Paint {
+                    kategoria: kategoria.to_string(),
+                    typ: "ghost".to_string(),
+                    level: *lvl,
+                }),
+            })
+            .collect();
+        let nazov = if kategoria == "gameplay" { "Gameplay" } else { "Monster" };
+        let ciel = CielMiesania {
+            smer: "vertical".to_string(),
+            popis: format!("Fill a Vertical Cell with a {nazov} Paint(0/3)"),
+            efekt_popis: format!("Level up the Vertical {nazov} Paint by 1 level(s)"),
+            pocet_pozadovany: 3,
+            pocet_aktualny: 0,
+            kluc_riadok: Some(ZDROJ_VERTICAL.0),
+            kluc_stlpec: Some(ZDROJ_VERTICAL.1),
+        };
+        CanvasStav { riadky: 6, stlpce: 6, max_level: 7, bunky, ruka, ciel: Some(ciel) }
+    }
+
+    #[test]
+    fn vertical_zo_snimky_vrati_tri_kroky_do_oramovanych_buniek() {
+        let v = navrhni_kroky(&board_vertical(true, "monster"));
+        assert_eq!(v.kroky.len(), 3, "{v:?}");
+        assert_eq!(v.zdroj_dosahu, "ram");
+        let ciele: Vec<(i64, i64)> = v.kroky.iter().map(|k| (k.ciel_riadok, k.ciel_stlpec)).collect();
+        for c in &ciele {
+            assert!(ORAMOVANE_VERTICAL.contains(c), "{c:?}");
+        }
+        let mut zoradene = ciele.clone();
+        zoradene.sort();
+        assert_eq!(ciele, zoradene, "poradie cieľov má byť deterministické");
+    }
+
+    #[test]
+    fn vertical_rada_je_oznacena_ako_neoverena_ale_existuje() {
+        let v = navrhni_kroky(&board_vertical(true, "monster"));
+        assert!(!v.kroky.is_empty(), "zadanie TLI 69 bod 4: radu UKÁŽ, nie „žiadny krok“");
+        assert!(v.skontroluj.iter().any(|s| s.contains("vertical")), "{:?}", v.skontroluj);
+        assert!(v.istota > 0.0 && v.istota < 0.9, "{}", v.istota);
+    }
+
+    /// Text smeru slúži už len na kontrolu — keď hra orámuje stĺpec a text
+    /// tvrdí „adjacent", platí rám. (r5c3 je jediná ortogonálna susedka r6c3,
+    /// takže podľa mena smeru by krok bol jeden; s rámom sú tri.)
+    #[test]
+    fn ram_prebije_nazov_smeru() {
+        let mut stav = board_vertical(true, "monster");
+        {
+            let c = stav.ciel.as_mut().unwrap();
+            c.smer = "adjacent".to_string();
+            c.popis = "Fill a Adjacent Cell with a Monster Paint(0/3)".to_string();
+        }
+        let v = navrhni_kroky(&stav);
+        assert_eq!(v.kroky.len(), 3, "{v:?}");
+        for k in &v.kroky {
+            assert!(ORAMOVANE_VERTICAL.contains(&(k.ciel_riadok, k.ciel_stlpec)));
+        }
+    }
+
+    #[test]
+    fn obsadena_oramovana_bunka_nie_je_ciel() {
+        let mut stav = board_vertical(true, "monster");
+        stav.bunky.iter_mut().find(|b| b.riadok == 1 && b.stlpec == 3).unwrap().paint =
+            Some(Paint::monster("gang", 2));
+        let v = navrhni_kroky(&stav);
+        let mut ciele: Vec<(i64, i64)> =
+            v.kroky.iter().map(|k| (k.ciel_riadok, k.ciel_stlpec)).collect();
+        ciele.sort();
+        assert_eq!(ciele, vec![(2, 3), (4, 3), (5, 3)]);
+        // rám na obsadenej bunke ostáva
+        assert!(stav.bunka(1, 3).unwrap().oramovana);
+    }
+
+    #[test]
+    fn bez_ramu_sa_dosah_odvodi_zo_smeru_a_istota_klesne() {
+        let s_ram = navrhni_kroky(&board_vertical(true, "monster"));
+        let s_bez = navrhni_kroky(&board_vertical(false, "monster"));
+        assert_eq!(s_bez.zdroj_dosahu, "smer");
+        assert_eq!(s_bez.kroky.len(), 3, "{s_bez:?}");
+        let ciele_ram: Vec<(i64, i64)> =
+            s_ram.kroky.iter().map(|k| (k.ciel_riadok, k.ciel_stlpec)).collect();
+        let ciele_bez: Vec<(i64, i64)> =
+            s_bez.kroky.iter().map(|k| (k.ciel_riadok, k.ciel_stlpec)).collect();
+        assert_eq!(ciele_ram, ciele_bez);
+        assert!(s_bez.istota < s_ram.istota);
+    }
+
+    #[test]
+    fn gameplay_ciel_berie_gameplay_painty() {
+        let stav = board_vertical(true, "gameplay");
+        let v = navrhni_kroky(&stav);
+        assert_eq!(v.kroky.len(), 3, "{v:?}");
+        for k in &v.kroky {
+            let slot = stav.ruka.iter().find(|s| s.index == k.zdroj_slot).unwrap();
+            assert_eq!(slot.paint.as_ref().unwrap().kategoria, "gameplay");
+        }
+    }
+
+    #[test]
+    fn vyber_paintov_maximalizuje_vysledne_levely() {
+        let stav = board_vertical(true, "monster");
+        let v = navrhni_kroky(&stav);
+        let levely: Vec<i64> = v
+            .kroky
+            .iter()
+            .map(|k| {
+                stav.ruka.iter().find(|s| s.index == k.zdroj_slot).unwrap().paint.as_ref().unwrap().level
+            })
+            .collect();
+        assert_eq!(levely, vec![7, 5, 3], "{levely:?}");
+    }
+
+    #[test]
+    fn pocet_levelov_sa_cita_z_textu_efektu() {
+        assert_eq!(pocet_levelov_efektu("Level up the Vertical Monster Paint by 2 level(s)"), 2);
+        assert_eq!(pocet_levelov_efektu("Level up the Adjacent Monster Paint by 1 level(s)"), 1);
+        assert_eq!(pocet_levelov_efektu(""), 1);
+        assert_eq!(pocet_levelov_efektu("nezmysel bez cisla"), 1);
+        assert_eq!(pocet_levelov_efektu("by 99 level(s)"), 1); // mimo rozsahu 1..10
+        // "by 3" bez slova level sa nepočíta; platné "by 2 level" o kus ďalej áno
+        assert_eq!(pocet_levelov_efektu("increased by 3 and leveled up by 2 level(s)"), 2);
+    }
+
+    #[test]
+    fn bunky_v_smere_pre_vsetky_smery() {
+        use crate::canvas::bunky_v_smere;
+        let zoradene = |mut v: Vec<(i64, i64)>| {
+            v.sort();
+            v
+        };
+        assert_eq!(zoradene(bunky_v_smere("adjacent", 4, 3, 6, 6)),
+                   vec![(3, 3), (4, 2), (4, 4), (5, 3)]);
+        assert_eq!(zoradene(bunky_v_smere("vertical", 6, 3, 6, 6)),
+                   vec![(1, 3), (2, 3), (3, 3), (4, 3), (5, 3)]);
+        assert_eq!(zoradene(bunky_v_smere("horizontal", 3, 4, 6, 6)),
+                   vec![(3, 1), (3, 2), (3, 3), (3, 5), (3, 6)]);
+        assert_eq!(zoradene(bunky_v_smere("diagonal", 2, 2, 6, 6)),
+                   vec![(1, 1), (1, 3), (3, 1), (3, 3), (4, 4), (5, 5), (6, 6)]);
+        assert!(bunky_v_smere("neznamy", 3, 3, 6, 6).is_empty());
+        for smer in ["adjacent", "vertical", "horizontal", "diagonal", "cross"] {
+            assert!(!bunky_v_smere(smer, 3, 3, 6, 6).contains(&(3, 3)), "{smer}");
+        }
+    }
+
+    #[test]
+    fn kategoria_z_popisu_rozlisi_gameplay_a_monster() {
+        use crate::canvas::kategoria_z_popisu;
+        assert_eq!(kategoria_z_popisu("Fill a Vertical Cell with a Gameplay Paint(0/3)"), "gameplay");
+        assert_eq!(kategoria_z_popisu("Fill a Adjacent Cell with a Monster Paint"), "monster");
+        assert_eq!(kategoria_z_popisu(""), "monster");
+    }
+
+    #[test]
+    fn oramovane_ale_ziadna_volna_bunka_to_povie_zrozumitelne() {
+        let mut stav = board_vertical(true, "monster");
+        for (r, c) in ORAMOVANE_VERTICAL {
+            stav.bunky.iter_mut().find(|b| b.riadok == r && b.stlpec == c).unwrap().paint =
+                Some(Paint::monster("gang", 1));
+        }
+        let v = navrhni_kroky(&stav);
+        assert!(v.kroky.is_empty());
+        assert!(v.skontroluj.iter().any(|s| s.contains("orámovala")), "{:?}", v.skontroluj);
     }
 }

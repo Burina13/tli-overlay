@@ -851,9 +851,12 @@ function vykresliHotovoCanvas(data) {
         pNadpis.textContent = zberPrefix + (platnoRozpoznane
             ? "Frozen Canvas — žiadny krok"
             : "Frozen Canvas — nerozpoznané");
+        // TLI 69: „smer nemá overené pravidlo" už dôvodom nie je — solver radí
+        // pre každý smer. Keď tu naozaj nie je krok, je to buď splnený cieľ,
+        // alebo na plátne nie je voľná cieľová bunka.
         pDovod.textContent = platnoRozpoznane
             ? ((analyza.skontroluj && analyza.skontroluj[0]) ||
-                "Server nenavrhol žiadny ťah (cieľ môže byť už splnený, alebo smer miešania ešte nemá overené pravidlo).")
+                "Server nenavrhol žiadny ťah (cieľ môže byť už splnený, alebo na plátne nie je voľná cieľová bunka).")
             : "Nerozpoznal som plátno – otvor Frozen Canvas na celú obrazovku.";
         pIstota.textContent = "";
         pSkontroluj.classList.add("skryte");
@@ -893,11 +896,20 @@ function vykresliHotovoCanvas(data) {
     // --- 2. Panel: prvý krok v hlavnom texte, ďalšie pod ním ako zoznam ---
     // TLI 4c: keď smer aktívneho cieľa ešte nemá dosť potvrdených párov
     // pred/po (canvas.yml: prah_overenia_parov), server to pošle v
-    // `pravidlo_overene: false` — rada sa aj tak zobrazí (solver implementuje
-    // len overené smery), ale nadpis to musí priznať, nech ju hráč neberie
-    // ako isté pravidlo.
+    // `pravidlo_overene: false` — rada sa aj tak zobrazí, ale nadpis to musí
+    // priznať, nech ju hráč neberie ako isté pravidlo.
+    //
+    // TLI 69: nadpis pomenuje KONKRÉTNY smer („neoverené pre vertical"), nie
+    // len „⚠️" — Richard presne to žiadal. A rozlišuje DVE veci, ktoré sa
+    // dovtedy zlievali do jednej: keď hra cieľové bunky sama orámovala
+    // (`zdroj_dosahu === "ram"`), sú ISTÉ a neoverený ostáva len efekt;
+    // keď rám na snímke nebol, je odhadnuté aj umiestnenie.
     const neoverene = analyza.pravidlo_overene === false;
-    const prefixNadpisu = neoverene ? "⚠️ " : "";
+    const smer = ((analyza.platno || {}).ciel || {}).smer || "";
+    const zRamu = analyza.zdroj_dosahu === "ram";
+    const prefixNadpisu = neoverene
+        ? (smer ? `⚠️ neoverené pre ${smer} — ` : "⚠️ ")
+        : "";
     pNadpis.textContent = zberPrefix + prefixNadpisu + (kroky.length === 1
         ? "Frozen Canvas — 1 krok"
         : `Frozen Canvas — ${kroky.length} krokov`);
@@ -941,7 +953,14 @@ function vykresliHotovoCanvas(data) {
         pAlternativy.classList.add("skryte");
     }
 
-    const sk = analyza.skontroluj || [];
+    const sk = (analyza.skontroluj || []).slice();
+    // TLI 69: prvou vetou povedz, odkiaľ sú cieľové bunky. Je to jediná vec,
+    // ktorú hráč potrebuje na rozhodnutie, či rade verí.
+    if (analyza.zdroj_dosahu) {
+        sk.unshift(zRamu
+            ? "cieľové bunky orámovala sama hra (isté)"
+            : "cieľové bunky odhadnuté z názvu smeru — hra ich na tejto snímke neorámovala");
+    }
     if (sk.length > 0) {
         const zoznam = sk.slice(0, 6);
         pSkontroluj.textContent = "Neisté: " + zoznam.join(", ") +

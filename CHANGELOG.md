@@ -2,6 +2,86 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.27.0 — 20.10.2026 (TLI 69 — Frozen Canvas radí pre VŠETKY smery, lebo cieľové bunky kreslí sama hra)
+
+**Čo Richard nahlásil 20.10.2026 ~12:2x.** Pri cieli „Fill a Vertical Cell with
+a Monster Paint (0/3)" napísal overlay „Zber dát #1 — Frozen Canvas — žiadny
+krok. ciel.smer 'vertical' nemá overené pravidlo — solver ho nespočíta". Na tej
+istej snímke pritom bolo jasne vidieť, že **hra platné cieľové bunky sama žlto
+orámovala**: v stĺpci 3 nad zdrojovým monštrom Lv3 so značkou „!" (riadok 6) to
+boli riadky 1, 2, 4 a 5 — riadok 3 je ľad.
+
+**Zovšeobecnenie.** Dosah Color Mixing Effectu sa už NEODVODZUJE z mena smeru.
+Platné cieľové bunky = bunky, ktoré hra orámovala; pravidlo je tým jedno pre
+`adjacent`, `vertical`, `horizontal`, `diagonal` aj čokoľvek ďalšie, a text
+smeru (OCR/vision) slúži už len na kontrolu. Keď si rám a text protirečia,
+platí rám.
+
+**Nový modul `core/src/canvas_ramy.rs`** — detekcia rámu lokálne v appke, z
+pixelov, nad pevnou mriežkou 6×6 (`canvas_rozlozenie`). Beží nad snímkou
+v PLNOM rozlíšení (serveru ide zmenšený JPEG, v ktorom je ~4 px čiara už
+nespoľahlivá), bez OCR a bez vision modelu. Zoznam buniek ide na server ako
+`?ramy=1-3.2-3.4-3.5-3` a solver z neho berie dosah.
+
+**Dve veci, ktoré rozhodujú medzi „funguje" a „nefunguje"** (obe sú v module
+rozpísané aj s číslami):
+
+1. *Rám suseda vyzerá ako vlastný.* Bunky mriežky na seba doliehajú a rám sa
+   kreslí tesne vnútri bunky, takže čiara suseda padne do okna hľadania.
+   Z kandidátov sa preto berie ten **bližšie k vnútru** bunky, nie ten
+   s najvyšším pokrytím.
+2. *Zdrojová bunka so značkou „!" orámovaná nie je — ale pri smere `adjacent`
+   ju zo všetkých štyroch strán obkolesujú orámovaní susedia*, takže podľa
+   pokrytia by vyšla ako orámovaná. Rozlíši ju až **rozmer** nájdeného
+   obdĺžnika: vlastný rám je menší než bunka (namerané 91–99 px), zlepenina zo
+   štyroch susedov väčšia (105–107 px). Samotné pokrytie na to nestačí —
+   rozpätia sa prekrývajú (orámované ≥ 0,161, neorámované ≤ 0,196).
+
+**Overenie na reálnych dátach — 75 unikátnych snímok Frozen Canvasu** z
+`/srv/games/tli/analyzy` (Richardovo hranie 19.–20.10.2026):
+
+| | výsledok |
+|---|---|
+| snímok, kde hra rám kreslila | 30 |
+| zhoda tvaru orámovanej množiny s menom smeru z textu hry | **27/27** (adjacent 10×, horizontal 10×, vertical 4×, diagonal 3×; zvyšné 3 nemali rozpoznaný text) |
+| snímok bez rámu | 45 — **všetky** z podobrazoviek „Select the Brushstroke direction" (37) a „Draw" (8), kde ho hra nekreslí |
+| falošne kladné | 0 |
+| zhoda Rust detektora s referenčným Python prototypom | 75/75 snímok, 0 rozdielov |
+
+**Čo sa zmenilo v solveri** (`canvas_solver.rs` aj `canvas_solver.py`, ďalej
+riadok po riadku to isté):
+
+- dosah zo žltého rámu pre ľubovoľný smer, so **zálohou podľa mena smeru**
+  (`bunky_v_smere`) pre snímky bez rámu — istota 0,9 vs 0,7;
+- **rám ostáva aj na obsadenej bunke** (doložené párom `2026-10-20-151222`
+  „0/3" → `-151242` „2/3" nad tým istým boardom), takže položiť sa dá len na
+  `oramovana && dostupna && paint == null`;
+- **cieľ „with a Gameplay Paint" už berie Gameplay Painty**, nie Monster —
+  v Richardových snímkach je takých cieľov zhruba tretina a solver na nich
+  dovtedy radil nesprávnu kategóriu;
+- výber paintov z ruky **maximalizuje výsledné levely** (`min(level+N, strop)`)
+  namiesto doterajšieho „najnižší level prv"; pri zhode ide prv nižší vstupný
+  level, nech sa z boostu premrhá menej;
+- počet levelov sa číta z textu efektu („by N level(s)"), predvolene 1.
+
+**Overlay (bod 4 zadania): rada sa UKÁŽE, aj keď efekt pre daný smer overený
+nie je** — len je označená. Nadpis odteraz pomenuje smer („⚠️ neoverené pre
+vertical — Frozen Canvas — 3 kroky"), nielen ⚠️, a panel rozlišuje dve veci,
+ktoré sa dovtedy zlievali: *cieľové bunky orámovala sama hra (isté)* vs
+*cieľové bunky odhadnuté z názvu smeru*. Dvojice zdroj→cieľ sa číslujú ako
+doteraz a rada sa skrýva klikom (TLI 67) — to sa nemenilo.
+
+**Čo NIE JE overené a vie sa o tom.** EFEKT (o koľko levelov vyskočí položený
+paint) je z párov pred/po potvrdený ďalej len pre `adjacent`. Pre `vertical`
+nie je v dátach z 19.–20.10.2026 **ani jeden** pár pred/po — všetkých 16 snímok
+má cieľ 0/3 — takže solver berie číslo z textu hry a radu označí. Zapísané do
+`canvas.yml` so stupňom istoty („DOSAH OVERENÝ (rám), EFEKT NEOVERENÝ").
+
+**Testy:** core 631 (+13 `canvas_ramy` vrátane 5 fixtures z reálnych snímok
+a testu odolnosti voči posunu mriežky o ±3 px, +11 solver), UI 127
+(+6 `testy-canvas-ramy.e2e.mjs`), `tli-web` 233 (+3), `testy-canvas-solver.py`
+27 (+13).
+
 ## 0.26.0 — 20.10.2026 (TLI 68 — dropy po reštarte appky sa už nerátajú ako celý stack z batohu)
 
 **Chyba, ktorú Richard nahlásil 20.10.2026 krátko po 12:00.** Mapa

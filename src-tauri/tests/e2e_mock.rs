@@ -232,12 +232,16 @@ fn e2e_canvas_analyza_az_po_parovane_obdlzniky() {
     let n = nastavenia(port);
 
     let jpeg = vec![0xFF, 0xD8, 0xFF, 0xD9];
-    let v = klient::posli_analyzu_canvas(&n, jpeg.clone())
+    let v = klient::posli_analyzu_canvas(&n, jpeg.clone(), "1-3.2-3")
         .expect("mock mal odpovedať 200");
 
     // 1. Klient poslal presne to, čo kontrakt chce — na modul=canvas endpoint.
     let (hlavicky, telo) = prijimac.recv().expect("mock nič nedostal");
-    assert!(hlavicky.starts_with("POST /api/analyza?modul=canvas "), "zlá cesta: {hlavicky}");
+    // TLI 69: v ceste je aj zoznam buniek, ktoré hra na snímke žlto orámovala.
+    assert!(
+        hlavicky.starts_with("POST /api/analyza?modul=canvas&ramy=1-3.2-3 "),
+        "zlá cesta: {hlavicky}"
+    );
     assert!(hlavicky.to_lowercase().contains("authorization: bearer tli_test_kluc"));
     assert_eq!(telo, jpeg);
 

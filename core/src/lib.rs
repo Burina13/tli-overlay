@@ -11,6 +11,7 @@ pub mod canvas;
 pub mod canvas_detekcia;
 pub mod canvas_obsah;
 pub mod canvas_ocr;
+pub mod canvas_ramy;
 pub mod canvas_rozlozenie;
 pub mod canvas_sablony;
 pub mod canvas_solver;

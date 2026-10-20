@@ -343,6 +343,12 @@ pub struct AnalyzaCanvas {
     /// pred/po; `null` keď plátno nemá rozpoznaný cieľ (nedá sa posúdiť).
     /// Kontrakt: `canvas-api-kontrakt.md` § `pravidlo_overene`.
     pub pravidlo_overene: Option<bool>,
+    /// TLI 69: odkiaľ server vzal dosah Color Mixing Effectu — `"ram"` (hra
+    /// cieľové bunky sama žlto orámovala a appka ich rozpoznala lokálne,
+    /// `canvas_ramy.rs`), `"smer"` (rám na snímke nebol, dosah sa odvodil
+    /// z názvu smeru) alebo prázdne. Panel podľa toho hráčovi napíše, či sú
+    /// cieľové bunky isté, alebo odhadnuté.
+    pub zdroj_dosahu: String,
     /// TLI 8: doplnený stav plátna a ruky zo servera, prenesený do UI BEZ
     /// interpretácie (`serde_json::Value`) — panel z neho berie len paint
     /// v zdrojovom slote ruky, aby pri odporúčaní ukázal jeho ikonu. Rust
@@ -362,6 +368,7 @@ impl Default for AnalyzaCanvas {
             skontroluj: vec![],
             trvanie_ms: None,
             pravidlo_overene: None,
+            zdroj_dosahu: String::new(),
             platno: None,
         }
     }

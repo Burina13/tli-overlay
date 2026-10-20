@@ -31,7 +31,7 @@ use tli_overlay_core::rozlozenie::{
     PANEL_OBJECTIVE, PANEL_POKLAD, PANEL_PORADCA, PANEL_PRIPOMIENKA, PANEL_TARTARUS,
 };
 use tli_overlay_core::suradnice::OknoFyz;
-use tli_overlay_core::{api, suradnice, zmensenie};
+use tli_overlay_core::{api, canvas_ramy, suradnice, zmensenie};
 
 /// Okno overlayu. Je priehľadné, bez rámu, vždy navrchu a priechodné pre myš —
 /// hráč cezeň klikne do hry, akoby tam nebolo.
@@ -1581,10 +1581,29 @@ V hre prepni Nastavenia → Zobrazenie → Režim okna na „Okno bez okrajov“
                 }
             }
             Modul::Canvas => {
+                // TLI 69: ešte PRED odoslaním prečítaj zo snímky žltý rám, ktorým
+                // hra sama označuje platné cieľové bunky. Robí sa to lokálne a
+                // nad PLNÝM rozlíšením (serveru ide zmenšený JPEG, v ktorom je
+                // čiara hrubá ~4 px už nespoľahlivá) — a je to jediná vec, ktorá
+                // solveru dovolí poradiť aj pri smeroch `vertical`/`horizontal`/
+                // `diagonal`, kde dovtedy vracal „žiadny krok".
+                let oramovane = canvas_ramy::oramovane_bunky(&snimok.rgb, snimok.sirka, snimok.vyska);
+                let ramy = canvas_ramy::ramy_do_parametra(&oramovane);
+                denik::zapis(
+                    "canvas",
+                    &if oramovane.is_empty() {
+                        "žltý rám hry na snímke NIE JE (hra ho nekreslí v podobrazovkách \
+                         Select the Brushstroke direction a Draw) — dosah si server \
+                         odvodí z názvu smeru"
+                            .to_string()
+                    } else {
+                        format!("hra orámovala {} buniek: {}", oramovane.len(), ramy)
+                    },
+                );
                 let vysledok = snimka::do_jpegu(&snimok, zmensenie::MAX_DLZKA, 80).and_then(|jpeg| {
                     denik::zapis("http", &format!("POST /api/analyza?modul=canvas ({} B JPEG)", jpeg.len()));
                     let _ = app.emit("stav", json!({ "faza": "odosielam" }));
-                    klient::posli_analyzu_canvas(&nastavenia, jpeg)
+                    klient::posli_analyzu_canvas(&nastavenia, jpeg, &ramy)
                 });
                 match &vysledok {
                     Ok(v) => denik::zapis("http", &format!("canvas OK, {} ms", v.trvanie_ms)),

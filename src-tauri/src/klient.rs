@@ -86,10 +86,18 @@ pub fn posli_analyzu(n: &Nastavenia, jpeg: Vec<u8>) -> Result<Vysledok, String> 
 
 /// Rovnaké ako `posli_analyzu`, len pre Frozen Canvas (TLI 4b) — iný endpoint
 /// (`?modul=canvas`) a iný tvar odpovede (`kroky[]` namiesto `odporucanie`).
-pub fn posli_analyzu_canvas(n: &Nastavenia, jpeg: Vec<u8>) -> Result<VysledokCanvas, String> {
+/// `ramy` je zoznam buniek, ktoré hra na snímke žlto orámovala, v tvare
+/// `"1-3.2-3.4-3.5-3"` (TLI 69, `canvas_ramy::ramy_do_parametra`). Prázdny
+/// reťazec = na snímke rám nebol; parameter sa vtedy neposiela a server si
+/// dosah odvodí z názvu smeru.
+pub fn posli_analyzu_canvas(
+    n: &Nastavenia,
+    jpeg: Vec<u8>,
+    ramy: &str,
+) -> Result<VysledokCanvas, String> {
     let zaciatok = std::time::Instant::now();
 
-    let odpoved = ureq::post(&n.adresa_analyza_canvas())
+    let odpoved = ureq::post(&n.adresa_analyza_canvas_s_ramami(ramy))
         .set("Authorization", &format!("Bearer {}", n.kluc))
         .set("Content-Type", "image/jpeg")
         .timeout(std::time::Duration::from_secs(60))

@@ -285,6 +285,18 @@ impl Nastavenia {
         self.adresa("/api/analyza?modul=canvas")
     }
 
+    /// Frozen Canvas so zoznamom buniek, ktoré hra na snímke ŽLTO ORÁMOVALA
+    /// (TLI 69) — appka ich rozpozná lokálne (`canvas_ramy.rs`) a server z nich
+    /// určí dosah Color Mixing Effectu pre akýkoľvek smer. Prázdny zoznam
+    /// znamená „na snímke rám nebol" a parameter sa vtedy vôbec neposiela
+    /// (server má zálohu podľa názvu smeru).
+    pub fn adresa_analyza_canvas_s_ramami(&self, ramy: &str) -> String {
+        if ramy.is_empty() {
+            return self.adresa_analyza_canvas();
+        }
+        self.adresa(&format!("/api/analyza?modul=canvas&ramy={ramy}"))
+    }
+
     /// Automatický zber na učenie (TLI 60) — ten istý endpoint ako
     /// `adresa_analyza_canvas`, navyše `zber=1`. Server si tým označí riadok
     /// ako „prišlo to samo z pozadia", nie z hráčovho stlačenia klávesy
@@ -386,6 +398,17 @@ mod testy {
         let n: Nastavenia = serde_json::from_str(r#"{"hotkey":"F8"}"#).unwrap();
         assert!(n.skryt_radu_klikom);
         assert_eq!(n.autoskrytie_s, 20);
+    }
+
+    #[test]
+    fn adresa_analyza_canvas_s_ramami_prida_parameter() {
+        let n = Nastavenia::default();
+        assert_eq!(
+            n.adresa_analyza_canvas_s_ramami("1-3.2-3.4-3.5-3"),
+            "https://tli.tvojtatko.sk/api/analyza?modul=canvas&ramy=1-3.2-3.4-3.5-3"
+        );
+        // prázdny zoznam = parameter sa neposiela vôbec
+        assert_eq!(n.adresa_analyza_canvas_s_ramami(""), n.adresa_analyza_canvas());
     }
 
     #[test]

@@ -39,6 +39,9 @@ const UKAZKA_CANVAS = {
     istota: 0.9,
     istota_rozpoznania: 0.95,
     skontroluj: [],
+    // TLI 69: cieľové bunky orámovala sama hra (appka ich rozpozná lokálne),
+    // takže panel napíše „isté" a nie „odhadnuté z názvu smeru".
+    zdroj_dosahu: "ram",
     // TLI 8: panel z `platno.ruka` berie paint zdrojového slotu a ukáže jeho
     // ikonu; index slotu je v `kroky[].zdroj` (pôvodné, neprepočítané).
     kroky: [
@@ -47,6 +50,7 @@ const UKAZKA_CANVAS = {
       { poradie: 3, zdroj: { typ_slotu: "ruka", index: 2 } },
     ],
     platno: {
+      ciel: { smer: "adjacent" },
       ruka: [
         { index: 0, paint: { kategoria: "monster", typ: "dwarf", level: 1 } },
         { index: 1, paint: { kategoria: "monster", typ: "dwarf", level: 1 } },
