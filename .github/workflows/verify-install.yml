@@ -179,15 +179,33 @@ jobs:
             throw "nainštalované exe má verziu $($exe.VersionInfo.ProductVersion), čakal sa $env:VERZIA"
           }
 
+          Write-Host "inštalačný priečinok: $instalDir, exe: $($exe.FullName)"
+
           # Funkčný dôkaz, nielen registry — rovnaký vzor ako `install` job nižšie.
+          # Polling namiesto jedného pevného Start-Sleep 10 s — na tomto mieste
+          # (hneď po migrácii) appka štartuje PRVÝKRÁT v novom priečinku, prvý
+          # štart webview vie byť pomalší než pri bežnom opakovanom spustení.
           $logPath = Join-Path $env:APPDATA "sk.tvojtatko.tli-overlay\logs\tli-overlay.log"
           Remove-Item $logPath -Force -ErrorAction SilentlyContinue
           $proc = Start-Process -FilePath $exe.FullName -PassThru
-          Start-Sleep -Seconds 10
-          if ($proc.HasExited) { throw "migrovaná appka po 10 s nebeží (exit code $($proc.ExitCode))" }
-          if (-not (Test-Path $logPath) -or ((Get-Content $logPath -Raw) -notmatch "registrácia OK")) {
+          $najdenaRegistracia = $false
+          for ($i = 0; $i -lt 30; $i++) {
+            Start-Sleep -Seconds 1
+            if ($proc.HasExited) { throw "migrovaná appka po $i s nebeží (exit code $($proc.ExitCode))" }
+            if ((Test-Path $logPath) -and ((Get-Content $logPath -Raw) -match "registrácia OK")) {
+              $najdenaRegistracia = $true
+              break
+            }
+          }
+          if (-not $najdenaRegistracia) {
             Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
-            throw "migrovaná appka nezapísala úspešnú registráciu klávesovej skratky do denníka"
+            if (Test-Path $logPath) {
+              Write-Host "--- obsah $logPath ---"
+              Write-Host (Get-Content $logPath -Raw)
+            } else {
+              Write-Host "$logPath po 30 s vôbec nevznikol"
+            }
+            throw "migrovaná appka do 30 s nezapísala úspešnú registráciu klávesovej skratky do denníka"
           }
           Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
           Write-Host "nová perUser appka po migrácii naozaj beží"
