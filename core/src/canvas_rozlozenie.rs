@@ -255,6 +255,115 @@ pub fn nadpis_kariet_box01() -> Pole {
     Pole { index: 0, x: KARTA_ORIGIN_X, y: NADPIS_Y, w: KARTA_W, h: NADPIS_H }
 }
 
+// ── Koniec behu: „All paint has been added" (TLI 72) ────────────────────────
+//
+// Keď hráč položí posledný paint, hra cez plátno vypíše banner „All paint has
+// been added" a vpravo dole ponúkne „Start Over" a „Complete". Počítadlo
+// „20/20" vedľa ruky je jediný lokálne čitateľný údaj o tom, koľko paintov do
+// konca behu zostáva — solver z neho vie povedať, že cieľ sa už nestihne
+// dokončiť a oplatí sa skôr prepísať. Zmerané na 1920×1080, rovnaký LIMIT
+// ako pri mriežke a kartách vyššie. Zrkadlí `canvas_rozlozenie.py` na serveri.
+//
+//   banner            x ≈ 1017–1600, y ≈ 272–312
+//   počítadlo         x ≈ 1536–1642, y ≈ 783–826
+//   tlačidlo Start Over x ≈ 1187–1388, y ≈ 810–891
+//   tlačidlo Complete leží presne tam, kde inak „Select"
+
+const BANNER_X: f64 = 0.5297;
+const BANNER_Y: f64 = 0.2519;
+const BANNER_W: f64 = 0.3036;
+const BANNER_H: f64 = 0.0370;
+
+const POCITADLO_X: f64 = 0.8000;
+const POCITADLO_Y: f64 = 0.7250;
+const POCITADLO_W: f64 = 0.0550;
+const POCITADLO_H: f64 = 0.0400;
+
+const TLACIDLO_START_OVER_X: f64 = 0.6180;
+const TLACIDLO_START_OVER_Y: f64 = 0.7500;
+const TLACIDLO_START_OVER_W: f64 = 0.1050;
+const TLACIDLO_START_OVER_H: f64 = 0.0750;
+
+/// Box01 bannera „All paint has been added" — OCRuje sa zvlášť, aby sa jeho
+/// text nezlial s textom cieľa, ktorý hra pod ním ešte nechá.
+pub fn banner_box01() -> Pole {
+    Pole { index: 0, x: BANNER_X, y: BANNER_Y, w: BANNER_W, h: BANNER_H }
+}
+
+/// Box01 počítadla „položené/celkom" (`canvas_ocr::parsuj_pocitadlo`).
+pub fn pocitadlo_box01() -> Pole {
+    Pole { index: 0, x: POCITADLO_X, y: POCITADLO_Y, w: POCITADLO_W, h: POCITADLO_H }
+}
+
+/// Box01 tlačidla „Start Over" na konci behu.
+pub fn tlacidlo_start_over_box01() -> Pole {
+    Pole { index: 0, x: TLACIDLO_START_OVER_X, y: TLACIDLO_START_OVER_Y,
+           w: TLACIDLO_START_OVER_W, h: TLACIDLO_START_OVER_H }
+}
+
+/// Box01 tlačidla „Complete". Hra ho kreslí na TO ISTÉ miesto ako „Select"
+/// z podobrazovky s kartami — preto ZÁMERNE tie isté konštanty, nie kópia
+/// čísel, ktorá by sa pri ďalšom premeraní mohla rozísť.
+pub fn tlacidlo_complete_box01() -> Pole {
+    Pole { index: 0, x: TLACIDLO_SELECT_X, y: TLACIDLO_SELECT_Y,
+           w: TLACIDLO_SELECT_W, h: TLACIDLO_SELECT_H }
+}
+
+#[cfg(test)]
+mod testy_koniec_behu {
+    use super::*;
+
+    fn prekryvaju_sa(a: &Pole, b: &Pole) -> bool {
+        a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+    }
+
+    #[test]
+    fn vsetky_boxy_konca_behu_lezia_v_obrazku() {
+        for p in [banner_box01(), pocitadlo_box01(), tlacidlo_start_over_box01(),
+                  tlacidlo_complete_box01()] {
+            assert!(p.x >= 0.0 && p.x + p.w <= 1.0, "{p:?}");
+            assert!(p.y >= 0.0 && p.y + p.h <= 1.0, "{p:?}");
+            assert!(p.w > 0.0 && p.h > 0.0, "{p:?}");
+        }
+    }
+
+    /// Hodnoty musia sedieť s `canvas_rozlozenie.py` na serveri — inak by
+    /// appka čítala počítadlo alebo banner z iného miesta, než server myslí.
+    #[test]
+    fn hodnoty_zodpovedaju_serveru() {
+        let b = banner_box01();
+        assert_eq!((b.x, b.y, b.w, b.h), (0.5297, 0.2519, 0.3036, 0.0370));
+        let p = pocitadlo_box01();
+        assert_eq!((p.x, p.y, p.w, p.h), (0.8000, 0.7250, 0.0550, 0.0400));
+        let s = tlacidlo_start_over_box01();
+        assert_eq!((s.x, s.y, s.w, s.h), (0.6180, 0.7500, 0.1050, 0.0750));
+    }
+
+    /// „Complete" leží presne na mieste „Select" — keby sa niekto jedno
+    /// premeral a druhé nie, tento test na to upozorní.
+    #[test]
+    fn complete_je_presne_na_mieste_select() {
+        assert_eq!(tlacidlo_complete_box01(), tlacidlo_select_box01());
+    }
+
+    /// Dve tlačidlá konca behu sú vedľa seba; keby sa prekrývali, klik/rámik
+    /// na „Start Over" by mohol trafiť „Complete" a beh ukončiť.
+    #[test]
+    fn start_over_a_complete_sa_neprekryvaju() {
+        let s = tlacidlo_start_over_box01();
+        let c = tlacidlo_complete_box01();
+        assert!(!prekryvaju_sa(&s, &c), "{s:?} {c:?}");
+        assert!(s.x + s.w <= c.x, "Start Over má byť vľavo od Complete");
+    }
+
+    #[test]
+    fn banner_je_nad_kartami_aj_nad_tlacidlami() {
+        let b = banner_box01();
+        assert!(b.y + b.h <= nadpis_kariet_box01().y, "{b:?}");
+        assert!(b.y + b.h <= tlacidlo_start_over_box01().y);
+    }
+}
+
 #[cfg(test)]
 mod testy_karty {
     use super::*;

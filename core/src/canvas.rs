@@ -166,9 +166,39 @@ pub struct CanvasStav {
     pub ruka: Vec<SlotRuky>,
     #[serde(default)]
     pub ciel: Option<CielMiesania>,
+    /// TLI 72: číslo PRED lomítkom v počítadle hry „20/20"
+    /// (`canvas_ocr::parsuj_pocitadlo`). `serde(default)`, lebo odpovede
+    /// servera spred TLI 72 toto pole nemajú a musia ďalej deserializovať.
+    #[serde(default)]
+    pub polozene: Option<i64>,
+    /// TLI 72: číslo ZA lomítkom v počítadle hry — koľko paintov sa za beh
+    /// položí celkom.
+    #[serde(default)]
+    pub celkom: Option<i64>,
 }
 
 impl CanvasStav {
+    /// Koľko paintov ešte do konca behu zostáva položiť; `None`, keď sa
+    /// počítadlo neprečítalo. Nikdy záporné — OCR, ktoré prečíta „21/20",
+    /// nesmie solveru nahovoriť „-1 zostáva". Zrkadlí
+    /// `CanvasState.zostava_paintov()` v `canvas_model.py`.
+    pub fn zostava_paintov(&self) -> Option<i64> {
+        match (self.polozene, self.celkom) {
+            (Some(p), Some(c)) => Some((c - p).max(0)),
+            _ => None,
+        }
+    }
+
+    /// Beh je na konci (počítadlo je plné). Pri nulovom celku `false` —
+    /// „0/0" je nevyčítané počítadlo, nie dokončený beh.
+    /// Zrkadlí `CanvasState.vsetko_polozene()` v `canvas_model.py`.
+    pub fn vsetko_polozene(&self) -> bool {
+        match (self.polozene, self.celkom) {
+            (Some(p), Some(c)) => c > 0 && p >= c,
+            _ => false,
+        }
+    }
+
     pub fn bunka(&self, riadok: i64, stlpec: i64) -> Option<&Bunka> {
         self.bunky.iter().find(|b| b.riadok == riadok && b.stlpec == stlpec)
     }
@@ -210,5 +240,77 @@ impl CanvasStav {
             .collect();
         volne.sort_by_key(|b| (b.riadok, b.stlpec));
         (volne, ZdrojDosahu::Smer)
+    }
+}
+
+#[cfg(test)]
+mod testy {
+    use super::*;
+
+    fn prazdny_stav() -> CanvasStav {
+        CanvasStav {
+            riadky: 6,
+            stlpce: 6,
+            max_level: 7,
+            bunky: vec![],
+            ruka: vec![],
+            ciel: None,
+            polozene: None,
+            celkom: None,
+        }
+    }
+
+    fn s_pocitadlom(polozene: Option<i64>, celkom: Option<i64>) -> CanvasStav {
+        CanvasStav { polozene, celkom, ..prazdny_stav() }
+    }
+
+    #[test]
+    fn zostava_paintov_z_pocitadla() {
+        assert_eq!(s_pocitadlom(Some(7), Some(20)).zostava_paintov(), Some(13));
+        assert_eq!(s_pocitadlom(Some(20), Some(20)).zostava_paintov(), Some(0));
+        assert_eq!(s_pocitadlom(None, Some(20)).zostava_paintov(), None);
+        assert_eq!(s_pocitadlom(Some(7), None).zostava_paintov(), None);
+    }
+
+    /// OCR občas prečíta viac položených než celkom; záporný zvyšok by
+    /// v solveri vyrobil nezmyselnú vetu „zostáva -1 paintov".
+    #[test]
+    fn zostava_paintov_nikdy_nie_je_zaporna() {
+        assert_eq!(s_pocitadlom(Some(25), Some(20)).zostava_paintov(), Some(0));
+    }
+
+    #[test]
+    fn vsetko_polozene_len_pri_plnom_pocitadle() {
+        assert!(s_pocitadlom(Some(20), Some(20)).vsetko_polozene());
+        assert!(s_pocitadlom(Some(21), Some(20)).vsetko_polozene());
+        assert!(!s_pocitadlom(Some(19), Some(20)).vsetko_polozene());
+        assert!(!s_pocitadlom(None, None).vsetko_polozene());
+        assert!(!s_pocitadlom(Some(20), None).vsetko_polozene());
+    }
+
+    /// „0/0" nie je dokončený beh, len nevyčítané počítadlo — keby to platilo
+    /// za koniec behu, appka by hráčovi hneď na začiatku prestala radiť.
+    #[test]
+    fn nulove_pocitadlo_nie_je_koniec_behu() {
+        assert!(!s_pocitadlom(Some(0), Some(0)).vsetko_polozene());
+    }
+
+    /// Odpoveď servera spred TLI 72 polia `polozene`/`celkom` nemá — musí sa
+    /// dať ďalej načítať, inak by nová appka so starým serverom nevedela nič.
+    #[test]
+    fn stara_odpoved_servera_bez_pocitadla_deserializuje() {
+        let json = r#"{"riadky": 6, "stlpce": 6, "max_level": 7, "bunky": [], "ruka": [], "ciel": null}"#;
+        let stav: CanvasStav = serde_json::from_str(json).unwrap();
+        assert_eq!(stav.polozene, None);
+        assert_eq!(stav.celkom, None);
+        assert_eq!(stav.zostava_paintov(), None);
+    }
+
+    #[test]
+    fn nova_odpoved_servera_s_pocitadlom_deserializuje() {
+        let json = r#"{"riadky": 6, "stlpce": 6, "max_level": 7, "polozene": 18, "celkom": 20}"#;
+        let stav: CanvasStav = serde_json::from_str(json).unwrap();
+        assert_eq!(stav.zostava_paintov(), Some(2));
+        assert!(!stav.vsetko_polozene());
     }
 }

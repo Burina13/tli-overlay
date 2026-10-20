@@ -28,6 +28,11 @@ use serde::{Deserialize, Serialize};
 const NADPIS_VYBER_TAHU: &str = "select the brushstroke direction";
 const NADPIS_VYBER_EFEKTU: &str = "select brushstroke effect";
 
+/// Banner, ktorým hra oznamuje koniec behu (TLI 72) — po ňom sa už nekreslí,
+/// ostáva len „Start Over" / „Complete". Porovnáva sa normalizovane ako
+/// nadpisy vyššie. Zrkadlí `BANNER_VSETKO_POLOZENE` v `canvas_tahy.py`.
+pub const BANNER_VSETKO_POLOZENE: &str = "all paint has been added";
+
 /// Tri druhy ťahu štetcom. Poradie je zhodné s `DRUHY` v `canvas_tahy.py`.
 pub const DRUHY: [&str; 3] = ["reimagine", "spread", "layer"];
 
@@ -52,7 +57,16 @@ pub enum Faza {
     VyberTahu,
     /// „Select Brushstroke Effect" — vyberá sa konkrétny efekt.
     VyberEfektu,
+    /// „All paint has been added" — koniec behu (TLI 72). Karty tu nie sú,
+    /// takže to NIE JE výber; radiť umiestnenie paintu už tiež nemá zmysel.
+    VsetkoPolozene,
 }
+
+/// Všetky fázy v poradí `FAZY` z `canvas_tahy.py`.
+pub const FAZY: [Faza; 4] = [Faza::Kreslenie, Faza::VyberTahu, Faza::VyberEfektu, Faza::VsetkoPolozene];
+
+/// Fázy, v ktorých sú na obrazovke karty na výber — `FAZY_S_KARTAMI` na serveri.
+pub const FAZY_S_KARTAMI: [Faza; 2] = [Faza::VyberTahu, Faza::VyberEfektu];
 
 impl Faza {
     /// Hodnota, ktorá ide do query parametra `faza` servera.
@@ -61,11 +75,15 @@ impl Faza {
             Faza::Kreslenie => "kreslenie",
             Faza::VyberTahu => "vyber_tahu",
             Faza::VyberEfektu => "vyber_efektu",
+            Faza::VsetkoPolozene => "vsetko_polozene",
         }
     }
 
+    /// Je na obrazovke výber karty? Vymenúva sa KLADNE (nie „všetko okrem
+    /// kreslenia"), aby nová fáza bez kariet — ako `VsetkoPolozene` — nezačala
+    /// omylom spúšťať čítanie kariet.
     pub fn je_vyber(&self) -> bool {
-        !matches!(self, Faza::Kreslenie)
+        FAZY_S_KARTAMI.contains(self)
     }
 }
 
@@ -126,6 +144,14 @@ pub fn faza_z_nadpisu(nadpis: &str) -> Option<Faza> {
         return Some(Faza::VyberEfektu);
     }
     None
+}
+
+/// Je v texte (OCR bannera `canvas_rozlozenie::banner_box01`) oznam o konci
+/// behu? Zámerne samostatná funkcia, nie vetva `faza_z_nadpisu` — banner leží
+/// inde než nadpis kariet a `faza_z_nadpisu` sa pre ne správať nesmie inak.
+/// Zrkadlí `je_banner_vsetko_polozene` v `canvas_tahy.py`.
+pub fn je_banner_vsetko_polozene(text: &str) -> bool {
+    normalizuj(text).contains(BANNER_VSETKO_POLOZENE)
 }
 
 /// Zloží hodnotu query parametra `karty` — texty oddelené `|`, zhora nadol.
@@ -197,6 +223,40 @@ mod testy {
         assert_eq!(Faza::VyberEfektu.nazov(), "vyber_efektu");
         assert!(!Faza::Kreslenie.je_vyber());
         assert!(Faza::VyberTahu.je_vyber() && Faza::VyberEfektu.je_vyber());
+        assert_eq!(Faza::VsetkoPolozene.nazov(), "vsetko_polozene");
+    }
+
+    /// Koniec behu nemá karty — keby `je_vyber()` vrátil `true`, appka by
+    /// OCRovala prázdne boxy kariet a posielala serveru nezmyselné `karty`.
+    #[test]
+    fn vsetko_polozene_nie_je_vyber() {
+        assert!(!Faza::VsetkoPolozene.je_vyber());
+        let s_kartami: Vec<Faza> = FAZY.iter().copied().filter(|f| f.je_vyber()).collect();
+        assert_eq!(s_kartami, FAZY_S_KARTAMI.to_vec());
+    }
+
+    #[test]
+    fn fazy_su_v_poradi_servera() {
+        let nazvy: Vec<&str> = FAZY.iter().map(|f| f.nazov()).collect();
+        assert_eq!(nazvy, vec!["kreslenie", "vyber_tahu", "vyber_efektu", "vsetko_polozene"]);
+    }
+
+    #[test]
+    fn banner_konca_behu_sa_pozna_aj_z_hrubeho_ocr() {
+        assert!(je_banner_vsetko_polozene("All paint has been added"));
+        assert!(je_banner_vsetko_polozene("  ALL PAINT  has been added! "));
+        assert!(je_banner_vsetko_polozene("x All\npaint has-been added."));
+        assert!(!je_banner_vsetko_polozene("All paint has been"));
+        assert!(!je_banner_vsetko_polozene(""));
+        assert!(!je_banner_vsetko_polozene("Select the Brushstroke direction"));
+    }
+
+    /// Zadanie TLI 72: `faza_z_nadpisu` sa pre doterajšie nadpisy nemení a
+    /// banner konca behu ňou NEPREJDE — rozpoznáva sa vlastnou funkciou.
+    #[test]
+    fn faza_z_nadpisu_banner_nepozna() {
+        assert_eq!(faza_z_nadpisu("All paint has been added"), None);
+        assert_eq!(faza_z_nadpisu("Select Brushstroke Effect"), Some(Faza::VyberEfektu));
     }
 
     #[test]

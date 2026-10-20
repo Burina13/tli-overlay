@@ -24,9 +24,18 @@
 //! z párov pred/po len pre `adjacent`. Pre ostatné smery sa rada UKÁŽE,
 //! označená ako neoverená — zadanie TLI 69 bod 4 to žiada výslovne („ukáž radu
 //! s označením 'neoverené pre vertical', ale UKÁŽ ju. Nie 'žiadny krok'").
+//!
+//! **TLI 72 (20.10.2026) — cieľová funkcia.** Hlavné kritérium je počet
+//! paintov na Max Paint Level (dúhových), súčet levelov je až druhý
+//! (`canvas_hodnotenie.rs`, `canvas.yml` → `cielova_funkcia`). Výber slotov sa
+//! tým nemení — radenie podľa výsledného levelu už maximalizuje aj počet
+//! dúhových — mení sa to, čo rada HOVORÍ: koľko dúhových sekvencia vyrobí,
+//! a keď žiadny, či sa cieľ vôbec oplatí dokončiť.
 
 use crate::canvas::{kategoria_z_popisu, Bunka, CanvasStav, Paint, ZdrojDosahu,
                     SMERY_S_OVERENYM_EFEKTOM};
+use crate::canvas_hodnotenie::{pocet_levelov_efektu, prinos_na_max, skore_platna, vysledny_level,
+                               Skore};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -46,46 +55,26 @@ pub struct VysledokSolvera {
     /// Odkiaľ sa vzal dosah — `"ram"` | `"smer"` | `""` (nerátalo sa).
     #[serde(default)]
     pub zdroj_dosahu: String,
+    /// TLI 72: koľko paintov na Max Paint Level táto sekvencia vyrobí.
+    #[serde(default)]
+    pub prinos_na_max: i64,
+    /// TLI 72: skóre celého plátna PRED sekvenciou. Nesú ho aj early-return
+    /// vetvy — aj keď nie je čo radiť, appka ukáže, kde plátno stojí.
+    #[serde(default)]
+    pub skore_pred: Skore,
 }
 
 impl VysledokSolvera {
-    fn skontroluj(dovod: impl Into<String>) -> Self {
+    fn skontroluj(dovod: impl Into<String>, skore_pred: Skore) -> Self {
         Self {
             kroky: vec![],
             istota: 0.0,
             skontroluj: vec![dovod.into()],
             zdroj_dosahu: String::new(),
+            prinos_na_max: 0,
+            skore_pred,
         }
     }
-}
-
-/// „Level up the Vertical Monster Paint by 2 level(s)" → 2. Keď sa číslo z
-/// textu nedá vyčítať, ostáva 1 — hodnota overená pre `adjacent` z dvoch párov
-/// pred/po (15.10.2026). Zrkadlí `_pocet_levelov_efektu` na serveri; zámerne
-/// bez `regex` (jadro ho nemá a kvôli jednému hľadaniu si ho nepýta).
-fn pocet_levelov_efektu(efekt_popis: &str) -> i64 {
-    let t = efekt_popis.to_ascii_lowercase();
-    let bajty = t.as_bytes();
-    let mut i = 0usize;
-    while let Some(poz) = t[i..].find("by ") {
-        let mut j = i + poz + 3;
-        while j < bajty.len() && bajty[j] == b' ' {
-            j += 1;
-        }
-        let zac = j;
-        while j < bajty.len() && bajty[j].is_ascii_digit() {
-            j += 1;
-        }
-        if j > zac {
-            let cislo: i64 = t[zac..j].parse().unwrap_or(0);
-            let zvysok = t[j..].trim_start();
-            if zvysok.starts_with("level") && (1..=10).contains(&cislo) {
-                return cislo;
-            }
-        }
-        i = i + poz + 3;
-    }
-    1
 }
 
 /// Množné číslo kategórie do vety („Monster Painty" / „Gameplay Painty").
@@ -119,15 +108,26 @@ fn dovod_vyberu(
     let kat_mn = nazov_kategorie_mn(kategoria);
     // V Pythone slovník index → výsledok; indexy slotov sú unikátne, takže
     // výsledok k slotu sa dá rátať priamo z jeho paintu.
-    let vysledok_z = |p: &Paint| (p.level + pocet_levelov).min(max_level);
+    let vysledok_z = |p: &Paint| vysledny_level(p.level, pocet_levelov, max_level);
     let vysledok = vysledok_z(paint);
     let najlepsi = sloty.iter().map(|(_, p)| vysledok_z(p)).max().unwrap_or(vysledok);
     let sip = format!("Lv{} → Lv{}", paint.level, vysledok);
+    // TLI 72: krok, ktorý vyrobí dúhový paint, to musí povedať — hráč inak
+    // nevie, že práve tento krok je ten cenný, a mohol by ho obetovať za
+    // „vyšší súčet" inde.
+    let na_max = if vysledok >= max_level {
+        format!(
+            " Tento krok vyrobí paint na Max Paint Level Lv{max_level} (dúhový) — to je hlavný \
+             cieľ, počet dúhových je viac než súčet levelov."
+        )
+    } else {
+        String::new()
+    };
 
     if vysledok < najlepsi {
         return format!(
             "Prečo tento: {sip} — painty s vyšším výsledkom (až Lv{najlepsi}) \
-             si vzali predošlé kroky tejto sekvencie, toto je najvyšší zvyšný."
+             si vzali predošlé kroky tejto sekvencie, toto je najvyšší zvyšný.{na_max}"
         );
     }
 
@@ -135,11 +135,11 @@ fn dovod_vyberu(
     let mut preco = match najvyssi_nizsi {
         Some(nizsi) => format!(
             "Prečo tento: {sip} je najvyšší výsledok, aký sa z ruky dá dosiahnuť — \
-             slabšie {kat_mn} v ruke by skončili najviac na Lv{nizsi}."
+             slabšie {kat_mn} v ruke by skončili najviac na Lv{nizsi}.{na_max}"
         ),
         None => format!(
             "Prečo tento: {sip}; vyšší výsledok z tejto ruky nejde, \
-             všetky {kat_mn} v nej dajú to isté."
+             všetky {kat_mn} v nej dajú to isté.{na_max}"
         ),
     };
 
@@ -163,10 +163,12 @@ fn dovod_vyberu(
 }
 
 pub fn navrhni_kroky(stav: &CanvasStav) -> VysledokSolvera {
+    let skore_pred = skore_platna(stav);
     let ciel = match &stav.ciel {
         None => {
             return VysledokSolvera::skontroluj(
                 "plátno nemá rozpoznaný miešací cieľ (ciel == null)",
+                skore_pred,
             )
         }
         Some(c) => c,
@@ -179,6 +181,8 @@ pub fn navrhni_kroky(stav: &CanvasStav) -> VysledokSolvera {
             istota: 1.0,
             skontroluj: vec!["cieľ je už splnený (pocet_aktualny >= pocet_pozadovany)".to_string()],
             zdroj_dosahu: String::new(),
+            prinos_na_max: 0,
+            skore_pred,
         };
     }
 
@@ -210,6 +214,8 @@ pub fn navrhni_kroky(stav: &CanvasStav) -> VysledokSolvera {
             istota: 0.0,
             skontroluj,
             zdroj_dosahu: zdroj_dosahu.nazov().to_string(),
+            prinos_na_max: 0,
+            skore_pred,
         };
     }
 
@@ -226,7 +232,7 @@ pub fn navrhni_kroky(stav: &CanvasStav) -> VysledokSolvera {
         .filter_map(|s| s.paint.as_ref().filter(|p| p.kategoria == kategoria).map(|p| (s.index, p)))
         .collect();
     sloty.sort_by_key(|(index, paint)| {
-        (-(paint.level + pocet_levelov).min(stav.max_level), paint.level, *index)
+        (-vysledny_level(paint.level, pocet_levelov, stav.max_level), paint.level, *index)
     });
 
     let kluc_bunka = match (ciel.kluc_riadok, ciel.kluc_stlpec) {
@@ -241,6 +247,52 @@ pub fn navrhni_kroky(stav: &CanvasStav) -> VysledokSolvera {
         if kategoria == "gameplay" { "Gameplay Paintov" } else { "Monster Paintov" };
 
     let pocet = (potrebne as usize).min(volne.len()).min(sloty.len());
+
+    // TLI 72: čo sekvencia prinesie z pohľadu HLAVNÉHO kritéria. Keď žiadny
+    // dúhový paint a beh sa navyše blíži ku koncu, cieľ sa oplatí skôr
+    // prepísať ([Reimagine]) — splnený cieľ, ktorý nič dúhové nevyrobí, len
+    // minie posledné painty behu.
+    let prinos = prinos_na_max(stav, kategoria, pocet_levelov, pocet as i64);
+    let zostava = stav.zostava_paintov();
+    let veta_prinos = if pocet > 0 {
+        if prinos > 0 {
+            format!(
+                " Hlavné kritérium: z tejto sekvencie vypadne {} {} na Max Paint Level \
+                 Lv{} (dúhový).",
+                prinos,
+                if prinos == 1 { "paint" } else { "paintov" },
+                stav.max_level
+            )
+        } else {
+            let najvyssi = sloty
+                .iter()
+                .map(|(_, p)| vysledny_level(p.level, pocet_levelov, stav.max_level))
+                .max()
+                .unwrap_or(0);
+            let mut veta = format!(
+                " Hlavné kritérium: z tejto sekvencie nevypadne ani jeden paint na Max Paint \
+                 Level Lv{} — najvyšší výsledok z ruky je Lv{}.",
+                stav.max_level, najvyssi
+            );
+            if let Some(z) = zostava.filter(|z| *z > 0) {
+                veta.push_str(&format!(
+                    " Do konca behu zostáva {z} paintov, takže cieľ sa oplatí skôr prepísať \
+                     ([Reimagine]) než dokončiť."
+                ));
+            }
+            veta
+        }
+    } else {
+        String::new()
+    };
+    if let Some(z) = zostava {
+        if pocet > 0 && z < pocet as i64 {
+            skontroluj.push(format!(
+                "počítadlo hry hovorí, že do konca behu zostáva {z} paintov, ale sekvencia ich \
+                 chce položiť {pocet} — toľko krokov sa už nemusí zmestiť"
+            ));
+        }
+    }
     if (pocet as i64) < potrebne {
         let chyba = if (volne.len() as i64) < potrebne {
             "voľných cieľových políčok".to_string()
@@ -257,7 +309,7 @@ pub fn navrhni_kroky(stav: &CanvasStav) -> VysledokSolvera {
     for i in 0..pocet {
         let (slot_index, paint) = sloty[i];
         let bunka: &Bunka = volne[i];
-        let po_umiestneni = (paint.level + pocet_levelov).min(stav.max_level);
+        let po_umiestneni = vysledny_level(paint.level, pocet_levelov, stav.max_level);
         if paint.level >= stav.max_level {
             skontroluj.push(format!(
                 "slot {} ({} Lv{}) je už na max_level {} — Color Mixing Effect naň podľa pozorovania \
@@ -314,6 +366,9 @@ pub fn navrhni_kroky(stav: &CanvasStav) -> VysledokSolvera {
                     ));
                 }
             }
+            // Až ZA vetou o type — rovnaké poradie ako na serveri, inak by sa
+            // reťazce rozišli.
+            dovod.push_str(&veta_prinos);
         }
         kroky.push(Krok {
             poradie: i as i64 + 1,
@@ -367,6 +422,8 @@ pub fn navrhni_kroky(stav: &CanvasStav) -> VysledokSolvera {
         istota,
         skontroluj,
         zdroj_dosahu: zdroj_dosahu.nazov().to_string(),
+        prinos_na_max: prinos,
+        skore_pred,
     }
 }
 
@@ -445,7 +502,7 @@ mod testy {
             kluc_stlpec: Some(KLUC_BUNKA.1),
         };
 
-        CanvasStav { riadky: 6, stlpce: 6, max_level: 7, bunky, ruka, ciel: Some(ciel) }
+        CanvasStav { riadky: 6, stlpce: 6, max_level: 7, bunky, ruka, ciel: Some(ciel), polozene: None, celkom: None }
     }
 
     fn susedia_r4c3() -> HashSet<(i64, i64)> {
@@ -642,7 +699,7 @@ mod testy {
             kluc_riadok: Some(ZDROJ_VERTICAL.0),
             kluc_stlpec: Some(ZDROJ_VERTICAL.1),
         };
-        CanvasStav { riadky: 6, stlpce: 6, max_level: 7, bunky, ruka, ciel: Some(ciel) }
+        CanvasStav { riadky: 6, stlpce: 6, max_level: 7, bunky, ruka, ciel: Some(ciel), polozene: None, celkom: None }
     }
 
     #[test]
@@ -875,7 +932,7 @@ mod testy {
             kluc_riadok: Some(ZDROJ_134419.0),
             kluc_stlpec: Some(ZDROJ_134419.1),
         };
-        CanvasStav { riadky: 6, stlpce: 6, max_level: 7, bunky, ruka, ciel: Some(ciel) }
+        CanvasStav { riadky: 6, stlpce: 6, max_level: 7, bunky, ruka, ciel: Some(ciel), polozene: None, celkom: None }
     }
 
     fn sloty_a_ciele(v: &VysledokSolvera) -> (Vec<i64>, HashSet<(i64, i64)>) {
@@ -942,7 +999,8 @@ mod testy {
              level(s)). Prečo tento: Lv2 → Lv3 je najvyšší výsledok, aký sa z ruky dá dosiahnuť — \
              slabšie Monster Painty v ruke by skončili najviac na Lv2. Na type nezáleží — cieľ aj \
              efekt počítajú len kategóriu (Monster Paint), nie zhodu typu so zdrojom (overené \
-             z páru pred/po 19.10.2026, smer adjacent)."
+             z páru pred/po 19.10.2026, smer adjacent). Hlavné kritérium: z tejto sekvencie \
+             nevypadne ani jeden paint na Max Paint Level Lv7 — najvyšší výsledok z ruky je Lv3."
         );
     }
 
@@ -1018,5 +1076,178 @@ mod testy {
         for k in &v.kroky {
             assert!(k.dovod.contains("vyšší výsledok z tejto ruky nejde"), "{}", k.dovod);
         }
+    }
+
+    // ── TLI 72: cieľová funkcia — dúhové painty sú hlavné kritérium ──────────
+    //
+    // Zrkadlí testy TLI 72 v `testy-canvas-solver.py` (repo `ops`); vety sa
+    // kontrolujú ZNAK PO ZNAKU, lebo obe strany musia hráčovi povedať to isté.
+
+    fn s_pocitadlom(mut stav: CanvasStav, polozene: i64, celkom: i64) -> CanvasStav {
+        stav.polozene = Some(polozene);
+        stav.celkom = Some(celkom);
+        stav
+    }
+
+    /// Ruka [1, 2, 5, 7, 3] s +1: jediný dúhový je Lv7 → Lv7. Prvý krok musí
+    /// mať VŠETKY vety v poradí servera: výber → dúhový krok → typ → prínos.
+    #[test]
+    fn prvy_dovod_s_prinosom_presne_ako_server() {
+        let v = navrhni_kroky(&board_vertical(true, "monster"));
+        assert_eq!(v.prinos_na_max, 1);
+        assert_eq!(
+            v.kroky[0].dovod,
+            "Vezmi ghost Lv7 zo slotu 3 v ruke a polož ho na bunku (riadok 1, stĺpec 3), \
+             ktorú hra žlto orámovala — splní krok 1/3 cieľa 'Fill a Vertical Cell with a Monster \
+             Paint(0/3)' a umiestnený paint vyskočí na Lv7 (Level up the Vertical Monster Paint by 1 \
+             level(s)). Prečo tento: Lv7 → Lv7 je najvyšší výsledok, aký sa z ruky dá dosiahnuť — \
+             slabšie Monster Painty v ruke by skončili najviac na Lv6. Tento krok vyrobí paint na \
+             Max Paint Level Lv7 (dúhový) — to je hlavný cieľ, počet dúhových je viac než súčet \
+             levelov. Na type nezáleží — cieľ aj efekt počítajú len kategóriu (Monster Paint), nie \
+             zhodu typu so zdrojom (overené z páru pred/po 19.10.2026, smer adjacent). Hlavné \
+             kritérium: z tejto sekvencie vypadne 1 paint na Max Paint Level Lv7 (dúhový)."
+        );
+        // Lv5 → Lv6 dúhový nie je — veta o dúhovom kroku tam byť nesmie
+        assert!(!v.kroky[1].dovod.contains("Tento krok vyrobí"), "{}", v.kroky[1].dovod);
+        // veta o prínose patrí len k prvému kroku
+        for k in &v.kroky[1..] {
+            assert!(!k.dovod.contains("Hlavné kritérium"), "{}", k.dovod);
+        }
+    }
+
+    #[test]
+    fn prinos_viac_paintov_ma_mnozne_cislo() {
+        let v = navrhni_kroky(&s_rukou(board_vertical(true, "monster"), &[6, 6, 7, 1]));
+        assert_eq!(v.prinos_na_max, 3);
+        assert!(
+            v.kroky[0].dovod.ends_with(
+                " Hlavné kritérium: z tejto sekvencie vypadne 3 paintov na Max Paint Level Lv7 (dúhový)."
+            ),
+            "{}",
+            v.kroky[0].dovod
+        );
+    }
+
+    /// Veta o dúhovom kroku sa pripája aj k vetve „vyšší výsledok nejde" a
+    /// veta o strope ide až ZA ňou — poradie musí sedieť so serverom.
+    #[test]
+    fn duhovy_krok_v_rovnakej_ruke_a_pred_vetou_o_strope() {
+        let v = navrhni_kroky(&s_rukou(board_vertical(true, "monster"), &[6, 7, 7, 7]));
+        assert!(
+            v.kroky[0].dovod.contains(
+                "Prečo tento: Lv6 → Lv7; vyšší výsledok z tejto ruky nejde, všetky Monster Painty \
+                 v nej dajú to isté. Tento krok vyrobí paint na Max Paint Level Lv7 (dúhový) — to je \
+                 hlavný cieľ, počet dúhových je viac než súčet levelov. Lv7 by na strope Lv7 skončil \
+                 rovnako, preto ide prv nižší a silnejší ostáva v ruke."
+            ),
+            "{}",
+            v.kroky[0].dovod
+        );
+    }
+
+    /// Vetva „najvyšší zvyšný" nesie `na_max` len kvôli zhode so serverom —
+    /// reálne je vždy prázdny: výsledok je tam pod najlepším, a ten je
+    /// najviac strop, takže dúhový byť nemôže. Test stráži, že sa tam veta
+    /// o dúhovom kroku omylom neobjaví.
+    #[test]
+    fn vetva_najvyssi_zvysny_duhovu_vetu_nema() {
+        let v = navrhni_kroky(&board_vertical(true, "monster"));
+        for k in &v.kroky[1..] {
+            assert!(k.dovod.contains("najvyšší zvyšný."), "{}", k.dovod);
+            assert!(!k.dovod.contains("dúhový"), "{}", k.dovod);
+        }
+    }
+
+    /// Richardova ruka 13:44 dá najviac Lv3 pri strope Lv7 — rada musí
+    /// povedať, že dúhový z toho nebude, a keď beh ešte pokračuje, že sa
+    /// cieľ oplatí prepísať.
+    #[test]
+    fn bez_duhoveho_a_s_pocitadlom_odporuci_reimagine() {
+        let v = navrhni_kroky(&s_pocitadlom(board_richard_134419(), 15, 20));
+        assert_eq!(v.prinos_na_max, 0);
+        assert!(
+            v.kroky[0].dovod.ends_with(
+                " Hlavné kritérium: z tejto sekvencie nevypadne ani jeden paint na Max Paint Level \
+                 Lv7 — najvyšší výsledok z ruky je Lv3. Do konca behu zostáva 5 paintov, takže cieľ \
+                 sa oplatí skôr prepísať ([Reimagine]) než dokončiť."
+            ),
+            "{}",
+            v.kroky[0].dovod
+        );
+        assert!(!v.skontroluj.iter().any(|s| s.contains("počítadlo hry")), "{:?}", v.skontroluj);
+    }
+
+    /// Bez prečítaného počítadla alebo pri nulovom zvyšku sa o Reimagine
+    /// nehovorí — nevieme, či beh ešte niečo dovolí.
+    #[test]
+    fn bez_pocitadla_alebo_na_konci_behu_sa_reimagine_nespomina() {
+        for stav in [board_richard_134419(), s_pocitadlom(board_richard_134419(), 20, 20)] {
+            let v = navrhni_kroky(&stav);
+            assert!(v.kroky[0].dovod.ends_with("najvyšší výsledok z ruky je Lv3."), "{}", v.kroky[0].dovod);
+            assert!(!v.kroky[0].dovod.contains("Reimagine"), "{}", v.kroky[0].dovod);
+        }
+    }
+
+    #[test]
+    fn malo_paintov_do_konca_behu_ide_do_skontroluj() {
+        let v = navrhni_kroky(&s_pocitadlom(board_richard_134419(), 18, 20));
+        assert_eq!(v.kroky.len(), 3);
+        assert!(
+            v.skontroluj.contains(
+                &"počítadlo hry hovorí, že do konca behu zostáva 2 paintov, ale sekvencia ich chce \
+                  položiť 3 — toľko krokov sa už nemusí zmestiť"
+                    .to_string()
+            ),
+            "{:?}",
+            v.skontroluj
+        );
+        // zostáva presne toľko, koľko treba → žiadne varovanie
+        let v = navrhni_kroky(&s_pocitadlom(board_richard_134419(), 17, 20));
+        assert!(!v.skontroluj.iter().any(|s| s.contains("počítadlo hry")), "{:?}", v.skontroluj);
+    }
+
+    /// Early-return vetvy nesú skóre celého plátna — appka ho ukazuje aj
+    /// vtedy, keď nie je čo radiť. Fixture 13:44: 26 dostupných buniek,
+    /// obsadené agito Lv3 a štyri ľady Lv1.
+    #[test]
+    fn early_return_vetvy_nesu_skore_pred() {
+        let ocakavane = Skore { na_max: 0, sucet: 7, obsadenych: 5, dostupnych: 26, max_level: 7 };
+
+        let mut bez_ciela = board_richard_134419();
+        bez_ciela.ciel = None;
+        let mut splneny = board_richard_134419();
+        splneny.ciel.as_mut().unwrap().pocet_aktualny = 3;
+        let mut plne = board_richard_134419();
+        for (r, c) in ORAMOVANE_134419 {
+            plne.bunky.iter_mut().find(|b| b.riadok == r && b.stlpec == c).unwrap().paint =
+                Some(Paint::monster("gang", 7));
+        }
+        let plne_skore = Skore { na_max: 3, sucet: 28, obsadenych: 8, ..ocakavane };
+
+        for (stav, skore) in [(bez_ciela, ocakavane), (splneny, ocakavane), (plne, plne_skore)] {
+            let v = navrhni_kroky(&stav);
+            assert!(v.kroky.is_empty(), "{v:?}");
+            assert_eq!(v.skore_pred, skore);
+            assert_eq!(v.prinos_na_max, 0);
+        }
+        // a plná vetva ho nesie tiež — skóre je PRED sekvenciou
+        assert_eq!(navrhni_kroky(&board_richard_134419()).skore_pred, ocakavane);
+    }
+
+    /// Server posiela `prinos_na_max` a `skore_pred` v JSON; stará odpoveď
+    /// bez nich sa musí dať načítať ďalej.
+    #[test]
+    fn vysledok_serde_s_novymi_polami_aj_bez_nich() {
+        let v = navrhni_kroky(&board_vertical(true, "monster"));
+        let j = serde_json::to_value(&v).unwrap();
+        assert_eq!(j["prinos_na_max"], 1);
+        assert_eq!(j["skore_pred"]["na_max"], 0);
+        assert_eq!(j["skore_pred"]["dostupnych"], 5);
+        let stary: VysledokSolvera = serde_json::from_str(
+            r#"{"kroky": [], "istota": 0.0, "skontroluj": [], "zdroj_dosahu": ""}"#,
+        )
+        .unwrap();
+        assert_eq!(stary.prinos_na_max, 0);
+        assert_eq!(stary.skore_pred, Skore::default());
     }
 }
