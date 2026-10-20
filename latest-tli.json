@@ -1,8 +1,8 @@
 {
-  "version": "0.32.0",
-  "notes": "TLI 72: appka konečne vie, ČO na Frozen Canvase vlastne naháňa. Richard: „Ukončilo to run, ale máme dve dúhové, a to je vlastne oveľa lepšie, než pokračovať.“ Hlavné kritérium je odteraz POČET paintov na Max Paint Level (dúhových), súčet levelov je až druhý, a splnenie jednotlivého objectivu má cenu len vtedy, keď vedie k vyšším levelom. Každá rada preto povie, koľko dúhových z nej vypadne — a keď ani jeden a beh ešte painty má, napíše, že cieľ sa oplatí skôr prepísať ([Reimagine]) než dokončiť. Pribudla celá nová obrazovka: keď počítadlo dosiahne 20/20 a hra ukáže „All Paint has been added“, appka orámuje to z dvoch tlačidiel, ktoré odporúča — Complete, alebo Start Over za 5 Colored Snow — a porovná tvoj výsledok s priemerom tvojich doterajších behov. Dovtedy tam písala „žiadny krok“. Počítadlo X/Y si appka číta sama z obrazovky. Pozri CHANGELOG.",
-  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.32.0/Tvoj-Tatko-TLI-Overlay_0.32.0_x64_en-US.msi",
-  "msiSha256": "8977f3a31b79207d763bb7f4b40e5e5cb725357f97f21765087329274ea56d2e",
-  "installerUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.32.0/Tvoj-Tatko-TLI-Overlay_0.32.0_x64-setup.exe",
-  "installerSha256": "731914c7ff6cadacf87a827bf297471e66283b7d596efcf9999aedeaf59dc497"
+  "version": "0.33.0",
+  "notes": "TLI 73: appka už nehovorí „nie je kam položiť paint“ tam, kde kam položiť JE. Biela bunka so štetcom je VOĽNÉ plátno — dovtedy ju rozpoznávanie čítalo ako položený paint, takže orámované prázdne bunky vyzerali obsadené a rada vyšla naprázdno (na doterajších snímkach sa to týkalo 226 buniek na 32 plátnach). Bunka má odteraz štyri stavy: biely štetec = voľná, čierny vír = nedostupná, modrá ľadová kocka = zamrznutá (odomyká ju ťah [Spread]) a kruh či kosoštvorec so štítkom „Lv“ = obsadená. Ľad sa už nepočíta do skóre plátna ako paint, takže aj rada Complete / Start Over prestala byť nafúknutá. A keď naozaj nie je kam položiť, appka napíše prečo — koľko buniek je obsadených, koľko zamrznutých a koľko nedostupných. Pozri CHANGELOG.",
+  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.33.0/Tvoj-Tatko-TLI-Overlay_0.33.0_x64_en-US.msi",
+  "msiSha256": "a89018f50732a14a0afa0e1dca077b8e412a7564c33297c501c7c87cbd0f2866",
+  "installerUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.33.0/Tvoj-Tatko-TLI-Overlay_0.33.0_x64-setup.exe",
+  "installerSha256": "3bf883fcc1810fc7e6c8c726c420a6f562b5016c2888766e25dcb208b6a680e7"
 }
