@@ -912,6 +912,18 @@ mod testy {
         assert_eq!(a.pravidlo_overene, Some(false));
     }
 
+    /// TLI 69: starší server pole `zdroj_dosahu` neposiela. `#[serde(default)]`
+    /// nad `AnalyzaCanvas` ho musí dosadiť ako prázdne — keby parsovanie
+    /// spadlo, klient 0.27.0 by nad starším serverom nevykreslil NIČ.
+    #[test]
+    fn chybajuci_zdroj_dosahu_je_prazdny_nie_chyba() {
+        let json = r#"{"ok": true, "modul": "canvas", "kroky": [], "istota": 0.9,
+                       "skontroluj": [], "pravidlo_overene": true}"#;
+        let a: AnalyzaCanvas = serde_json::from_str(json).expect("má sa dať parsovať");
+        assert_eq!(a.zdroj_dosahu, "");
+        assert_eq!(a.pravidlo_overene, Some(true));
+    }
+
     #[test]
     fn chybajuce_pravidlo_overene_je_none_nie_chyba() {
         // Starší server (pred TLI 4c) toto pole nevracia vôbec — parsovanie

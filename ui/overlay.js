@@ -954,12 +954,15 @@ function vykresliHotovoCanvas(data) {
     }
 
     const sk = (analyza.skontroluj || []).slice();
-    // TLI 69: prvou vetou povedz, odkiaľ sú cieľové bunky. Je to jediná vec,
-    // ktorú hráč potrebuje na rozhodnutie, či rade verí.
-    if (analyza.zdroj_dosahu) {
-        sk.unshift(zRamu
-            ? "cieľové bunky orámovala sama hra (isté)"
-            : "cieľové bunky odhadnuté z názvu smeru — hra ich na tejto snímke neorámovala");
+    // TLI 69: keď cieľové bunky nekreslila hra, povedz to — je to jediná vec,
+    // ktorú hráč potrebuje na rozhodnutie, či rade verí. Keď ich hra orámovala,
+    // dopíš „isté" LEN k tomu, čo už aj tak neisté je; pri úplne čistej rade
+    // by riadok „Neisté: cieľové bunky orámovala sama hra (isté)" bol
+    // protirečivý a panel by zbytočne pribudol tam, kde predtým nebol.
+    if (analyza.zdroj_dosahu === "smer") {
+        sk.unshift("cieľové bunky odhadnuté z názvu smeru — hra ich na tejto snímke neorámovala");
+    } else if (zRamu && sk.length > 0) {
+        sk.unshift("cieľové bunky orámovala sama hra (isté)");
     }
     if (sk.length > 0) {
         const zoznam = sk.slice(0, 6);

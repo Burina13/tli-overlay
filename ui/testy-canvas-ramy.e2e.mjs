@@ -99,6 +99,17 @@ test("zdroj_dosahu 'smer': panel prizná, že cieľové bunky sú odhadnuté", (
     assert.doesNotMatch(neiste, /orámovala sama hra/);
 });
 
+test("overený smer s čistou radou NEPRIDÁ riadok 'Neisté' (bol by protirečivý)", () => {
+    const { window, document } = postavOverlay();
+    const u = udalostVertical("ram");
+    u.analyza.pravidlo_overene = true;
+    u.analyza.skontroluj = [];
+    posliUdalost(window, "stav", u);
+
+    assert.ok(document.getElementById("panel-skontroluj").classList.contains("skryte"),
+        "„Neisté: cieľové bunky orámovala sama hra (isté)“ nad bezchybnou radou je nezmysel");
+});
+
 test("overený smer nadpis nešpiní — žiadne ⚠️ ani meno smeru", () => {
     const { window, document } = postavOverlay();
     const u = udalostVertical("ram");

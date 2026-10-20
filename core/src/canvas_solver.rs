@@ -230,12 +230,16 @@ pub fn navrhni_kroky(stav: &CanvasStav) -> VysledokSolvera {
     }
 
     // Istota: dosah zo žltého rámu je pozorovanie z obrazovky, dosah odvodený
-    // z názvu smeru je dohad — preto nižšie číslo. Neoverený EFEKT istotu
-    // znižuje tiež, ale radu NEPOTLÁČA (zadanie TLI 69, bod 4).
+    // z nepotvrdeného mena smeru je dohad — preto nižšie číslo. Neoverený EFEKT
+    // istotu znižuje tiež, ale radu NEPOTLÁČA (zadanie TLI 69, bod 4).
     let smer_maly = ciel.smer.trim().to_ascii_lowercase();
     let efekt_overeny = SMERY_S_OVERENYM_EFEKTOM.contains(&smer_maly.as_str());
+    // `adjacent` má dosah overený aj BEZ rámu (zo screenshotov 15.10.2026), takže
+    // mu istota nemá klesať len preto, že hráč stlačil F9 v podobrazovke, kde hra
+    // rám nekreslí — a to je 45 zo 75 reálnych snímok. Klesá len tam, kde je
+    // dosah naozaj odvodený z nepotvrdeného mena smeru.
     let mut istota = if pocet as i64 == potrebne {
-        if zdroj_dosahu == ZdrojDosahu::Ram {
+        if zdroj_dosahu == ZdrojDosahu::Ram || efekt_overeny {
             0.9
         } else {
             0.7
@@ -677,6 +681,20 @@ mod testy {
         assert_eq!(kategoria_z_popisu("Fill a Vertical Cell with a Gameplay Paint(0/3)"), "gameplay");
         assert_eq!(kategoria_z_popisu("Fill a Adjacent Cell with a Monster Paint"), "monster");
         assert_eq!(kategoria_z_popisu(""), "monster");
+    }
+
+    /// `adjacent` má dosah overený aj bez rámu (screenshoty 15.10.2026), takže
+    /// istota nemá klesať len preto, že hra na danej podobrazovke rám nekreslí.
+    #[test]
+    fn adjacent_bez_ramu_si_drzi_plnu_istotu() {
+        let mut stav = board_zo_screenshotu();
+        for b in stav.bunky.iter_mut() {
+            b.oramovana = false;
+        }
+        let v = navrhni_kroky(&stav);
+        assert_eq!(v.zdroj_dosahu, "smer");
+        assert_eq!(v.kroky.len(), 3, "{v:?}");
+        assert_eq!(v.istota, 0.9, "{}", v.istota);
     }
 
     #[test]
