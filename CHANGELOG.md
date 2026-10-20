@@ -2,6 +2,30 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.25.0 — 20.10.2026 (TLI 65 — appka bez simulátora, analyzera a trénera)
+
+Richard 20.10.2026: „Ja nepotrebujem analyzer v appke!" Appka má mať **Tracker,
+Inventory, Economy, Nastavenia** a overlaye (Tartarus, Frozen Canvas, ceny z trhu,
+loot mini-panel, zber minimapy) — nič viac.
+
+- **Zrušená záložka „Solvery"** — bol to len prehľad dvoch klávesových skratiek;
+  tie sú (a vždy boli) v Nastaveniach. Hlavičkové tlačidlo „Overlay" vedie odteraz
+  do Nastavení.
+- **Zrušená záložka „Analýza"** vrátane podsekcie „Taktiky" — prehliadač histórie
+  behov, exporty CSV/JSON, štatistika setupov a import starých logov.
+- Obidve sú **archivované**, nie zmazané: `archiv/tli65-solvery-analyza-2026-10-20/`
+  (HTML aj JS fragmenty + postup, ako ich vrátiť).
+- Rust backend týchto funkcií ostáva v kóde — zdieľa databázu s Trackerom a Economy.
+  Appka ho po tejto zmene nevolá.
+
+**Žiadna kruhová („rotunda") grafika v appke nikdy nebola a nie je** — kruhová doska
+zo snímky v hlásení k 0.24.0 pochádzala zo starej snímky NÁŠHO WEBU z TLI 8, ktorú
+omylom používal testovací simulátor okna hry. Opravené mimo tohto repozitára
+(`scripts/win-test-snimky.sh` v repe `ops`).
+
+Zvyšok appky (overlaye, tracker, mini-panel, zber minimapy) je nezmenený oproti
+`0.24.0`.
+
 ## 0.24.0 — 20.10.2026 (TLI 62/3c — release zberu minimapy, core-0.17.0)
 
 Prvý release obsahujúci zber snímok minimapy na stavbu knižnice trás k

@@ -128,13 +128,13 @@ test("Report stiahne .txt s obsahom mapy, nie je to isté ako CSV export celej h
     }
 });
 
-test("hlavičkové tlačidlo Overlay prepne na záložku Solvery", async () => {
+test("hlavičkové tlačidlo Overlay prepne na záložku Nastavenia", async () => {
     const { window, document } = postavApp();
     try {
         await pockajNaPrvePrekreslenie(window);
         document.getElementById("btn-nav-overlay").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
-        assert.ok(!document.getElementById("panel-solvery").classList.contains("skryte"));
-        assert.ok(document.querySelector('.zalozka[data-panel="panel-solvery"]').classList.contains("aktivna"));
+        assert.ok(!document.getElementById("panel-nastavenia").classList.contains("skryte"));
+        assert.ok(document.querySelector('.zalozka[data-panel="panel-nastavenia"]').classList.contains("aktivna"));
     } finally {
         window.close();
     }

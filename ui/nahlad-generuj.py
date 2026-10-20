@@ -16,7 +16,7 @@ sa `?tab=` neprejavilo — všetky štyri snímky z 0.9.0 ukazovali Tracker, hoc
 import pathlib
 import re
 
-ZALOZKY = ["panel-tracker", "panel-inventory", "panel-solvery", "panel-analyza", "panel-guide", "panel-economy", "panel-nastavenia"]
+ZALOZKY = ["panel-tracker", "panel-inventory", "panel-guide", "panel-economy", "panel-nastavenia"]
 TU = pathlib.Path(__file__).resolve().parent
 
 

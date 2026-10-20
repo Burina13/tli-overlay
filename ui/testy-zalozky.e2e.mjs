@@ -31,8 +31,8 @@ const NAHLAD_STUB_JS = readFileSync(path.join(TU, "nahlad-stub.js"), "utf8");
 
 const ZALOZKY = [
     "panel-tracker",
-    "panel-solvery",
-    "panel-analyza",
+    "panel-inventory",
+    "panel-economy",
     "panel-guide",
     "panel-nastavenia",
 ];
