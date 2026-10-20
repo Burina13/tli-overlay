@@ -20,6 +20,9 @@ pub mod nastavenia;
 pub mod obraz;
 pub mod rozlozenie;
 pub mod suradnice;
+pub mod tartarus;
+pub mod tartarus_engine;
+pub mod tartarus_solver;
 pub mod zber_fronta;
 pub mod zmensenie;
 
