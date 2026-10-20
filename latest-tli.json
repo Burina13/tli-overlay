@@ -1,8 +1,8 @@
 {
-  "version": "0.26.0",
-  "notes": "TLI 68: oprava počítania dropov. Keď sa appka reštartovala uprostred hrania, nepoznala stav batohu a prvý drop do každého slotu započítala ako CELÝ STACK z batohu (Voidlands Beacon ×49 namiesto ×1) — ZISK, FE/h aj čísla session boli preto nezmyselne vysoké. Appka si teraz po štarte základ dropov nažhaví z už prečítanej časti logu, takže po reštarte už drop nestratí ani nenafúkne; keď sa nemá o čo oprieť, radšej nezapočíta nič a v hlavnom okne vypíše „Sortni inventár pre presné dropy\". Overené proti TITracku na 748 mapách Richardovho skutočného logu, zhoda 1:1. Pri prvom štarte si appka zazálohuje lokálnu databázu a prepočíta nafúknutú históriu z logov, ktoré má ešte na disku. Pozri CHANGELOG.",
-  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.26.0/Tvoj-Tatko-TLI-Overlay_0.26.0_x64_en-US.msi",
-  "msiSha256": "b22299e40d89411f9dd3eae51cff836a33b4500cc6a86a2206582143262f6c7a",
-  "installerUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.26.0/Tvoj-Tatko-TLI-Overlay_0.26.0_x64-setup.exe",
-  "installerSha256": "079fc9dbdc62f069bd7264a25ba54a4f49badc02398838206c13b8cbf96e50fa"
+  "version": "0.27.0",
+  "notes": "TLI 69: Frozen Canvas radí aj pri smeroch Vertical, Horizontal a Diagonal. Doteraz appka pri inom smere než Adjacent napísala „žiadny krok — smer nemá overené pravidlo“, hoci hra platné cieľové bunky sama žlto orámuje. Appka ten rám teraz číta priamo z obrazovky (overené na 75 skutočných snímkach z hry), takže pravidlo platí pre všetky smery naraz a nemusí sa preň zbierať nič ďalšie. Navyše: cieľ „with a Gameplay Paint“ už správne berie Gameplay Painty (predtým ponúkal Monster), a z ruky sa vyberajú painty tak, aby výsledné levely boli čo najvyššie pod stropom Current Max Paint Level. Kým nie je overené, o koľko levelov paint pri danom smere vyskočí, rada sa UKÁŽE, len je označená „neoverené pre <smer>“. Pozri CHANGELOG.",
+  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.27.0/Tvoj-Tatko-TLI-Overlay_0.27.0_x64_en-US.msi",
+  "msiSha256": "b299659a467e1b0a672df0ecf2c0dee1289069a92d2a86729bb407fadbb2add7",
+  "installerUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.27.0/Tvoj-Tatko-TLI-Overlay_0.27.0_x64-setup.exe",
+  "installerSha256": "6563ffbc2338e20824881338fd278ebce275b9894364d09ab4f4e3c3e2b94a26"
 }
