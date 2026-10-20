@@ -159,6 +159,61 @@ pub fn parsuj_level_badge(text: &str) -> Option<i64> {
     cislice.parse().ok()
 }
 
+/// Počítadlo paintov vedľa ruky („20/20", `canvas_rozlozenie::pocitadlo_box01`)
+/// → `(polozene, celkom)`; `None`, keď taký tvar v texte nie je (TLI 72).
+///
+/// Zrkadlí `parsuj_pocitadlo` v `canvas_tahy.py`, ktorý hľadá regex
+/// `(\d{1,3})\s*/\s*(\d{1,3})` — tu ručne, lebo jadro `regex` nemá. Aby obe
+/// strany vrátili na ten istý OCR text to isté, napodobňuje sa aj správanie
+/// regexu na okrajoch: berie sa PRVÁ lomka, okolo ktorej sú číslice z oboch
+/// strán (iná lomka v texte, napr. „Paint(0/3)" bez čísla vpravo, sa
+/// preskočí), vľavo najviac posledné tri číslice, vpravo najviac prvé tri.
+/// Kontrola rozumnosti sa robí AŽ na nájdenom páre a pri neúspechu sa ďalej
+/// nehľadá — presne ako `re.search` + `if … return None` na serveri.
+///
+/// `polozene > celkom * 2` sa odmieta preto, že také číslo počítadlo hry dať
+/// nemôže — je to takmer iste OCR, ktoré zlialo dve čísla dokopy.
+pub fn parsuj_pocitadlo(text: &str) -> Option<(i64, i64)> {
+    let znaky: Vec<char> = text.chars().collect();
+    for (lomka, z) in znaky.iter().enumerate() {
+        if *z != '/' {
+            continue;
+        }
+        // Vľavo: medzery, potom súvislý úsek číslic — z neho najviac tri
+        // posledné (regex začne zápas čo najviac vľavo, ale len 3 číslice).
+        let mut j = lomka;
+        while j > 0 && znaky[j - 1].is_whitespace() {
+            j -= 1;
+        }
+        let koniec_vlavo = j;
+        while j > 0 && znaky[j - 1].is_ascii_digit() && koniec_vlavo - j < 3 {
+            j -= 1;
+        }
+        if j == koniec_vlavo {
+            continue;
+        }
+        // Vpravo: medzery, potom najviac tri číslice.
+        let mut k = lomka + 1;
+        while k < znaky.len() && znaky[k].is_whitespace() {
+            k += 1;
+        }
+        let zaciatok_vpravo = k;
+        while k < znaky.len() && znaky[k].is_ascii_digit() && k - zaciatok_vpravo < 3 {
+            k += 1;
+        }
+        if k == zaciatok_vpravo {
+            continue;
+        }
+        let polozene: i64 = znaky[j..koniec_vlavo].iter().collect::<String>().parse().ok()?;
+        let celkom: i64 = znaky[zaciatok_vpravo..k].iter().collect::<String>().parse().ok()?;
+        if celkom <= 0 || polozene < 0 || polozene > celkom * 2 {
+            return None;
+        }
+        return Some((polozene, celkom));
+    }
+    None
+}
+
 #[cfg(test)]
 mod testy {
     use super::*;
@@ -407,5 +462,55 @@ mod testy_karty {
         )
         .unwrap();
         assert_eq!(v.faza, Faza::VyberEfektu);
+    }
+
+    // ── TLI 72: počítadlo „položené/celkom" ─────────────────────────────────
+
+    #[test]
+    fn pocitadlo_presny_tvar_z_hry() {
+        assert_eq!(parsuj_pocitadlo("20/20"), Some((20, 20)));
+        assert_eq!(parsuj_pocitadlo("7/20"), Some((7, 20)));
+        assert_eq!(parsuj_pocitadlo(" 0 / 20 "), Some((0, 20)));
+        assert_eq!(parsuj_pocitadlo("12\n/\n20"), Some((12, 20)));
+    }
+
+    #[test]
+    fn pocitadlo_bez_tvaru_vrati_none() {
+        assert_eq!(parsuj_pocitadlo(""), None);
+        assert_eq!(parsuj_pocitadlo("20"), None);
+        assert_eq!(parsuj_pocitadlo("/20"), None);
+        assert_eq!(parsuj_pocitadlo("20/"), None);
+        assert_eq!(parsuj_pocitadlo("a/b"), None);
+    }
+
+    /// Kontrola rozumnosti zo servera: nulový celok a „položené" ďaleko za
+    /// celkom sú OCR chyby, nie stav hry — solver by z nich vyrobil vetu
+    /// o „zostávajúcich paintoch", ktorá by klamala.
+    #[test]
+    fn pocitadlo_odmietne_nezmyselne_cisla() {
+        assert_eq!(parsuj_pocitadlo("5/0"), None);
+        assert_eq!(parsuj_pocitadlo("41/20"), None);
+        assert_eq!(parsuj_pocitadlo("40/20"), Some((40, 20)));
+    }
+
+    /// Okrajové prípady, v ktorých by naivné „zober všetky číslice pri lomke"
+    /// vrátilo niečo iné než regex `(\d{1,3})\s*/\s*(\d{1,3})` na serveri —
+    /// obe strany musia na ten istý OCR text povedať to isté.
+    #[test]
+    fn pocitadlo_sa_sprava_ako_regex_servera() {
+        // najviac tri číslice z každej strany
+        assert_eq!(parsuj_pocitadlo("1234/200"), Some((234, 200)));
+        // …a kontrola rozumnosti beží až na orezanom páre: 234 > 2 × 20
+        assert_eq!(parsuj_pocitadlo("1234/20"), None);
+        assert_eq!(parsuj_pocitadlo("20/2000"), Some((20, 200)));
+        // lomka bez čísel sa preskočí, berie sa prvý úplný pár
+        assert_eq!(parsuj_pocitadlo("a/b 3/20"), Some((3, 20)));
+        assert_eq!(parsuj_pocitadlo("1/2/3"), Some((1, 2)));
+        // prvý nájdený pár je nezmyselný → None, ďalej sa nehľadá
+        assert_eq!(parsuj_pocitadlo("9/0 3/20"), None);
+        // číslo pred medzerou pred inou číslicou k lomke nepatrí
+        assert_eq!(parsuj_pocitadlo("5 12/20"), Some((12, 20)));
+        // text okolo nevadí
+        assert_eq!(parsuj_pocitadlo("Paint 18/20 left"), Some((18, 20)));
     }
 }
