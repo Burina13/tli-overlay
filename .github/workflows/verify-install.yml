@@ -119,7 +119,11 @@ jobs:
           # `/R` appku po dokončení reštartuje — v CI ju netreba, len nech
           # nezostane bežať a nezablokuje nasledujúce kroky/upratovanie runnera.
           Start-Sleep -Seconds 5
-          Get-Process -Name "Tvoj Tatko TLI Overlay" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          # Názov PROCESU je binárka ("tli-overlay"), nie ${PRODUCTNAME} —
+          # pôvodný `Get-Process -Name "Tvoj Tatko TLI Overlay"` nenašiel nič
+          # a appka spustená cez `/R` ostávala bežať ďalej, čím držala
+          # hotkeys obsadené pre ĎALŠÍ test nižšie (TLI 52c, zistené živo).
+          Get-Process -Name "tli-overlay" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 
       - name: Diagnostika (vždy, aj keď ďalší krok zlyhá — čo presne NSIS spravil)
         shell: pwsh
@@ -187,6 +191,11 @@ jobs:
           # štart webview vie byť pomalší než pri bežnom opakovanom spustení.
           $logPath = Join-Path $env:APPDATA "sk.tvojtatko.tli-overlay\logs\tli-overlay.log"
           Remove-Item $logPath -Force -ErrorAction SilentlyContinue
+          # Poistka: inštalátor v predošlom kroku appku po dokončení sám
+          # spustil (`/R`) — ak by ešte bežala, držala by hotkeys obsadené
+          # a NÁŠ vlastný spustený proces nižšie by ich nedostal (TLI 52c).
+          Get-Process -Name "tli-overlay" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          Start-Sleep -Seconds 1
           $proc = Start-Process -FilePath $exe.FullName -PassThru
           $najdenaRegistracia = $false
           for ($i = 0; $i -lt 30; $i++) {
@@ -277,7 +286,11 @@ jobs:
           if (-not $p.HasExited) { throw "druhá NSIS inštalácia nedobehla do 120 s" }
           if ($p.ExitCode -ne 0) { throw "druhá NSIS inštalácia skončila s kódom $($p.ExitCode)" }
           Start-Sleep -Seconds 5
-          Get-Process -Name "Tvoj Tatko TLI Overlay" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          # Názov PROCESU je binárka ("tli-overlay"), nie ${PRODUCTNAME} —
+          # pôvodný `Get-Process -Name "Tvoj Tatko TLI Overlay"` nenašiel nič
+          # a appka spustená cez `/R` ostávala bežať ďalej, čím držala
+          # hotkeys obsadené pre ĎALŠÍ test nižšie (TLI 52c, zistené živo).
+          Get-Process -Name "tli-overlay" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 
           if (-not (Test-Path $marker)) { throw "marker po druhej aktualizácii zmizol" }
           $casPoDruhej = (Get-Item $marker).LastWriteTimeUtc
