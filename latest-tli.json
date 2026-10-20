@@ -1,8 +1,8 @@
 {
-  "version": "0.31.0",
-  "notes": "TLI 71: appka konečne pozná obrazovku „Select the Brushstroke direction“. Richard: „Stále bieda, lebo sa to dá… a nakoniec nie základnú vec.“ Keď sa hra medzi dvoma miešaniami spýta, ktorý ťah štetcom vybrať, appka doteraz napísala „žiadny krok — v dosahu nie je voľná bunka“: pravdu, ktorá nepomohla. Odteraz odporúčanú kartu orámuje nahrubo so štítkom „✓ vyber túto“, ostatné nenápadne aj so skóre, orámuje aj tlačidlo Select a v paneli napíše PREČO — čo cieľ brzdí (zablokované bunky vs. málo paintov v ruke) a čo tá karta urobí. Pozná všetky tri ťahy — [Reimagine] prepíše cieľ a efekt, [Spread] umožní maľovať na zablokovanú bunku alebo ju premení na prázdnu, [Layer] pridá efekt navyše — aj 59 konkrétnych Brushstroke efektov. Umiestňovanie paintov sa nemení. Pozri CHANGELOG.",
-  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.31.0/Tvoj-Tatko-TLI-Overlay_0.31.0_x64_en-US.msi",
-  "msiSha256": "ddbd461a4bc00dc100d14207119334e0d2133a81089d458b02d3bb6bb188b489",
-  "installerUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.31.0/Tvoj-Tatko-TLI-Overlay_0.31.0_x64-setup.exe",
-  "installerSha256": "ae102834f0e9264584348915a7b7b9aad82c698a9b6beaf12c7411c9f3642b04"
+  "version": "0.32.0",
+  "notes": "TLI 72: appka konečne vie, ČO na Frozen Canvase vlastne naháňa. Richard: „Ukončilo to run, ale máme dve dúhové, a to je vlastne oveľa lepšie, než pokračovať.“ Hlavné kritérium je odteraz POČET paintov na Max Paint Level (dúhových), súčet levelov je až druhý, a splnenie jednotlivého objectivu má cenu len vtedy, keď vedie k vyšším levelom. Každá rada preto povie, koľko dúhových z nej vypadne — a keď ani jeden a beh ešte painty má, napíše, že cieľ sa oplatí skôr prepísať ([Reimagine]) než dokončiť. Pribudla celá nová obrazovka: keď počítadlo dosiahne 20/20 a hra ukáže „All Paint has been added“, appka orámuje to z dvoch tlačidiel, ktoré odporúča — Complete, alebo Start Over za 5 Colored Snow — a porovná tvoj výsledok s priemerom tvojich doterajších behov. Dovtedy tam písala „žiadny krok“. Počítadlo X/Y si appka číta sama z obrazovky. Pozri CHANGELOG.",
+  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.32.0/Tvoj-Tatko-TLI-Overlay_0.32.0_x64_en-US.msi",
+  "msiSha256": "8977f3a31b79207d763bb7f4b40e5e5cb725357f97f21765087329274ea56d2e",
+  "installerUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.32.0/Tvoj-Tatko-TLI-Overlay_0.32.0_x64-setup.exe",
+  "installerSha256": "731914c7ff6cadacf87a827bf297471e66283b7d596efcf9999aedeaf59dc497"
 }
