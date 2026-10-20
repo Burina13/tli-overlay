@@ -153,3 +153,21 @@ test("bežné plátno sa týmto panelom nezmenilo", () => {
     assert.equal(document.querySelectorAll(".krok-box").length, 2);
     assert.doesNotMatch(document.getElementById("panel-nadpis").textContent, /koniec behu/);
 });
+
+test("prázdna akcia neodporučí nič — ani nadpisom, ani rámikom", () => {
+    // Server sa nemusí vyjadriť (`akcia: ""`). Dovtedy to UI tichom predvoľbou
+    // premenilo na „daj Complete" a hráč dostal rozhodnutie, ktoré nikto
+    // neurobil. Nález z review diffu cez API kredit (20.10.2026).
+    const { window, document } = postavOverlay();
+    const u = udalostKoniecBehu();
+    u.dokoncenie.akcia = "";
+    u.analyza.dokoncenie.akcia = "";
+    posliUdalost(window, "stav", u);
+    assert.equal(document.querySelectorAll(".karta-odporucana").length, 0);
+    assert.equal(document.querySelectorAll(".karta-box").length, 2,
+                 "obe tlačidlá sa aj tak ukážu, len neutrálne");
+    const nadpis = document.getElementById("panel-nadpis").textContent;
+    assert.match(nadpis, /neviem poradiť/);
+    assert.doesNotMatch(nadpis, /daj Complete/);
+    assert.doesNotMatch(nadpis, /daj Start Over/);
+});

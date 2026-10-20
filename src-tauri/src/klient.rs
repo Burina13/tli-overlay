@@ -145,8 +145,14 @@ pub fn posli_analyzu_canvas(
     // pevným výrezom). Posiela sa LEN keď sa naozaj rozpoznala — inak si ju
     // server skúsi prečítať sám z obrázka (záloha). `query()` hodnoty
     // percentuálne zakóduje, takže text karty s medzerami a `[]` prejde.
-    if !faza.is_empty() && !karty.is_empty() {
-        poziadavka = poziadavka.query("faza", faza).query("karty", karty);
+    // TLI 72: `faza` sa posiela aj BEZ kariet — fáza konca behu
+    // („vsetko_polozene") žiadne karty nemá a do TLI 72 by ju táto podmienka
+    // zahodila. Karty naopak bez fázy nedávajú zmysel, tie ostávajú viazané.
+    if !faza.is_empty() {
+        poziadavka = poziadavka.query("faza", faza);
+        if !karty.is_empty() {
+            poziadavka = poziadavka.query("karty", karty);
+        }
     }
 
     // TLI 72: počítadlo „X/Y" z pravého dolného rohu, tiež z lokálneho OCR.

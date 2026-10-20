@@ -1247,19 +1247,22 @@ fn precitaj_fazu_kariet(snimok: &snimka::Snimka) -> (String, String) {
 
 /// TLI 72: prečíta z PLNEJ snímky počítadlo „X/Y" z pravého dolného rohu
 /// a pruh nad plátnom (kde hra píše buď Color Mixing cieľ, alebo banner
-/// „All Paint has been added…"). Vracia reťazec pre query parameter
-/// `pocitadlo` — prázdny, keď sa nič rozumné neprečítalo.
+/// „All Paint has been added…"). Vracia dvojicu `(pocitadlo, faza)` pre query
+/// parametre servera; prázdne reťazce znamenajú „neprečítalo sa".
 ///
-/// Keď banner sedí, ale počítadlo sa prečítať nedalo, pošle sa `"1/1"`:
-/// server z toho urobí `polozene >= celkom`, teda fázu konca behu, a rada
-/// Complete/Start Over sa hráčovi ukáže aj bez presných čísel. Opačne to
-/// nejde — samotné počítadlo bez banneru koniec behu neznamená.
+/// **Koniec behu hlási VÝHRADNE banner, nikdy samotné počítadlo.** Server
+/// z `polozene >= celkom` fázu konca behu odvodí, takže OCR, ktoré na bežnom
+/// plátne prečíta „2/20" ako „22/20", by hráčovi uprostred behu podstrčilo
+/// panel „koniec behu: daj Complete" namiesto rady, kam položiť paint. Preto:
+/// počítadlo sa posiela len vtedy, keď je `polozene < celkom` ALEBO banner
+/// naozaj sedí, a koniec behu sa serveru hovorí parametrom `faza`, nie
+/// vymysleným číslom. (Nález z review diffu cez API kredit, 20.10.2026.)
 ///
 /// Zlyhanie OCR NIE JE chyba behu (tá istá úvaha ako pri
 /// `precitaj_fazu_kariet`): zapíše sa do denníka a pokračuje sa bez
-/// parametra, teda presne tak, ako sa appka správala pred TLI 72.
+/// parametrov, teda presne tak, ako sa appka správala pred TLI 72.
 #[cfg(windows)]
-fn precitaj_pocitadlo(snimok: &snimka::Snimka) -> String {
+fn precitaj_pocitadlo(snimok: &snimka::Snimka) -> (String, String) {
     let pocitadlo = match ocr::rozpoznaj_text_oblasti(snimok, canvas_rozlozenie::pocitadlo_box01()) {
         Ok(t) => canvas_ocr::parsuj_pocitadlo(&t),
         Err(e) => {
@@ -1274,17 +1277,31 @@ fn precitaj_pocitadlo(snimok: &snimka::Snimka) -> String {
             false
         }
     };
-    match (pocitadlo, banner) {
-        (Some((p, c)), _) => {
+    let faza = if banner {
+        canvas_tahy::Faza::VsetkoPolozene.nazov().to_string()
+    } else {
+        String::new()
+    };
+    match pocitadlo {
+        Some((p, c)) if p < c || banner => {
             denik::zapis("canvas", &format!("počítadlo {p}/{c}, banner konca behu: {banner}"));
-            format!("{p}/{c}")
+            (format!("{p}/{c}"), faza)
         }
-        (None, true) => {
-            denik::zapis("canvas", "banner „All Paint has been added\" sedí, ale počítadlo \
-sa neprečítalo — posielam 1/1, nech server vie, že je koniec behu");
-            "1/1".to_string()
+        Some((p, c)) => {
+            // `p >= c` bez banneru je takmer iste zlé OCR — počítadlo by
+            // serveru povedalo „koniec behu" uprostred hrania.
+            denik::zapis("canvas", &format!(
+                "počítadlo {p}/{c} hlási koniec behu, ale banner na snímke nie je \
+— zahadzujem ho ako chybu OCR"));
+            (String::new(), faza)
         }
-        (None, false) => String::new(),
+        None => {
+            if banner {
+                denik::zapis("canvas", "banner „All Paint has been added\" sedí, počítadlo sa \
+neprečítalo — posielam len fázu");
+            }
+            (String::new(), faza)
+        }
     }
 }
 
@@ -1898,10 +1915,10 @@ V hre prepni Nastavenia → Zobrazenie → Režim okna na „Okno bez okrajov“
                 // s kartami je počítadlo skryté za tlačidlom Select, takže sa
                 // tam ani nečíta — ušetrí to dve OCR volania a hlavne zabráni
                 // tomu, aby staré číslo prepísalo rozpoznanú fázu kariet.
-                let pocitadlo_param = if faza_param.is_empty() {
+                let (pocitadlo_param, faza_param) = if faza_param.is_empty() {
                     precitaj_pocitadlo(&snimok)
                 } else {
-                    String::new()
+                    (String::new(), faza_param)
                 };
                 let vysledok = snimka::do_jpegu(&snimok, zmensenie::MAX_DLZKA, 80).and_then(|jpeg| {
                     denik::zapis("http", &format!("POST /api/analyza?modul=canvas ({} B JPEG)", jpeg.len()));

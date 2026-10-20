@@ -82,6 +82,11 @@ pub fn vysledny_level(level: i64, pocet_levelov: i64, max_level: i64) -> i64 {
 /// Skóre plátna podľa `canvas.yml` → `cielova_funkcia`. Serializuje sa
 /// rovnako ako slovník na serveri (`skore_pred` vo výsledku solvera).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+// Chýbajúce pole nesmie zhodiť deserializáciu CELÉHO `VysledokSolvera` —
+// staršia (alebo novšia) verzia servera môže poslať `skore_pred` bez
+// niektorého kľúča a rada by vtedy zmizla aj s krokmi. Nález z review
+// diffu cez API kredit (20.10.2026).
+#[serde(default)]
 pub struct Skore {
     /// HLAVNÉ kritérium: počet paintov na `max_level` (dúhových).
     pub na_max: i64,

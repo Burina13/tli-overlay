@@ -296,6 +296,28 @@ fn e2e_canvas_analyza_az_po_parovane_obdlzniky() {
 /// E2E podobrazovky „Select the Brushstroke direction" (TLI 71): appka pošle
 /// fázu a texty kariet, ktoré prečítala LOKÁLNE, a z odpovede vie vykresliť
 /// rámik na odporúčanú kartu aj na tlačidlo „Select".
+/// TLI 72: počítadlo „X/Y" a fáza konca behu musia prejsť do query
+/// parametrov — je to nová cesta k serveru a bez testu by ju prvý raz
+/// vyskúšal až hráč (nález z review diffu cez API kredit, 20.10.2026).
+/// Zároveň sa overuje, že `faza` sa smie poslať BEZ kariet: obrazovka konca
+/// behu žiadne nemá a staršia podmienka „faza aj karty naraz" by ju zahodila.
+#[test]
+fn e2e_canvas_pocitadlo_a_faza_konca_behu_idu_do_url() {
+    let (port, prijimac) = mock(200, ODPOVED_CANVAS);
+    let n = nastavenia(port);
+
+    let jpeg = vec![0xFF, 0xD8, 0xFF, 0xD9];
+    klient::posli_analyzu_canvas(&n, jpeg, "", "vsetko_polozene", "", "20/20")
+        .expect("mock mal odpovedať 200");
+
+    let (hlavicky, _) = prijimac.recv().expect("mock nič nedostal");
+    assert!(hlavicky.contains("faza=vsetko_polozene"), "zlá cesta: {hlavicky}");
+    // lomka sa v query parametri percentuálne zakóduje
+    assert!(hlavicky.contains("pocitadlo=20%2F20") || hlavicky.contains("pocitadlo=20/20"),
+            "počítadlo sa nedostalo do URL: {hlavicky}");
+    assert!(!hlavicky.contains("karty="), "karty sa pri konci behu posielať nemajú");
+}
+
 #[test]
 fn e2e_canvas_vyber_tahu_az_po_obdlznik_karty() {
     let (port, prijimac) = mock(200, ODPOVED_CANVAS_TAH);

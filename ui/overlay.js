@@ -998,13 +998,20 @@ function vykresliKoniecBehu(data) {
     const zberPrefix = (typeof data.zber_pocet === "number")
         ? `Zber dát #${data.zber_pocet} — `
         : "";
-    const odporucanaJe = dok.akcia === "start_over" ? "start_over" : "complete";
+    // `akcia` môže byť aj PRÁZDNA — server sa vtedy nevyjadril (api.rs to
+    // takto dokumentuje). Vtedy sa nesmie nič odporučiť: panel ukáže obe
+    // tlačidlá neutrálne a nadpis sa na nič nehrá. Nález z review diffu cez
+    // API kredit (20.10.2026) — dovtedy sa prázdna akcia tvárila ako
+    // „Complete" a hráč by dostal rozhodnutie, ktoré nikto neurobil.
+    const odporucanaJe = (dok.akcia === "start_over" || dok.akcia === "complete")
+        ? dok.akcia
+        : "";
 
     [["complete", "Complete"], ["start_over", `Start Over (${dok.cena_start_over || 5})`]]
         .forEach(([kluc, nazov]) => {
             const box = geo[kluc];
             if (!box || box.w <= 0 || box.h <= 0) return;
-            const odporucane = kluc === odporucanaJe;
+            const odporucane = odporucanaJe !== "" && kluc === odporucanaJe;
             const div = document.createElement("div");
             div.className = "karta-box" + (odporucane ? " karta-odporucana" : "");
             div.style.left = box.x + "px";
@@ -1020,9 +1027,10 @@ function vykresliKoniecBehu(data) {
         });
 
     const skore = dok.skore || {};
-    pNadpis.textContent = zberPrefix + (odporucanaJe === "start_over"
-        ? "Frozen Canvas — koniec behu: daj Start Over"
-        : "Frozen Canvas — koniec behu: daj Complete");
+    pNadpis.textContent = zberPrefix + (
+        odporucanaJe === "start_over" ? "Frozen Canvas — koniec behu: daj Start Over"
+        : odporucanaJe === "complete" ? "Frozen Canvas — koniec behu: daj Complete"
+        : "Frozen Canvas — koniec behu (neviem poradiť)");
     const istotaPercenta = Math.round((analyza.istota || 0) * 100);
     pIstota.textContent = `Istota: ${istotaPercenta} % · ${skore.na_max || 0}× Lv`
         + `${skore.max_level || 7} (dúhový), súčet levelov ${skore.sucet || 0}`;

@@ -287,7 +287,7 @@ pub fn text_toastu_neznama(a: &Analyza) -> String {
 }
 
 // ── Frozen Canvas (TLI 4b) — `?modul=canvas`, kontrakt v
-// docs/fakty/hry/torchlight-infinite/canvas-api-kontrakt.md. Odpoveď nesie
+// docs/fakty/hry/torchlight-infinite/canvas-api/README.md. Odpoveď nesie
 // `kroky[]` (sekvenciu ČO→KAM), nie jedno `odporucanie` ako Tartarus, lebo
 // cieľ typicky žiada viac umiestnení naraz.
 
@@ -442,7 +442,7 @@ pub struct AnalyzaCanvas {
     /// TLI 4c (`2026-10-15-0028-mcp.md`): `true`/`false` = smer aktívneho
     /// cieľa má/nemá aspoň `canvas.yml:prah_overenia_parov` potvrdených párov
     /// pred/po; `null` keď plátno nemá rozpoznaný cieľ (nedá sa posúdiť).
-    /// Kontrakt: `canvas-api-kontrakt.md` § `pravidlo_overene`.
+    /// Kontrakt: `canvas-api/README.md` § `pravidlo_overene`.
     pub pravidlo_overene: Option<bool>,
     /// TLI 69: odkiaľ server vzal dosah Color Mixing Effectu — `"ram"` (hra
     /// cieľové bunky sama žlto orámovala a appka ich rozpoznala lokálne,
@@ -1044,7 +1044,7 @@ mod testy {
 
     #[test]
     fn parsovanie_analyzy_canvas() {
-        // Tvar presne podľa docs/fakty/hry/torchlight-infinite/canvas-api-kontrakt.md.
+        // Tvar presne podľa docs/fakty/hry/torchlight-infinite/canvas-api/README.md.
         let json = r#"{
             "ok": true,
             "modul": "canvas",
@@ -1298,7 +1298,7 @@ mod testy {
 mod testy_tah {
     use super::*;
 
-    /// Tvar presne podľa `docs/fakty/hry/torchlight-infinite/canvas-api-kontrakt.md`
+    /// Tvar presne podľa `docs/fakty/hry/torchlight-infinite/canvas-api/README.md`
     /// § „Podobrazovka s kartami" (TLI 71).
     const ODPOVED: &str = r#"{
       "ok": true, "modul": "canvas", "kroky": [], "istota": 0.75,
