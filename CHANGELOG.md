@@ -2,6 +2,35 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## core 0.16.0 — 20.10.2026 (TLI 62/2: jadro appky pre zber minimapy — ROI, ticker, denný strop, fronta, `dost_dat`; bez appka releasu)
+
+Self-queued pokračovanie TLI 62 (`inbox/2026-10-20-0440-agent.md`), nadväzuje
+na server (62/1) a vzhľad trasy (62/2b). Kontrakt:
+`docs/fakty/hry/torchlight-infinite/minimapa-api-kontrakt.md`.
+
+- Nový modul **`core/src/minimapa_fronta.rs`** — rozhodovanie zberu, bez
+  obrazovky/siete/Windowsu (vzor `zber_fronta`, TLI 60):
+  - `RoiMinimapy`/`RoiSada` — výrez minimapy v `Box01` pre oba režimy
+    (`roh`, `stred`), s `normalizuj()` a `ako_parameter()` (`x,y,w,h` pre
+    kontrakt). Predvolené hodnoty sú **PRACOVNÁ HYPOTÉZA** (žiadna snímka
+    minimapy zatiaľ nebola zozbieraná), prepísateľné cez nový
+    `Nastavenia.minimapa_roi` bez nového buildu.
+  - `RezimMinimapy` (roh/stred) s parsovaním z textu.
+  - `ma_sa_fotit()` — ticker á 2 s, len keď beh mapy prebieha (nie
+    v hube/lobby).
+  - `DennyStav` — **vlastná inštancia, nezdieľaná s Canvasom** (zdieľaný
+    strop by dva zbery jedol navzájom), `smie_pribudnut`/`odstup_po_zlyhani`/
+    `nazov_snimky`/`je_subor_fronty` s prefixom `minimapa-`.
+  - `DostDatStav` — kombinuje cache `GET /api/minimapa/stav` (platnosť 5 min,
+    nepýta sa á 2 s) a pamäť `prijate: false` z `POST /api/minimapa`
+    (platí len do konca aktuálneho behu, `level_uid`).
+- `Nastavenia.minimapa_roi` (`RoiSada`) + normalizácia (`#[serde(default)]`,
+  starý `nastavenia.json` dostane odhadnuté ROI, nie nulové).
+- Testy: **25 nových** v `minimapa_fronta` + **3 nové** v `nastavenia`
+  (571 spolu v `core`, zelené). `cargo check` zelený v `core` aj
+  `src-tauri`. **Appka sa nevydáva** (release je 62/3) — volajúci (vlákno
+  nad oknom hry, sledovač logu) zatiaľ neexistuje, modul nikto nevolá.
+
 ## core 0.14.0 — 20.10.2026 (TLI 62/2b: vzhľad trasy nad minimapou — opacita, hrúbka, farba, koliesko myši; bez appka releasu)
 
 Doplnok 1 k TLI 62 (`inbox/done/2026-10-20-0158-mcp.md`, bod 4). Richard

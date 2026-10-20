@@ -1,3 +1,4 @@
+use crate::minimapa_fronta::RoiSada;
 use crate::minimapa_vzhlad::VzhladTrasy;
 use crate::rozlozenie::Rozlozenie;
 use serde::{Deserialize, Serialize};
@@ -147,6 +148,11 @@ pub struct Nastavenia {
     /// ich nebolo treba dopĺňať do hotového kresliaceho kódu.
     pub vzhlad_trasy: VzhladTrasy,
     pub batoh_skryte_polozky: Vec<u32>,
+    /// ROI minimapy pre oba režimy (TLI 62/2, `minimapa_fronta::RoiSada`) —
+    /// „štyri čísla na režim", prepísateľné bez nového buildu. Predvolené
+    /// hodnoty sú zatiaľ PRACOVNÁ HYPOTÉZA (žiadna snímka minimapy ešte
+    /// nebola zozbieraná) a opravia sa tu, keď prídu prvé reálne dáta.
+    pub minimapa_roi: RoiSada,
 }
 
 impl Default for Nastavenia {
@@ -177,6 +183,7 @@ impl Default for Nastavenia {
             hotkey_trh: "F10".to_string(),
             vzhlad_trasy: VzhladTrasy::default(),
             batoh_skryte_polozky: Vec::new(),
+            minimapa_roi: RoiSada::default(),
         }
     }
 }
@@ -215,6 +222,9 @@ impl Nastavenia {
         // TLI 62/2b — ručne upravený alebo starý `nastavenia.json` nesmie
         // nechať trasu neviditeľnú ani s rozbitou farbou.
         self.vzhlad_trasy.normalizuj();
+
+        // TLI 62/2 — ROI minimapy nesmie po ručnej úprave presahovať okno hry.
+        self.minimapa_roi.normalizuj();
     }
 
     /// Bezpečné zostrojenie adresy zamedzuje chybám v smerovaní požadaviek
@@ -626,5 +636,38 @@ mod testy_vzhlad_trasy {
         n.normalizuj();
         assert_eq!(n.rozlozenie.priehladnost, 0.3);
         assert_eq!(n.vzhlad_trasy.opacita_vrstvy, 100);
+    }
+}
+
+#[cfg(test)]
+mod testy_minimapa_roi {
+    use super::*;
+
+    /// Staré `nastavenia.json` (spred TLI 62/2) pole `minimapa_roi` nemajú —
+    /// `#[serde(default)]` musí dosadiť pracovnú hypotézu z
+    /// `minimapa_fronta`, nie nulový (a teda nepoužiteľný) výrez.
+    #[test]
+    fn stare_nastavenia_bez_pola_dostanu_odhadnute_roi() {
+        let n = Nastavenia::z_jsonu(r#"{"url_servera":"https://tli.tvojtatko.sk"}"#);
+        assert_eq!(n.minimapa_roi, crate::minimapa_fronta::RoiSada::default());
+    }
+
+    #[test]
+    fn normalizacia_nastaveni_oreze_aj_minimapa_roi() {
+        let mut n = Nastavenia::default();
+        n.minimapa_roi.roh = crate::minimapa_fronta::RoiMinimapy { x: 0.9, y: 0.9, w: 0.9, h: 0.9 };
+        n.normalizuj();
+        assert!((n.minimapa_roi.roh.x + n.minimapa_roi.roh.w - 1.0).abs() < 1e-9);
+        assert!((n.minimapa_roi.roh.y + n.minimapa_roi.roh.h - 1.0).abs() < 1e-9);
+    }
+
+    /// Richardom opravená hodnota (keď prídu prvé snímky, krok 62/4) musí
+    /// prežiť uloženie a opätovné načítanie.
+    #[test]
+    fn vlastne_roi_prezije_kolo_cez_json() {
+        let mut n = Nastavenia::default();
+        n.minimapa_roi.stred = crate::minimapa_fronta::RoiMinimapy { x: 0.3, y: 0.2, w: 0.4, h: 0.5 };
+        let znova = Nastavenia::z_jsonu(&n.do_jsonu());
+        assert_eq!(znova.minimapa_roi.stred, n.minimapa_roi.stred);
     }
 }
