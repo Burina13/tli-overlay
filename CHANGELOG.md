@@ -39,11 +39,39 @@ session naozaj videla:
   novej; stará sa **nezapíše ako strata** (hra pri Sorte položky len presúva).
   Rovnako to robí referenčný TITrack.
 
+**A hlavne: po reštarte už appka drop nestratí.** Samotné „bez základu
+nepočítam" je síce správne, ale drahé — na Richardovom dnešnom logu by reštart
+o 11:54 zahodil dropy v 12 mapách, kým by si spomenul na Sort. `StavChvosta`
+si ale cez reštart drží POZÍCIU v logu, takže appka tú istú časť súboru vie
+prečítať ešte raz do zahoditeľného sledovača a prevziať z neho **len stav
+batohu**. Behy, dropy ani ceny z toho nevzniknú (tie už appka spracovala, keď
+riadky čítala prvý raz). Výzva na Sort ostáva ako druhá poistka pre prípad,
+keď sa nažhavenie nemá o čo oprieť — napríklad keď hra log medzitým rotovala.
+
+**Ešte jeden nález z overovania: prázdna stránka batohu je tiež známa stránka.**
+Pri prihlásení hra vypíše `BagMgr@:InitBagData` len pre stránky, v ktorých
+niečo je — pre prázdnu nepríde ani jeden riadok. Appka ju preto nepovažovala
+za známu a prvý drop do nej zahodila, hoci o nej vedela všetko (Richardov log
+zo 17.10., mapa `YJ_LiuJinJieQu200`). Spoľahlivý signál je
+`ItemChange@ Reset PageId=N`, ktorý hra pošle **aj pre prázdnu stránku** —
+appka ho odteraz číta.
+
 **Overené proti TITracku** (`astockman99/TITrack`) na Richardových skutočných
-logoch, per mapu, zoznam dropov 1:1 — vrátane archivovaných rotácií. Bez
-reštartu: **74/74 máp zhoda pred opravou aj po nej** (nič, čo fungovalo, sa
-nepokazilo). So simulovaným reštartom o 11:54: pred opravou 12 máp
-s nafúknutými číslami, po oprave už ani jedna.
+logoch, per mapu, zoznam dropov 1:1 — dnešok aj všetkých päť archivovaných
+rotácií, spolu **748 máp a 2,3 GB logu**:
+
+| log | máp | pred opravou | po oprave |
+|---|---|---|---|
+| dnešok (206 MB) | 77 | 77/77 | 77/77 |
+| 17.10. (149 MB) | 81 | 81/81 | 81/81 |
+| 17.–18.10. (66 MB) | 33 | 33/33 | 33/33 |
+| 18.–19.10. (846 MB) | 258 | 258/258 | 258/258 |
+| 19.10. (30 MB) | 6 | 6/6 | 6/6 |
+| 19.–20.10. (977 MB) | 296 | 296/296 | 296/296 |
+| **dnešok + reštart appky o 11:54** | 74 | **62/74** | **74/74** |
+
+Nič, čo fungovalo, sa teda nepokazilo, a jediný riadok, ktorý sa hýbe, je
+práve ten nahlásený.
 
 **Jednorazový prepočet histórie.** Pri prvom štarte si appka spraví **kópiu
 databázy** (`tracker.sqlite3.pred-tli68-<čas>`, overí, že nie je prázdna — bez

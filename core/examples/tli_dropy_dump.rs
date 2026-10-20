@@ -55,52 +55,74 @@ fn vypis(behy: &[Beh]) {
 }
 
 fn main() {
+    use std::io::Read;
+
     let args: Vec<String> = std::env::args().collect();
     let cesta = args.get(1).cloned().expect("cesta k logu ako argument");
     let restart_o: Option<String> = args
         .iter()
         .position(|a| a == "--restart")
         .and_then(|i| args.get(i + 1).cloned());
-    let bajty = std::fs::read(&cesta).unwrap_or_else(|e| panic!("čítanie {cesta}: {e}"));
-    eprintln!("načítaný {cesta}: {} bajtov", bajty.len());
-
     let nazhavit = args.iter().any(|a| a == "--nazhav");
+
+    // Číta sa po 8 MB dávkach presne ako v appke (`StavChvosta` vie BOM,
+    // UTF-16 aj riadok rozdelený na hranici dávky). Richardove rotované logy
+    // majú bežne cez 800 MB — načítať taký súbor celý do pamäti znamená, že
+    // nástroj zabije OOM killer (CT 111 má 4 GB RAM).
+    const DAVKA: usize = 8 * 1024 * 1024;
+    let mut subor = std::fs::File::open(&cesta).unwrap_or_else(|e| panic!("čítanie {cesta}: {e}"));
+    let velkost = subor.metadata().map(|m| m.len()).unwrap_or(0);
+    eprintln!("načítaný {cesta}: {velkost} bajtov");
+
     let mut chvost = StavChvosta::novy();
-    let riadky = chvost.priprav_riadky(&bajty);
-    eprintln!("riadkov: {}", riadky.len());
+    let mut buf = vec![0u8; DAVKA];
+    let mut riadkov: usize = 0;
 
     let mut sledovac = Sledovac::novy();
     let mut behy: Vec<Beh> = Vec::new();
     let mut restart_hotovy = restart_o.is_none();
-    for riadok in &riadky {
-        if !restart_hotovy {
-            if let Some(cas) = restart_o.as_deref() {
-                // Riadky majú tvar `[2026.10.20-09.54.00:123][...]`.
-                if riadok.len() > 22 && riadok.starts_with('[') {
-                    let hhmmss = riadok[12..20].replace('.', ":");
-                    if hhmmss.as_str() >= cas {
-                        eprintln!("--restart: čerstvý Sledovac od {hhmmss}");
-                        let stary = std::mem::replace(&mut sledovac, Sledovac::novy());
-                        if nazhavit {
-                            // TLI 68: presne to, čo robí appka v
-                            // `src-tauri::tracker::nazhav_zaklad_batohu` —
-                            // už spracovanú časť logu prejde ešte raz do
-                            // zahoditeľného sledovača a prevezme z neho LEN
-                            // základ dropov (stav batohu + potvrdené stránky).
-                            // Tu je ten zahoditeľný sledovač rovno ten, čo
-                            // práve dobehol po reštartový riadok.
-                            eprintln!("--nazhav: základ dropov prevzatý z už prečítanej časti");
-                            sledovac.prevezmi_zaklad_batohu(&stary);
+    // Nažhavovací sledovač vidí VŠETKY riadky od začiatku súboru. Po
+    // „reštarte" z neho appka prevezme LEN základ dropov — presne to robí
+    // `nazhav_zaklad_batohu` v `src-tauri`, len tam sa tá už spracovaná časť
+    // logu číta zo súboru ešte raz.
+    let mut nazhavovaci = Sledovac::novy();
+
+    loop {
+        let precitane = match subor.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => n,
+            Err(e) => panic!("čítanie {cesta}: {e}"),
+        };
+        let riadky = chvost.priprav_riadky(&buf[..precitane]);
+        riadkov += riadky.len();
+        for riadok in &riadky {
+            if nazhavit && !restart_hotovy {
+                nazhavovaci.riadok(riadok);
+            }
+            if !restart_hotovy {
+                if let Some(cas) = restart_o.as_deref() {
+                    // Riadky majú tvar `[2026.10.20-09.54.00:123][...]`.
+                    if riadok.len() > 22 && riadok.starts_with('[') {
+                        let hhmmss = riadok[12..20].replace('.', ":");
+                        if hhmmss.as_str() >= cas {
+                            eprintln!("--restart: čerstvý Sledovac od {hhmmss}");
+                            sledovac = Sledovac::novy();
+                            if nazhavit {
+                                eprintln!("--nazhav: základ dropov prevzatý z už prečítanej časti");
+                                sledovac.prevezmi_zaklad_batohu(&nazhavovaci);
+                                nazhavovaci = Sledovac::novy();
+                            }
+                            restart_hotovy = true;
                         }
-                        restart_hotovy = true;
                     }
                 }
             }
-        }
-        if let Some(beh) = sledovac.riadok(riadok) {
-            behy.push(beh);
+            if let Some(beh) = sledovac.riadok(riadok) {
+                behy.push(beh);
+            }
         }
     }
+    eprintln!("riadkov: {riadkov}");
     if let Some(beh) = sledovac.ukonci() {
         behy.push(beh);
     }
