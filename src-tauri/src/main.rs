@@ -1245,6 +1245,49 @@ fn precitaj_fazu_kariet(snimok: &snimka::Snimka) -> (String, String) {
     }
 }
 
+/// TLI 72: prečíta z PLNEJ snímky počítadlo „X/Y" z pravého dolného rohu
+/// a pruh nad plátnom (kde hra píše buď Color Mixing cieľ, alebo banner
+/// „All Paint has been added…"). Vracia reťazec pre query parameter
+/// `pocitadlo` — prázdny, keď sa nič rozumné neprečítalo.
+///
+/// Keď banner sedí, ale počítadlo sa prečítať nedalo, pošle sa `"1/1"`:
+/// server z toho urobí `polozene >= celkom`, teda fázu konca behu, a rada
+/// Complete/Start Over sa hráčovi ukáže aj bez presných čísel. Opačne to
+/// nejde — samotné počítadlo bez banneru koniec behu neznamená.
+///
+/// Zlyhanie OCR NIE JE chyba behu (tá istá úvaha ako pri
+/// `precitaj_fazu_kariet`): zapíše sa do denníka a pokračuje sa bez
+/// parametra, teda presne tak, ako sa appka správala pred TLI 72.
+#[cfg(windows)]
+fn precitaj_pocitadlo(snimok: &snimka::Snimka) -> String {
+    let pocitadlo = match ocr::rozpoznaj_text_oblasti(snimok, canvas_rozlozenie::pocitadlo_box01()) {
+        Ok(t) => canvas_ocr::parsuj_pocitadlo(&t),
+        Err(e) => {
+            denik::zapis("canvas", &format!("OCR počítadla zlyhalo: {e}"));
+            None
+        }
+    };
+    let banner = match ocr::rozpoznaj_text_oblasti(snimok, canvas_rozlozenie::banner_box01()) {
+        Ok(t) => canvas_tahy::je_banner_vsetko_polozene(&t),
+        Err(e) => {
+            denik::zapis("canvas", &format!("OCR pruhu nad plátnom zlyhalo: {e}"));
+            false
+        }
+    };
+    match (pocitadlo, banner) {
+        (Some((p, c)), _) => {
+            denik::zapis("canvas", &format!("počítadlo {p}/{c}, banner konca behu: {banner}"));
+            format!("{p}/{c}")
+        }
+        (None, true) => {
+            denik::zapis("canvas", "banner „All Paint has been added\" sedí, ale počítadlo \
+sa neprečítalo — posielam 1/1, nech server vie, že je koniec behu");
+            "1/1".to_string()
+        }
+        (None, false) => String::new(),
+    }
+}
+
 #[cfg(windows)]
 pub(crate) fn spusti_analyzu(app: AppHandle, modul: Modul, zdroj: &'static str) {
     // Zapísané VŽDY, ako prvé — nezávisle od všetkých early-returnov nižšie.
@@ -1851,10 +1894,20 @@ V hre prepni Nastavenia → Zobrazenie → Režim okna na „Okno bez okrajov“
                 // karty na hrane čitateľnosti. Rovnaký vzor a dôvod ako `ramy`
                 // vyššie. Keď OCR nevyjde, fázu si server skúsi prečítať sám.
                 let (faza_param, karty_param) = precitaj_fazu_kariet(&snimok);
+                // TLI 72: počítadlo X/Y a banner konca behu. Na podobrazovke
+                // s kartami je počítadlo skryté za tlačidlom Select, takže sa
+                // tam ani nečíta — ušetrí to dve OCR volania a hlavne zabráni
+                // tomu, aby staré číslo prepísalo rozpoznanú fázu kariet.
+                let pocitadlo_param = if faza_param.is_empty() {
+                    precitaj_pocitadlo(&snimok)
+                } else {
+                    String::new()
+                };
                 let vysledok = snimka::do_jpegu(&snimok, zmensenie::MAX_DLZKA, 80).and_then(|jpeg| {
                     denik::zapis("http", &format!("POST /api/analyza?modul=canvas ({} B JPEG)", jpeg.len()));
                     let _ = app.emit("stav", json!({ "faza": "odosielam" }));
-                    klient::posli_analyzu_canvas(&nastavenia, jpeg, &ramy, &faza_param, &karty_param)
+                    klient::posli_analyzu_canvas(&nastavenia, jpeg, &ramy, &faza_param,
+                                                 &karty_param, &pocitadlo_param)
                 });
                 match &vysledok {
                     Ok(v) => denik::zapis("http", &format!("canvas OK, {} ms", v.trvanie_ms)),
@@ -1955,10 +2008,33 @@ V hre prepni Nastavenia → Zobrazenie → Režim okna na „Okno bez okrajov“
                             }
                             None => (vec![], None),
                         };
+                        // TLI 72: koniec behu — orámovať treba TLAČIDLO, ktoré
+                        // server odporučil (Complete alebo Start Over), nie
+                        // bunku plátna. Ten istý prepočet súradníc ako všade.
+                        let tlacidla_konca = v.analyza.dokoncenie.as_ref().map(|d| {
+                            let css = |b: Option<api::Box01>| {
+                                b.filter(|b| b.w > 0.0 && b.h > 0.0).map(|b| {
+                                    let c = suradnice::box01_na_css(
+                                        b.x, b.y, b.w, b.h, &obdlznik, mierka);
+                                    json!({"x": c.x, "y": c.y, "w": c.w, "h": c.h})
+                                })
+                            };
+                            json!({
+                                "akcia": d.akcia.clone(),
+                                "dovod": d.dovod.clone(),
+                                "cena_start_over": d.cena_start_over,
+                                "odporucane": css(d.box_),
+                                "complete": css(d.box_complete),
+                                "start_over": css(d.box_start_over),
+                            })
+                        });
                         denik::zapis(
                             "zobraz",
-                            &format!("canvas: {} krokov, {} kariet, emitujem stav=hotovo_canvas",
-                                     kroky.len(), karty.len()),
+                            &format!("canvas: {} krokov, {} kariet, koniec behu: {}, \
+emitujem stav=hotovo_canvas",
+                                     kroky.len(), karty.len(),
+                                     v.analyza.dokoncenie.as_ref()
+                                         .map(|d| d.akcia.as_str()).unwrap_or("nie")),
                         );
                         zobraz_vysledok(
                             &app,
@@ -1971,6 +2047,7 @@ V hre prepni Nastavenia → Zobrazenie → Režim okna na „Okno bez okrajov“
                                 "kroky": kroky,
                                 "karty": karty,
                                 "tlacidlo": tlacidlo,
+                                "dokoncenie": tlacidla_konca,
                                 "mierka": mierka,
                                 "sirka": sirka_log,
                                 "vyska": vyska_log,

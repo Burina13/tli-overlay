@@ -130,6 +130,7 @@ pub fn posli_analyzu_canvas(
     ramy: &str,
     faza: &str,
     karty: &str,
+    pocitadlo: &str,
 ) -> Result<VysledokCanvas, String> {
     let zaciatok = std::time::Instant::now();
 
@@ -146,6 +147,14 @@ pub fn posli_analyzu_canvas(
     // percentuálne zakóduje, takže text karty s medzerami a `[]` prejde.
     if !faza.is_empty() && !karty.is_empty() {
         poziadavka = poziadavka.query("faza", faza).query("karty", karty);
+    }
+
+    // TLI 72: počítadlo „X/Y" z pravého dolného rohu, tiež z lokálneho OCR.
+    // Posiela sa samostatne od `faza`/`karty` zámerne — počítadlo je vidieť
+    // na BEŽNOM plátne, kým karty na podobrazovke, takže tieto dve veci
+    // neprichádzajú naraz a spoločná podmienka by jednu z nich zahodila.
+    if !pocitadlo.is_empty() {
+        poziadavka = poziadavka.query("pocitadlo", pocitadlo);
     }
 
     let odpoved = poziadavka.send_bytes(&jpeg);

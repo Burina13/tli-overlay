@@ -2,6 +2,42 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.32.0 — 20.10.2026 (TLI 72 — čo Frozen Canvas vlastne OPTIMALIZUJE)
+
+**Čo Richard zadal 20.10.2026 ~16:36** po svojom behu z ~14:1x: „20/20 paintov,
+All Paint has been added, tlačidlá Start Over (5) a Complete… Ukončilo to run,
+ale máme dve dúhové, a to je vlastne oveľa lepšie, než pokračovať."
+
+Dovtedy appka radila tak, aby boli výsledné levely čo najvyššie — ale nikde
+nebolo napísané, **čo vyhráva pri konflikte**. Odteraz je poradie kritérií
+Richardovo a je zapísané v `canvas.yml` → `cielova_funkcia`:
+
+1. **HLAVNÉ: počet paintov na Max Paint Level** (v jeho hre Lv7, dúhové).
+2. Sekundárne: súčet levelov.
+3. Splnenie jednotlivého Color Mixing cieľa (0/3) **nie je hodnota sama osebe**
+   — má cenu len vtedy, keď vedie k vyšším levelom.
+
+**Čo je nové v appke:**
+
+- **Každá rada povie, koľko dúhových paintov z nej vypadne.** Keď ani jeden,
+  napíše to — a keď beh ešte má painty v zásobe, povie, že cieľ sa oplatí skôr
+  prepísať ([Reimagine]) než dokončiť.
+- **Pri výbere karty ťahu** sa cieľ, z ktorého nevypadne ani jeden dúhový,
+  prestal brániť: [Reimagine] je v takej situácii pred [Spread].
+- **Nová obrazovka: koniec behu.** Keď počítadlo vpravo dole dosiahne strop
+  („20/20") a hra ukáže „All Paint has been added. You can start painting
+  now.", appka orámuje **to z dvoch tlačidiel, ktoré odporúča** — Complete,
+  alebo Start Over za 5 Colored Snow — a povie prečo: porovná počet dúhových
+  a súčet levelov s priemerom tvojich doterajších behov. Dovtedy tam písala
+  „Frozen Canvas — žiadny krok", čo bola pravda bez hodnoty.
+- **Appka číta počítadlo X/Y lokálne** (Windows OCR nad pevným výrezom, ako
+  rámy pri TLI 69 a karty pri TLI 71); server je záloha cez vision.
+
+**Čím si nie sme istí a appka to píše:** priemer behov je zatiaľ poskladaný
+z 11 plátien, ktoré sa za koniec behu len POVAŽUJÚ (počítadlo sa začalo
+posielať až touto verziou), a appka nevidí zostatok Colored Snow, takže Start
+Over sa nemusí dať kliknúť vôbec.
+
 ## 0.31.0 — 20.10.2026 (TLI 71 — „Select the Brushstroke direction")
 
 **Čo Richard nahlásil 20.10.2026 ~16:3x** (v0.30.0): „Stále bieda, lebo sa to

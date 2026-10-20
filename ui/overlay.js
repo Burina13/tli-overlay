@@ -986,6 +986,64 @@ function vykresliVyberKarty(data) {
     logPanelVykreslene("canvas-vyber-karty");
 }
 
+/* TLI 72 — koniec behu („All Paint has been added. You can start painting
+   now."). Hra sa už nepýta, kam položiť paint, ale ktoré z dvoch tlačidiel
+   stlačiť: Complete, alebo Start Over za 5 Colored Snow. Orámuje sa TO
+   ODPORÚČANÉ nahrubo a druhé nenápadne — nech je vidieť, že appka posúdila
+   obe, nie že o druhom nevie. */
+function vykresliKoniecBehu(data) {
+    const analyza = data.analyza || {};
+    const dok = analyza.dokoncenie || {};
+    const geo = data.dokoncenie || {};
+    const zberPrefix = (typeof data.zber_pocet === "number")
+        ? `Zber dát #${data.zber_pocet} — `
+        : "";
+    const odporucanaJe = dok.akcia === "start_over" ? "start_over" : "complete";
+
+    [["complete", "Complete"], ["start_over", `Start Over (${dok.cena_start_over || 5})`]]
+        .forEach(([kluc, nazov]) => {
+            const box = geo[kluc];
+            if (!box || box.w <= 0 || box.h <= 0) return;
+            const odporucane = kluc === odporucanaJe;
+            const div = document.createElement("div");
+            div.className = "karta-box" + (odporucane ? " karta-odporucana" : "");
+            div.style.left = box.x + "px";
+            div.style.top = box.y + "px";
+            div.style.width = box.w + "px";
+            div.style.height = box.h + "px";
+            const stitok = document.createElement("span");
+            stitok.className = "karta-stitok";
+            // VŽDY textContent — text ide zo servera (rovnaké pravidlo ako inde).
+            stitok.textContent = odporucane ? `✓ ${nazov}` : nazov;
+            div.appendChild(stitok);
+            elVrstva.appendChild(div);
+        });
+
+    const skore = dok.skore || {};
+    pNadpis.textContent = zberPrefix + (odporucanaJe === "start_over"
+        ? "Frozen Canvas — koniec behu: daj Start Over"
+        : "Frozen Canvas — koniec behu: daj Complete");
+    const istotaPercenta = Math.round((analyza.istota || 0) * 100);
+    pIstota.textContent = `Istota: ${istotaPercenta} % · ${skore.na_max || 0}× Lv`
+        + `${skore.max_level || 7} (dúhový), súčet levelov ${skore.sucet || 0}`;
+    pIstota.classList.toggle("nizka", istotaPercenta < 50);
+    pDovod.textContent = dok.dovod || "";
+    if (pIkony) pIkony.classList.add("skryte");
+    pAlternativy.innerHTML = "";
+    pAlternativy.classList.add("skryte");
+
+    const sk = (analyza.skontroluj || []).slice();
+    if (sk.length > 0) {
+        pSkontroluj.textContent = "Neisté: " + sk.join("; ");
+        pSkontroluj.classList.remove("skryte");
+    } else {
+        pSkontroluj.classList.add("skryte");
+    }
+
+    elPanel.classList.remove("skryte");
+    logPanelVykreslene("canvas-koniec-behu");
+}
+
 function vykresliHotovoCanvas(data) {
     const kroky = data.kroky || [];
     const analyza = data.analyza || {};
@@ -1003,6 +1061,16 @@ function vykresliHotovoCanvas(data) {
     // diffu cez API kredit (20.10.2026).
     if (analyza.tah) {
         vykresliVyberKarty(data);
+        return;
+    }
+    // TLI 72: koniec behu. Rovnaká úvaha ako pri `tah` vyššie — rozhoduje
+    // VÝHRADNE prítomnosť `dokoncenie` v odpovedi, nie to, či prišli
+    // súradnice tlačidiel. Keby sa podmienka viazala na geometriu, odpoveď
+    // bez boxov by prepadla do vetvy „žiadny krok" a hráč by na obrazovke
+    // s Complete/Start Over čítal, že na plátne nie je voľná bunka — presne
+    // tú bezcennú hlášku, ktorú TLI 71 aj 72 odstraňujú.
+    if (analyza.dokoncenie) {
+        vykresliKoniecBehu(data);
         return;
     }
     // TLI 57: Zber dát už radu nezatajuje — keď appka snímku popri rade aj

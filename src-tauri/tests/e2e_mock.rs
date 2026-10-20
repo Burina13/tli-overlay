@@ -255,7 +255,7 @@ fn e2e_canvas_analyza_az_po_parovane_obdlzniky() {
     let n = nastavenia(port);
 
     let jpeg = vec![0xFF, 0xD8, 0xFF, 0xD9];
-    let v = klient::posli_analyzu_canvas(&n, jpeg.clone(), "1-3.2-3", "", "")
+    let v = klient::posli_analyzu_canvas(&n, jpeg.clone(), "1-3.2-3", "", "", "")
         .expect("mock mal odpovedať 200");
 
     // 1. Klient poslal presne to, čo kontrakt chce — na modul=canvas endpoint.
@@ -306,6 +306,7 @@ fn e2e_canvas_vyber_tahu_az_po_obdlznik_karty() {
         &n, jpeg.clone(), "",
         "vyber_tahu",
         "[Reimagine] changes the Color Mixing Objective and Effect|[Spread] takes effect on",
+        "",
     )
     .expect("mock mal odpovedať 200");
 

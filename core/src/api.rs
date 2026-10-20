@@ -394,6 +394,41 @@ impl Default for OdporucanyTah {
     }
 }
 
+// ── TLI 72: koniec behu — „All Paint has been added", Complete vs Start Over.
+// Na tejto obrazovke sa hra nepýta, kam položiť paint, ale ktoré z dvoch
+// tlačidiel stlačiť. `kroky` sú preto prázdne a jediná rada je tu.
+
+/// Skóre plátna podľa cieľovej funkcie (server, `canvas_hodnotenie.py`) —
+/// `na_max` je HLAVNÉ kritérium (počet paintov na Max Paint Level, „dúhových"),
+/// `sucet` sekundárne.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct SkorePlatna {
+    pub na_max: i64,
+    pub sucet: i64,
+    pub obsadenych: i64,
+    pub dostupnych: i64,
+    pub max_level: i64,
+}
+
+/// Rada pre obrazovku konca behu: Complete, alebo Start Over za 5 Colored Snow.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct OdporucanieDokoncenia {
+    /// `complete` | `start_over` | prázdne (server sa nevyjadril).
+    pub akcia: String,
+    pub dovod: String,
+    pub skore: SkorePlatna,
+    pub cena_start_over: i64,
+    pub istota: Option<f64>,
+    pub skontroluj: Vec<String>,
+    /// Súradnice ODPORÚČANÉHO tlačidla — to, ktoré má panel orámovať.
+    #[serde(rename = "box")]
+    pub box_: Option<Box01>,
+    pub box_complete: Option<Box01>,
+    pub box_start_over: Option<Box01>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AnalyzaCanvas {
@@ -429,6 +464,20 @@ pub struct AnalyzaCanvas {
     /// TLI 71: rada, ktorú kartu vybrať. Prichádza LEN na podobrazovkách
     /// s výberom; pri bežnom plátne je `None` a kreslia sa `kroky`.
     pub tah: Option<OdporucanyTah>,
+    /// TLI 72: rada Complete / Start Over. Prichádza LEN pri
+    /// `faza == "vsetko_polozene"`; inde je `None`.
+    pub dokoncenie: Option<OdporucanieDokoncenia>,
+    /// TLI 72: koľko paintov na Max Paint Level prinesie odporúčaná
+    /// sekvencia. Hlavné kritérium cieľovej funkcie — panel ho ukazuje
+    /// hráčovi, nech vidí, či sa tento cieľ vôbec oplatí dokončiť.
+    pub prinos_na_max: i64,
+    /// TLI 72: skóre plátna tak, ako ho server spočítal. Appka si ho zámerne
+    /// NEPOČÍTA sama — jedno čítanie dosky, jeden výsledok.
+    pub skore: Option<SkorePlatna>,
+    /// TLI 72: počítadlo „X/Y" z pravého dolného rohu, tak ako ho server
+    /// prijal (z lokálneho OCR appky alebo z vision). `None` = neprečítané.
+    pub polozene: Option<i64>,
+    pub celkom: Option<i64>,
 }
 
 impl Default for AnalyzaCanvas {
@@ -446,6 +495,11 @@ impl Default for AnalyzaCanvas {
             platno: None,
             faza: String::new(),
             tah: None,
+            dokoncenie: None,
+            prinos_na_max: 0,
+            skore: None,
+            polozene: None,
+            celkom: None,
         }
     }
 }

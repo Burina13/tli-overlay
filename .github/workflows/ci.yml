@@ -248,6 +248,31 @@ jobs:
           name: overlay-nahlad-canvas-tahy
           path: overlay-nahlad-canvas-tahy.png
           if-no-files-found: warn
+      - name: Náhľad konca behu Frozen Canvasu (TLI 72) ako obrázok (artefakt behu)
+        shell: pwsh
+        run: |
+          # Rovnaký mechanizmus ako vyššie, len `nahlad-canvas-koniec-behu.html`/.js
+          # podsunie obrazovku „All Paint has been added" z REÁLNEJ Richardovej
+          # snímky 2026-10-20-141014 — odporúčané tlačidlo nahrubo, druhé nenápadne.
+          $edge = @(
+            "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+            "C:\Program Files\Microsoft\Edge\Application\msedge.exe"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $edge) { Write-Warning "Edge sa nenašiel, náhľad preskakujem."; exit 0 }
+          $cesta = (Resolve-Path "ui/nahlad-canvas-koniec-behu.html").Path
+          $p = Start-Process -FilePath $edge -ArgumentList @(
+            "--headless", "--disable-gpu", "--screenshot=$PWD\overlay-nahlad-canvas-koniec-behu.png",
+            "--window-size=1600,900", "--virtual-time-budget=4000",
+            "file:///$($cesta -replace '\\','/')"
+          ) -NoNewWindow -Wait -PassThru
+          Write-Host "Edge exit code: $($p.ExitCode)"
+          if (-not (Test-Path "overlay-nahlad-canvas-koniec-behu.png")) { Write-Warning "Edge obrázok nevytvoril." }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: overlay-nahlad-canvas-koniec-behu
+          path: overlay-nahlad-canvas-koniec-behu.png
+          if-no-files-found: warn
       - name: Náhľad režimu „Upraviť rozloženie“ (TLI 21) ako obrázok (artefakt behu)
         shell: pwsh
         run: |
