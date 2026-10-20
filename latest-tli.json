@@ -1,8 +1,8 @@
 {
-  "version": "0.30.0",
-  "notes": "TLI 67b: keď je server pomalý, appka ti to povie a nezasekne sa. Richard nahlásil, že sa mu appka „celá sekla“ — jedna analýza Frozen Canvasu trvala 34 sekúnd a každé ďalšie stlačenie Ctrl+W sa zaradilo do fronty, takže sa po dobehnutí spustila ďalšia stará snímka. Fronta je preč: nové stlačenie bežiacu analýzu ZRUŠÍ a odfotí odznova (aktuálna obrazovka je dôležitejšia), stlačenie do jednej sekundy sa ignoruje. Na server sa čaká najviac 10 sekúnd, potom príde hláška „Server teraz neodpovedá – skús o chvíľu“, ktorá zhasne na prvý klik. A počas čakania vidíš, koľko sekúnd to už beží — „Odoslané, čakám na radu… (7 s)“. Na strane servera sa nasadzovanie už nerobí hráčovi pod rukami. Pozri CHANGELOG.",
-  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.30.0/Tvoj-Tatko-TLI-Overlay_0.30.0_x64_en-US.msi",
-  "msiSha256": "0f1ad1816f701f9de4ef11e53053c3d378fbe000860663da1338bd2537f80a3d",
-  "installerUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.30.0/Tvoj-Tatko-TLI-Overlay_0.30.0_x64-setup.exe",
-  "installerSha256": "3c1ae81c950e717d2e7cc51c40f002772f6d8a125a183cb0c81ae4fb4abe41c0"
+  "version": "0.31.0",
+  "notes": "TLI 71: appka konečne pozná obrazovku „Select the Brushstroke direction“. Richard: „Stále bieda, lebo sa to dá… a nakoniec nie základnú vec.“ Keď sa hra medzi dvoma miešaniami spýta, ktorý ťah štetcom vybrať, appka doteraz napísala „žiadny krok — v dosahu nie je voľná bunka“: pravdu, ktorá nepomohla. Odteraz odporúčanú kartu orámuje nahrubo so štítkom „✓ vyber túto“, ostatné nenápadne aj so skóre, orámuje aj tlačidlo Select a v paneli napíše PREČO — čo cieľ brzdí (zablokované bunky vs. málo paintov v ruke) a čo tá karta urobí. Pozná všetky tri ťahy — [Reimagine] prepíše cieľ a efekt, [Spread] umožní maľovať na zablokovanú bunku alebo ju premení na prázdnu, [Layer] pridá efekt navyše — aj 59 konkrétnych Brushstroke efektov. Umiestňovanie paintov sa nemení. Pozri CHANGELOG.",
+  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.31.0/Tvoj-Tatko-TLI-Overlay_0.31.0_x64_en-US.msi",
+  "msiSha256": "ddbd461a4bc00dc100d14207119334e0d2133a81089d458b02d3bb6bb188b489",
+  "installerUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.31.0/Tvoj-Tatko-TLI-Overlay_0.31.0_x64-setup.exe",
+  "installerSha256": "ae102834f0e9264584348915a7b7b9aad82c698a9b6beaf12c7411c9f3642b04"
 }
