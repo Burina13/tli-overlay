@@ -2,6 +2,29 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.23.2 — 20.10.2026 (TLI 52c doplnok — po migrácii chýbal Start Menu zástupca)
+
+Živo zistené vlastnou CI poistkou `migracia` (nový krok „Start Menu zástupca
+po migrácii ukazuje na NOVÚ verziu") hneď pri prvom behu nad `tli-v0.23.1`:
+šablóna `tauri-bundler` preskakuje tvorbu zástupcu vždy, keď `$UpdateMode = 1`
+A SÚČASNE `$WixMode <> 1` (`CreateOrUpdateStartMenuShortcut`,
+`installer.nsi`) — predpokladá, že pri bežnej aktualizácii zástupca z
+PREDOŠLEJ inštalácie už existuje. Pri migrácii z MSI to ale neplatí: ide
+o PRVÚ perUser inštaláciu a starý zástupca (v Program Files) zmizol spolu
+so starou MSI pri `msiexec /X`. Bez tohto doplnku by hráč po tichej migrácii
+nemal VÔBEC ŽIADEN spôsob, ako appku spustiť zo Štart menu ani z pracovnej
+plochy.
+
+`installer-hooks.nsh` teraz pri úspešnom nájdení a odinštalovaní starej MSI
+nastaví `$WixMode 1` (existujúca globálna premenná šablóny) — tým istým
+príznakom, ktorý by nastavila VSTAVANÁ migrácia, keby v tichom behu fungovala
+(pozri 0.23.1 vyššie). `CreateOrUpdateStartMenuShortcut` aj analogická
+funkcia pre zástupcu na ploche tak zástupcu vytvoria aj v `/UPDATE` režime.
+
+Žiadna iná zmena oproti 0.23.1 — `tli-v0.23.1` ostáva v GitHub releasoch ako
+historický (nikdy neponúknutý v `latest-tli.json`), hráči dostanú rovno
+`0.23.2`.
+
 ## 0.23.1 — 20.10.2026 (TLI 52c — vlastný installer-hooks.nsh, migrácia starej MSI konečne funguje v tichom behu)
 
 Úloha `2026-10-20-0608-mcp.md` (HNED), pokračovanie `ROZPRACOVANE: TLI 52`.

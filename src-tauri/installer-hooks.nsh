@@ -90,6 +90,18 @@
     ExecWait 'msiexec.exe /X$1 /qn /norestart' $R3
     DetailPrint "TLI 52c: odinštalovanie starej MSI skončilo s kódom $R3"
 
+    ; $WixMode je existujúca globálna premenná šablóny (Var WixMode) — jej
+    ; jediný iný zápis je v NEspustenej `PageReinstall` (náš `/S` tam nikdy
+    ; nedôjde, pozri komentár hore), takže toto nastavenie tu nič nekoliduje.
+    ; DÔVOD, PREČO JU TREBA NASTAVIŤ: `CreateOrUpdateStartMenuShortcut`
+    ; (neskôr v TEJTO istej Section) zástupcu v `/UPDATE` režime PRESKOČÍ,
+    ; pokiaľ `$WixMode <> 1` — predpokladá, že pri obyčajnom update appky už
+    ; zástupca z predošlej inštalácie existuje. Pri migrácii z MSI to ale
+    ; neplatí: je to PRVÁ perUser inštalácia a bez tohto nastavenia by hráč
+    ; po tichej migrácii nemal v Štart menu (ani na pracovnej ploche) VÔBEC
+    ; žiadny zástupca, lebo starý (Program Files) odišiel so starou MSI.
+    StrCpy $WixMode 1
+
     CreateDirectory "$R2"
     FileOpen $R0 "$R2\migracia-msi-pokusena.flag" w
     FileWrite $R0 "produkt=$1$\r$\nvysledok_msiexec=$R3$\r$\n"
