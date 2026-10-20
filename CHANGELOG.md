@@ -2,6 +2,39 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## core 0.13.24 — 20.10.2026 (TLI 59b2c: overenie presnosti CELÉHO plátna — NEGATÍVNY výsledok, bez zmeny správania, bez appka releasu)
+
+Úloha `2026-10-20-0141-agent.md` (HNED, self-queued pokračovanie TLI 59b2b).
+Zadanie pýtalo zapojenie lokálneho rozpoznania (`canvas_obsah` +
+`canvas_sablony` + OCR) do appky, prepínač „lokálne/server" a release — ale
+výslovne najprv žiadalo overiť, či to má pri nameranej presnosti zmysel, a
+povedať narovinu, ak nie.
+
+**Zmerané na rovnakých 13 reálnych screenshotoch/468 bunkách ako 59b2b**
+(nezávislá Python reimplementácia rovnakých Rust vzorcov nad reálnymi
+obrázkami, metodika a skript: `docs/fakty/hry/torchlight-infinite/README.md`
++ `scripts/games/tli-canvas-cele-platno-presnost.py` v repe `ops`):
+obsah bunky (`Nedostupna`/`Prazdna`/`Namalovana`) správne na **celom** plátne
+(všetkých 36 políčok naraz) len **5/13 (38,5 %)**; keď sa pridá aj typ ikony
+monštra (`canvas_sablony`), celé plátno súhlasí len **1/13 (7,7 %)**.
+**Kľúčový nález:** skóre istoty (histogram intersection) z `canvas_sablony`
+NEODLIŠUJE správnu zhodu od nesprávnej na reálnych dátach (prekrývajúce sa
+rozsahy skóre) — žiadny prah istoty teda problém nerieši, nie je to otázka
+kalibrácie čísla.
+
+**Rozhodnutie: NEROBIŤ zapojenie, prepínač ani release.** Appka by pri
+7,7 % presnosti takmer vždy dávala hráčovi nesprávnu radu, a bez funkčného
+prahu istoty by appka nevedela, kedy tomu neveriť. `canvas_sablony.rs`
+doplnený o tento nález (nahrádza pôvodnú nádej, že prah istoty problém
+vyrieši). **Žiadna funkčná zmena** — len doc-comment a verzia; patch bump
+kvôli konvencii „každá dotknutá časť core = nová verzia".
+
+Ďalší krok (ak sa k tomu Richard/agent niekedy vráti) je zapísaný
+v `BACKLOG.md` (repo `ops`): template matching potrebuje inú črtu než farbu
+celej bunky (maskovanie farebného prstenca okolo ikony, napr. len stred
+výrezu alebo perceptuálny hash), inak zostáva pri 13 typoch prakticky na
+úrovni náhody na reálnych dátach.
+
 ## core 0.13.23 — 20.10.2026 (TLI 59b2b: rozpoznanie obsahu bunky + template matching ikon, bez appka releasu)
 
 Úloha `2026-10-20-0032-agent.md` (HNED, self-queued pokračovanie TLI 59b

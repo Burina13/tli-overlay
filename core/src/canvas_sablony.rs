@@ -34,9 +34,25 @@
 //!
 //! **Preto táto funkcia VŽDY vracia aj skóre istoty** (prienik histogramov,
 //! 0..1, VYŠŠIE = podobnejšie), nie len najlepšiu zhodu bez miery istoty —
-//! volajúci (plánovaná TLI 59b2c, zapojenie do appky) má podľa tohto skóre
-//! vedieť padnúť na server namiesto slepého dôverovania nízko istej lokálnej
-//! zhode, rovnako ako `istota_rozpoznania` z `api::AnalyzaCanvas`.
+//! volajúci mal podľa tohto skóre vedieť padnúť na server namiesto slepého
+//! dôverovania nízko istej lokálnej zhode, rovnako ako `istota_rozpoznania`
+//! z `api::AnalyzaCanvas`.
+//!
+//! **⚠️ TLI 59b2c (20.10.2026, `2026-10-20-0141-agent.md`) overila túto
+//! nádej na 13 reálnych screenshotoch/468 bunkách a vyvrátila ju: skóre
+//! NEODLIŠUJE správnu zhodu od nesprávnej.** Zoradené podľa skóre, správne
+//! aj nesprávne predikcie sa prekrývajú v CELOM rozsahu (0,17–0,34 správne,
+//! 0,19–0,38 nesprávne) — žiadny prah skóre teda nezlepší presnosť bez toho,
+//! aby zahodil aj väčšinu správnych zhôd. Dôsledok pre volajúceho: **typ
+//! ikony z tejto funkcie sa NESMIE použiť ako vstup do rady pre hráča bez
+//! ďalšieho zlepšenia algoritmu** (maskovanie farebného prstenca, iná črta
+//! než farba — pozri odstavec vyššie), nie je to vec prahu istoty. Appka
+//! preto naďalej nemá volajúceho a TLI 59b2c zapojenie do appky/prepínač
+//! „lokálne/server"/release NEUROBILA — zámerne, aby appka nedávala hráčovi
+//! nespoľahlivú radu. Celé meranie (metodika, čísla, aj prečo content
+//! klasifikácia `canvas_obsah` tento problém nemá):
+//! `docs/fakty/hry/torchlight-infinite/README.md` (repo `ops`) 20.10.2026
+//! ~02:xx, `BACKLOG.md` (repo `ops`).
 
 use crate::canvas_rozlozenie::platno_bunka_box01;
 use crate::obraz::orez_box01;
