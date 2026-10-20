@@ -88,6 +88,80 @@ fn pocet_levelov_efektu(efekt_popis: &str) -> i64 {
     1
 }
 
+/// Množné číslo kategórie do vety („Monster Painty" / „Gameplay Painty").
+/// Zrkadlí `_nazov_kategorie_mn` na serveri.
+fn nazov_kategorie_mn(kategoria: &str) -> &'static str {
+    if kategoria == "gameplay" { "Gameplay Painty" } else { "Monster Painty" }
+}
+
+/// Jedna veta „prečo práve tento paint" — TLI 69b, doplnok k TLI 69.
+/// Zrkadlí `_dovod_vyberu` na serveri; reťazce sú znak po znaku rovnaké.
+///
+/// Richard 20.10.2026 nad snímkou v0.24.0: „PREČO CHCE ZOBRAŤ LEVEL 1 A NIE TIE
+/// LVL 2?" Rada bez zdôvodnenia výberu sa nedá skontrolovať — hráč vidí len
+/// slot a bunku, a keď mu sedliacky rozum hovorí niečo iné, nemá ako zistiť,
+/// či sa mýli solver alebo on. Preto ku každému kroku pribúda, aký výsledný
+/// level ten paint dá a prečo nie je lepší iný. Platí to v OBOCH smeroch: keď
+/// sa vyberie NIŽŠÍ level, musí byť napísané prečo.
+///
+/// `sloty` je už zoradený zoznam kandidátov (najlepší výsledok prvý), `i` je
+/// index práve radeného kroku a `pocet` dĺžka celej sekvencie — z nej sa pozná,
+/// ktoré painty v ruke naozaj OSTANÚ a ktoré sekvencia minie.
+fn dovod_vyberu(
+    sloty: &[(i64, &Paint)],
+    i: usize,
+    pocet: usize,
+    pocet_levelov: i64,
+    max_level: i64,
+    kategoria: &str,
+) -> String {
+    let (_, paint) = sloty[i];
+    let kat_mn = nazov_kategorie_mn(kategoria);
+    // V Pythone slovník index → výsledok; indexy slotov sú unikátne, takže
+    // výsledok k slotu sa dá rátať priamo z jeho paintu.
+    let vysledok_z = |p: &Paint| (p.level + pocet_levelov).min(max_level);
+    let vysledok = vysledok_z(paint);
+    let najlepsi = sloty.iter().map(|(_, p)| vysledok_z(p)).max().unwrap_or(vysledok);
+    let sip = format!("Lv{} → Lv{}", paint.level, vysledok);
+
+    if vysledok < najlepsi {
+        return format!(
+            "Prečo tento: {sip} — painty s vyšším výsledkom (až Lv{najlepsi}) \
+             si vzali predošlé kroky tejto sekvencie, toto je najvyšší zvyšný."
+        );
+    }
+
+    let najvyssi_nizsi = sloty.iter().map(|(_, p)| vysledok_z(p)).filter(|v| *v < vysledok).max();
+    let mut preco = match najvyssi_nizsi {
+        Some(nizsi) => format!(
+            "Prečo tento: {sip} je najvyšší výsledok, aký sa z ruky dá dosiahnuť — \
+             slabšie {kat_mn} v ruke by skončili najviac na Lv{nizsi}."
+        ),
+        None => format!(
+            "Prečo tento: {sip}; vyšší výsledok z tejto ruky nejde, \
+             všetky {kat_mn} v nej dajú to isté."
+        ),
+    };
+
+    // Strop sa spomína LEN vtedy, keď silnejší paint naozaj ostane v ruke —
+    // teda je až za koncom tejto sekvencie (`sloty[pocet..]`). Keby ho sekvencia
+    // aj tak minula, veta „silnejší ostáva v ruke" by klamala.
+    let vyssie_rovnake = sloty
+        .get(pocet..)
+        .unwrap_or(&[])
+        .iter()
+        .filter(|(_, p)| p.level > paint.level && vysledok_z(p) == vysledok)
+        .map(|(_, p)| p.level)
+        .max();
+    if let Some(vyssi) = vyssie_rovnake {
+        preco.push_str(&format!(
+            " Lv{vyssi} by na strope Lv{max_level} skončil rovnako, \
+             preto ide prv nižší a silnejší ostáva v ruke."
+        ));
+    }
+    preco
+}
+
 pub fn navrhni_kroky(stav: &CanvasStav) -> VysledokSolvera {
     let ciel = match &stav.ciel {
         None => {
@@ -207,9 +281,9 @@ pub fn navrhni_kroky(stav: &CanvasStav) -> VysledokSolvera {
                 ciel.kluc_stlpec.unwrap_or(0)
             )
         };
-        let dovod = format!(
+        let mut dovod = format!(
             "Vezmi {} Lv{} zo slotu {} v ruke a polož ho {} — splní krok {}/{} cieľa '{}' \
-             a umiestnený paint vyskočí na Lv{} ({}).",
+             a umiestnený paint vyskočí na Lv{} ({}). {}",
             paint.typ,
             paint.level,
             slot_index,
@@ -219,7 +293,24 @@ pub fn navrhni_kroky(stav: &CanvasStav) -> VysledokSolvera {
             ciel.popis,
             po_umiestneni,
             ciel.efekt_popis,
+            dovod_vyberu(&sloty, i, pocet, pocet_levelov, stav.max_level, &kategoria),
         );
+        // Pri prvom kroku raz povedz, že TYP monštra na splnenie cieľa nerozhoduje —
+        // presne na tom sa Richard 20.10.2026 zasekol („prečo nie rovnaký typ ako
+        // zdroj?"). Hovorí to až vtedy, keď sa typy naozaj líšia, nech to pri
+        // zhodnom type zbytočne nezavadzia.
+        if i == 0 {
+            if let Some(kluc_paint) = kluc_bunka.and_then(|b| b.paint.as_ref()) {
+                if kluc_paint.typ != paint.typ {
+                    dovod.push_str(&format!(
+                        " Na type nezáleží — cieľ aj efekt počítajú len kategóriu \
+                         ({} Paint): v páre pred/po z 19.10.2026 pribudli ku kľúčovému \
+                         dwarfovi ratlin a pest a počítadlo vyskočilo 0/3 → 2/3.",
+                        if kategoria == "gameplay" { "Gameplay" } else { "Monster" }
+                    ));
+                }
+            }
+        }
         kroky.push(Krok {
             poradie: i as i64 + 1,
             zdroj_slot: slot_index,
@@ -707,5 +798,194 @@ mod testy {
         let v = navrhni_kroky(&stav);
         assert!(v.kroky.is_empty());
         assert!(v.skontroluj.iter().any(|s| s.contains("orámovala")), "{:?}", v.skontroluj);
+    }
+
+    // ── TLI 69b: „PREČO práve tento paint" ───────────────────────────────────
+    //
+    // Zrkadlí `test_28`–`test_34` v `testy-canvas-solver.py` (repo `ops`).
+    // Fixture je REÁLNA Richardova snímka z 20.10.2026 13:44 („PREČO CHCE
+    // ZOBRAŤ LEVEL 1 A NIE TIE LVL 2?").
+
+    const NEDOSTUPNE_134419: [(i64, i64); 10] =
+        [(1, 5), (1, 6), (2, 1), (3, 2), (4, 6), (5, 1), (5, 6), (6, 1), (6, 2), (6, 6)];
+    const ZDROJ_134419: (i64, i64) = (2, 5);
+    const LAD_134419: [(i64, i64); 4] = [(1, 3), (3, 3), (4, 3), (5, 3)];
+    const ORAMOVANE_134419: [(i64, i64); 3] = [(2, 4), (2, 6), (3, 5)];
+
+    fn board_richard_134419() -> CanvasStav {
+        let mut bunky = vec![];
+        for r in 1..=6 {
+            for c in 1..=6 {
+                let paint = if (r, c) == ZDROJ_134419 {
+                    Some(Paint::monster("agito", 3))
+                } else if LAD_134419.contains(&(r, c)) {
+                    Some(Paint {
+                        kategoria: "gameplay".to_string(),
+                        typ: "ice_block".to_string(),
+                        level: 1,
+                    })
+                } else {
+                    None
+                };
+                bunky.push(Bunka {
+                    riadok: r,
+                    stlpec: c,
+                    dostupna: !NEDOSTUPNE_134419.contains(&(r, c)),
+                    paint,
+                    oznacena_vykricnikom: (r, c) == ZDROJ_134419,
+                    oramovana: ORAMOVANE_134419.contains(&(r, c)),
+                });
+            }
+        }
+        let ruka_def: [(&str, &str, i64); 15] = [
+            ("monster", "test_subject", 2),
+            ("monster", "dwarf", 2),
+            ("monster", "agito", 2),
+            ("monster", "pest", 1),
+            ("monster", "dragonbone", 1),
+            ("monster", "aember", 1),
+            ("monster", "einherjar", 1),
+            ("monster", "gang", 1),
+            ("monster", "ichi", 1),
+            ("monster", "sand_monster", 1),
+            ("monster", "ghost", 1),
+            ("gameplay", "hourglass", 1),
+            ("gameplay", "hourglass", 1),
+            ("gameplay", "chest", 1),
+            ("gameplay", "statue", 1),
+        ];
+        let ruka = ruka_def
+            .iter()
+            .enumerate()
+            .map(|(i, (kat, typ, lvl))| SlotRuky {
+                index: i as i64,
+                paint: Some(Paint { kategoria: kat.to_string(), typ: typ.to_string(), level: *lvl }),
+            })
+            .collect();
+        let ciel = CielMiesania {
+            smer: "adjacent".to_string(),
+            popis: "Fill a Adjacent Cell with a Monster Paint".to_string(),
+            efekt_popis: "Level up the Adjacent Monster Paint by 1 level(s)".to_string(),
+            pocet_pozadovany: 3,
+            pocet_aktualny: 0,
+            kluc_riadok: Some(ZDROJ_134419.0),
+            kluc_stlpec: Some(ZDROJ_134419.1),
+        };
+        CanvasStav { riadky: 6, stlpce: 6, max_level: 7, bunky, ruka, ciel: Some(ciel) }
+    }
+
+    fn sloty_a_ciele(v: &VysledokSolvera) -> (Vec<i64>, HashSet<(i64, i64)>) {
+        (
+            v.kroky.iter().map(|k| k.zdroj_slot).collect(),
+            v.kroky.iter().map(|k| (k.ciel_riadok, k.ciel_stlpec)).collect(),
+        )
+    }
+
+    fn s_rukou(mut stav: CanvasStav, levely: &[i64]) -> CanvasStav {
+        stav.ruka = levely
+            .iter()
+            .enumerate()
+            .map(|(i, lvl)| SlotRuky { index: i as i64, paint: Some(Paint::monster("ghost", *lvl)) })
+            .collect();
+        stav
+    }
+
+    /// test_28: berú sa Lv2 painty (sloty 0,1,2), nie Lv1 (3,4,5).
+    #[test]
+    fn richard_134419_berie_lv2_sloty_do_oramovanych_buniek() {
+        let v = navrhni_kroky(&board_richard_134419());
+        assert_eq!(v.zdroj_dosahu, "ram");
+        let (sloty, ciele) = sloty_a_ciele(&v);
+        assert_eq!(sloty, vec![0, 1, 2], "{v:?}");
+        assert_eq!(ciele, ORAMOVANE_134419.iter().copied().collect::<HashSet<_>>());
+    }
+
+    /// test_29: bez rámu (dosah zo smeru `adjacent`) vyjde to isté.
+    #[test]
+    fn richard_134419_bez_ramu_vyjde_rovnako() {
+        let mut stav = board_richard_134419();
+        for b in stav.bunky.iter_mut() {
+            b.oramovana = false;
+        }
+        let v = navrhni_kroky(&stav);
+        assert_eq!(v.zdroj_dosahu, "smer");
+        let (sloty, ciele) = sloty_a_ciele(&v);
+        assert_eq!(sloty, vec![0, 1, 2], "{v:?}");
+        assert_eq!(ciele, ORAMOVANE_134419.iter().copied().collect::<HashSet<_>>());
+    }
+
+    /// test_30: každý krok vysvetlí, prečo Lv2 a nie Lv1.
+    #[test]
+    fn richard_134419_dovod_vysvetli_vyber_lv2() {
+        let v = navrhni_kroky(&board_richard_134419());
+        assert_eq!(v.kroky.len(), 3);
+        for k in &v.kroky {
+            assert!(k.dovod.contains("Prečo tento: Lv2 → Lv3"), "{}", k.dovod);
+            assert!(k.dovod.contains("najvyšší výsledok"), "{}", k.dovod);
+            assert!(k.dovod.contains("najviac na Lv2"), "{}", k.dovod);
+        }
+    }
+
+    /// Kontrola reťazca znak po znaku (port musí sedieť so serverom presne).
+    #[test]
+    fn richard_134419_prvy_dovod_presne_ako_server() {
+        let v = navrhni_kroky(&board_richard_134419());
+        assert_eq!(
+            v.kroky[0].dovod,
+            "Vezmi test_subject Lv2 zo slotu 0 v ruke a polož ho na bunku (riadok 2, stĺpec 4), \
+             ktorú hra žlto orámovala — splní krok 1/3 cieľa 'Fill a Adjacent Cell with a Monster \
+             Paint' a umiestnený paint vyskočí na Lv3 (Level up the Adjacent Monster Paint by 1 \
+             level(s)). Prečo tento: Lv2 → Lv3 je najvyšší výsledok, aký sa z ruky dá dosiahnuť — \
+             slabšie Monster Painty v ruke by skončili najviac na Lv2. Na type nezáleží — cieľ aj \
+             efekt počítajú len kategóriu (Monster Paint): v páre pred/po z 19.10.2026 pribudli ku \
+             kľúčovému dwarfovi ratlin a pest a počítadlo vyskočilo 0/3 → 2/3."
+        );
+    }
+
+    /// test_31: veta o type monštra je LEN v prvom kroku.
+    #[test]
+    fn veta_o_type_je_len_v_prvom_kroku() {
+        let v = navrhni_kroky(&board_richard_134419());
+        assert_eq!(v.kroky.len(), 3);
+        assert!(v.kroky[0].dovod.contains("Na type nezáleží"), "{}", v.kroky[0].dovod);
+        for k in &v.kroky[1..] {
+            assert!(!k.dovod.contains("Na type nezáleží"), "{}", k.dovod);
+        }
+    }
+
+    /// test_32: keď sa vezme NIŽŠÍ level, musí byť napísané prečo.
+    #[test]
+    fn nizsi_vyber_vysvetli_ze_vyssie_vzali_predosle_kroky() {
+        let v = navrhni_kroky(&board_vertical(true, "monster"));
+        assert_eq!(v.kroky.len(), 3);
+        assert!(v.kroky[0].dovod.contains("najvyšší výsledok"), "{}", v.kroky[0].dovod);
+        for k in &v.kroky[1..] {
+            assert!(k.dovod.contains("si vzali predošlé kroky"), "{}", k.dovod);
+            assert!(k.dovod.contains("najvyšší zvyšný"), "{}", k.dovod);
+        }
+    }
+
+    /// test_33: strop sa spomína len keď silnejší paint naozaj ostane v ruke.
+    #[test]
+    fn strop_sa_spomina_len_ked_silnejsi_ostava_v_ruke() {
+        let v = navrhni_kroky(&s_rukou(board_vertical(true, "monster"), &[6, 7, 7, 7]));
+        assert_eq!(v.kroky.len(), 3);
+        assert!(v.kroky[0].dovod.contains("silnejší ostáva v ruke"), "{}", v.kroky[0].dovod);
+
+        let v = navrhni_kroky(&s_rukou(board_vertical(true, "monster"), &[6, 7, 7]));
+        assert_eq!(v.kroky.len(), 3);
+        for k in &v.kroky {
+            assert!(!k.dovod.contains("silnejší ostáva v ruke"), "{}", k.dovod);
+        }
+    }
+
+    /// test_34: pri ruke samých Lv1 nie je z čoho vyberať.
+    #[test]
+    fn rovnaka_ruka_povie_ze_vyssi_vysledok_nejde() {
+        let v = navrhni_kroky(&s_rukou(board_vertical(true, "monster"), &[1, 1, 1, 1, 1]));
+        assert_eq!(v.kroky.len(), 3);
+        for k in &v.kroky {
+            assert!(k.dovod.contains("vyšší výsledok z tejto ruky nejde"), "{}", k.dovod);
+        }
     }
 }
