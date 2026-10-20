@@ -162,6 +162,16 @@ fn dovod_vyberu(
     preco
 }
 
+/// Slovenské množné číslo pre „bunka" — rovnaká konvencia ako `mn_paint`
+/// v `canvas_hodnotenie.rs`. Zrkadlí `_mn_buniek()` v `canvas_solver.py`.
+fn mn_buniek(pocet: usize) -> &'static str {
+    match pocet {
+        1 => "bunku",
+        2..=4 => "bunky",
+        _ => "buniek",
+    }
+}
+
 pub fn navrhni_kroky(stav: &CanvasStav) -> VysledokSolvera {
     let skore_pred = skore_platna(stav);
     let ciel = match &stav.ciel {
@@ -190,11 +200,42 @@ pub fn navrhni_kroky(stav: &CanvasStav) -> VysledokSolvera {
     let mut skontroluj: Vec<String> = vec![];
     if volne.is_empty() {
         if zdroj_dosahu == ZdrojDosahu::Ram {
-            skontroluj.push(
-                "hra síce bunky orámovala, ale ani jedna z nich nie je voľná — na plátne \
-                 nie je kam položiť ďalší paint"
-                    .to_string(),
-            );
+            // TLI 73: hláška musí povedať PREČO nie sú voľné. Richard 20.10.
+            // narazil presne na toto — všetky tri orámované bunky boli biele
+            // dlaždice so štetcom (teda voľné), appka ich čítala ako obsadené
+            // a z hlášky sa to nedalo odlíšiť od naozaj plného plátna.
+            let oramovane = stav.oramovane_bunky();
+            let obsadene = oramovane
+                .iter()
+                .filter(|b| b.dostupna && !b.je_zamrznuta() && b.paint_na_bunke().is_some())
+                .count();
+            let zamrznute = oramovane.iter().filter(|b| b.je_zamrznuta()).count();
+            let nedostupne = oramovane.iter().filter(|b| !b.dostupna).count();
+            // Tvar „nálepka: počet" je zámerný — vyhne sa slovenskému
+            // skloňovaniu podľa čísla a číta sa ako súpis. Musí sedieť
+            // ZNAK PO ZNAKU s `canvas_solver.py`.
+            let mut dovody: Vec<String> = vec![];
+            if obsadene > 0 {
+                dovody.push(format!("obsadených: {}", obsadene));
+            }
+            if zamrznute > 0 {
+                dovody.push(format!("zamrznutých ľadom: {}", zamrznute));
+            }
+            if nedostupne > 0 {
+                dovody.push(format!("nedostupných (vír): {}", nedostupne));
+            }
+            let preco = if dovody.is_empty() {
+                "dôvod sa z rozpoznaného plátna nedá určiť".to_string()
+            } else {
+                dovody.join(", ")
+            };
+            skontroluj.push(format!(
+                "hra orámovala {} {}, ale ani jedna z nich nie je voľná ({}) — na plátne \
+                 nie je kam položiť ďalší paint",
+                oramovane.len(),
+                mn_buniek(oramovane.len()),
+                preco
+            ));
         } else if ciel.kluc_riadok.is_none() || ciel.kluc_stlpec.is_none() {
             skontroluj.push(format!(
                 "appka na snímke nenašla žltý rám hry a cieľ smeru '{}' nemá \
@@ -456,6 +497,7 @@ mod testy {
                         paint: Some(Paint::monster("dwarf", 3)),
                         oznacena_vykricnikom: true,
                         oramovana: false,
+                        zamrznuta: false,
                     });
                 } else if volne.contains(&(r, c)) {
                     bunky.push(Bunka {
@@ -465,6 +507,7 @@ mod testy {
                         paint: None,
                         oznacena_vykricnikom: false,
                         oramovana: ORAMOVANE_ZO_SCREENSHOTU.contains(&(r, c)),
+                        zamrznuta: false,
                     });
                 } else {
                     bunky.push(Bunka {
@@ -474,6 +517,7 @@ mod testy {
                         paint: None,
                         oznacena_vykricnikom: false,
                         oramovana: false,
+                        zamrznuta: false,
                     });
                 }
             }
@@ -654,6 +698,7 @@ mod testy {
                         paint: Some(Paint::monster("dwarf", 3)),
                         oznacena_vykricnikom: true,
                         oramovana: false,
+                        zamrznuta: false,
                     });
                 } else if ORAMOVANE_VERTICAL.contains(&(r, c)) {
                     bunky.push(Bunka {
@@ -663,6 +708,7 @@ mod testy {
                         paint: None,
                         oznacena_vykricnikom: false,
                         oramovana: oramovat,
+                        zamrznuta: false,
                     });
                 } else {
                     // r3c3 je ľad, zvyšok plátna mimo aktívnej plochy
@@ -673,6 +719,7 @@ mod testy {
                         paint: None,
                         oznacena_vykricnikom: false,
                         oramovana: false,
+                        zamrznuta: false,
                     });
                 }
             }
@@ -895,6 +942,7 @@ mod testy {
                     paint,
                     oznacena_vykricnikom: (r, c) == ZDROJ_134419,
                     oramovana: ORAMOVANE_134419.contains(&(r, c)),
+                    zamrznuta: false,
                 });
             }
         }
@@ -1042,7 +1090,21 @@ mod testy {
     }
 
     /// test_34: pri ruke samých Lv1 nie je z čoho vyberať.
+    ///
+    /// TLI 73: tento test v Ruste CHÝBAL — pri TLI 69b sa jeho doc komentár
+    /// aj `#[test]` prilepili na nasledujúcu funkciu (duplicitný atribút,
+    /// `cargo test` to hlásil ako warning) a samotné telo sa nenapísalo.
     #[test]
+    fn rovnaka_ruka_dokola_povie_ze_vyssie_nejde() {
+        let stav = s_rukou(board_vertical(true, "monster"), &[1, 1, 1, 1, 1]);
+        let v = navrhni_kroky(&stav);
+        assert_eq!(v.kroky.len(), 3);
+        for k in &v.kroky {
+            assert!(k.dovod.contains("vyšší výsledok z tejto ruky nejde"), "{}", k.dovod);
+        }
+    }
+
+    /// test_31b: pri zhodnom type sa veta o type nepíše.
     #[test]
     fn pri_zhodnom_type_sa_veta_o_type_nepise() {
         // Nález z review 20.10.2026: veta nesmie citovať konkrétne monštrum,
@@ -1207,11 +1269,16 @@ mod testy {
     }
 
     /// Early-return vetvy nesú skóre celého plátna — appka ho ukazuje aj
-    /// vtedy, keď nie je čo radiť. Fixture 13:44: 26 dostupných buniek,
-    /// obsadené agito Lv3 a štyri ľady Lv1.
+    /// vtedy, keď nie je čo radiť. Fixture 13:44: 22 bunky, na ktoré sa dá
+    /// maľovať, a jeden položený paint (agito Lv3).
+    ///
+    /// TLI 73: do opravy klasifikácie buniek tu stálo 26 dostupných a 5
+    /// obsadených — štyri z tých „paintov" sú modré ĽADOVÉ KOCKY, ktoré
+    /// vision hlásil ako `g:ice_block1`. Maľovať sa na ne nedá a do skóre
+    /// nepatria (`canvas.yml` → `stavy_buniek`).
     #[test]
     fn early_return_vetvy_nesu_skore_pred() {
-        let ocakavane = Skore { na_max: 0, sucet: 7, obsadenych: 5, dostupnych: 26, max_level: 7 };
+        let ocakavane = Skore { na_max: 0, sucet: 3, obsadenych: 1, dostupnych: 22, max_level: 7 };
 
         let mut bez_ciela = board_richard_134419();
         bez_ciela.ciel = None;
@@ -1222,7 +1289,7 @@ mod testy {
             plne.bunky.iter_mut().find(|b| b.riadok == r && b.stlpec == c).unwrap().paint =
                 Some(Paint::monster("gang", 7));
         }
-        let plne_skore = Skore { na_max: 3, sucet: 28, obsadenych: 8, ..ocakavane };
+        let plne_skore = Skore { na_max: 3, sucet: 24, obsadenych: 4, ..ocakavane };
 
         for (stav, skore) in [(bez_ciela, ocakavane), (splneny, ocakavane), (plne, plne_skore)] {
             let v = navrhni_kroky(&stav);
@@ -1232,6 +1299,179 @@ mod testy {
         }
         // a plná vetva ho nesie tiež — skóre je PRED sekvenciou
         assert_eq!(navrhni_kroky(&board_richard_134419()).skore_pred, ocakavane);
+    }
+
+    // ── TLI 73: biela bunka so štetcom je VOĽNÁ ─────────────────────────────
+    //
+    // Zrkadlí `test_38`–`test_44` v `testy-canvas-solver.py` (repo `ops`).
+    // Fixture je REÁLNA Richardova snímka z 20.10.2026 16:39 (analýza
+    // `2026-10-20-163919-46410386` na CT 114) PRESNE TAK, ako ju vtedy
+    // prečítal vision model — vrátane chyby: každá voľná bunka má nálepku
+    // `g:paint_brush1` a každá ľadová `g:blue_crystal1`. Testuje sa tým
+    // poistka `canvas::stav_z_paintu`, nie opravený prompt.
+
+    const NEDOSTUPNE_163919: [(i64, i64); 13] = [
+        (1, 5), (1, 6), (2, 1), (3, 1), (3, 2), (4, 5), (4, 6),
+        (5, 4), (5, 5), (5, 6), (6, 4), (6, 5), (6, 6),
+    ];
+    const LAD_163919: [(i64, i64); 4] = [(1, 1), (4, 1), (5, 1), (5, 3)];
+    const ZDROJ_163919: (i64, i64) = (2, 5);
+    const ORAMOVANE_163919: [(i64, i64); 3] = [(2, 4), (2, 6), (3, 5)];
+
+    fn board_richard_163919() -> CanvasStav {
+        let mut bunky = vec![];
+        for r in 1..=6 {
+            for c in 1..=6 {
+                let dostupna = !NEDOSTUPNE_163919.contains(&(r, c));
+                let paint = if (r, c) == ZDROJ_163919 {
+                    Some(Paint::monster("ratlin", 3))
+                } else if LAD_163919.contains(&(r, c)) {
+                    Some(Paint {
+                        kategoria: "gameplay".to_string(),
+                        typ: "blue_crystal".to_string(),
+                        level: 1,
+                    })
+                } else if dostupna {
+                    // chybná nálepka vtedajšieho vision modelu — v skutočnosti
+                    // je to prázdne plátno (biely štetec)
+                    Some(Paint {
+                        kategoria: "gameplay".to_string(),
+                        typ: "paint_brush".to_string(),
+                        level: 1,
+                    })
+                } else {
+                    None
+                };
+                bunky.push(Bunka {
+                    riadok: r,
+                    stlpec: c,
+                    dostupna,
+                    paint,
+                    oznacena_vykricnikom: (r, c) == ZDROJ_163919,
+                    oramovana: ORAMOVANE_163919.contains(&(r, c)),
+                    zamrznuta: false,
+                });
+            }
+        }
+        // sloty 0–4 sú Lv2, zvyšok Lv1 — presne ako na snímke
+        let ruka_def: [(&str, i64); 15] = [
+            ("ratlin", 2), ("ratlin", 2), ("agito", 2), ("agito", 2), ("dragonbone", 2),
+            ("dwarf", 1), ("dwarf", 1), ("pest", 1), ("aember", 1), ("test_subject", 1),
+            ("gang", 1), ("ichi", 1), ("sand_monster", 1), ("eumbra", 1), ("ghost", 1),
+        ];
+        let ruka = ruka_def
+            .iter()
+            .enumerate()
+            .map(|(i, (typ, lvl))| SlotRuky {
+                index: i as i64,
+                paint: Some(Paint::monster(typ, *lvl)),
+            })
+            .collect();
+        CanvasStav {
+            riadky: 6,
+            stlpce: 6,
+            max_level: 7,
+            bunky,
+            ruka,
+            ciel: Some(CielMiesania {
+                smer: "adjacent".to_string(),
+                popis: "Fill a Adjacent Cell with a Monster Paint".to_string(),
+                efekt_popis: "Level up the Adjacent Monster Paint by 1 level(s)".to_string(),
+                pocet_pozadovany: 3,
+                pocet_aktualny: 0,
+                kluc_riadok: Some(ZDROJ_163919.0),
+                kluc_stlpec: Some(ZDROJ_163919.1),
+            }),
+            polozene: None,
+            celkom: None,
+        }
+    }
+
+    /// test_38 + test_39: štetec je voľná bunka, ľadová kocka je zamrznutá.
+    #[test]
+    fn stetec_je_volna_bunka_a_lad_je_zamrznuty() {
+        let stav = board_richard_163919();
+        for (r, c) in ORAMOVANE_163919 {
+            let b = stav.bunka(r, c).unwrap();
+            assert!(b.volna(), "r{}c{} nie je voľná", r, c);
+            assert!(b.paint_na_bunke().is_none(), "r{}c{}", r, c);
+        }
+        for (r, c) in LAD_163919 {
+            let b = stav.bunka(r, c).unwrap();
+            assert!(b.je_zamrznuta(), "r{}c{}", r, c);
+            assert!(!b.volna(), "r{}c{}", r, c);
+            assert!(b.paint_na_bunke().is_none(), "r{}c{}", r, c);
+        }
+    }
+
+    /// test_40 + test_41: rada položí tri najvyššie Lv2 painty zo slotov 0–2.
+    #[test]
+    fn rada_poklada_najvyssie_lv2_painty() {
+        let stav = board_richard_163919();
+        let (volne, zdroj) = stav.cielove_bunky(stav.ciel.as_ref().unwrap());
+        assert_eq!(zdroj, ZdrojDosahu::Ram);
+        let mut suradnice: Vec<(i64, i64)> = volne.iter().map(|b| (b.riadok, b.stlpec)).collect();
+        suradnice.sort();
+        let mut ocakavane = ORAMOVANE_163919.to_vec();
+        ocakavane.sort();
+        assert_eq!(suradnice, ocakavane);
+
+        let v = navrhni_kroky(&stav);
+        assert_eq!(v.kroky.iter().map(|k| k.zdroj_slot).collect::<Vec<_>>(), vec![0, 1, 2]);
+        assert!(v.skontroluj.is_empty(), "{:?}", v.skontroluj);
+    }
+
+    /// test_43 + test_44: hláška o plnom plátne povie DÔVOD.
+    #[test]
+    fn hlaska_o_plnom_platne_povie_preco() {
+        let mut stav = board_richard_163919();
+        for (r, c) in ORAMOVANE_163919 {
+            stav.bunky.iter_mut().find(|b| b.riadok == r && b.stlpec == c).unwrap().paint =
+                Some(Paint::monster("ratlin", 1));
+        }
+        let v = navrhni_kroky(&stav);
+        assert!(v.kroky.is_empty());
+        // Text musí sedieť ZNAK PO ZNAKU so serverom (`canvas_solver.py`).
+        assert_eq!(
+            v.skontroluj,
+            vec!["hra orámovala 3 bunky, ale ani jedna z nich nie je voľná (obsadených: 3) — \
+                  na plátne nie je kam položiť ďalší paint"
+                .to_string()]
+        );
+
+        let mut stav = board_richard_163919();
+        for (r, c) in ORAMOVANE_163919 {
+            let b = stav.bunky.iter_mut().find(|b| b.riadok == r && b.stlpec == c).unwrap();
+            b.paint = None;
+            b.zamrznuta = true;
+        }
+        let v = navrhni_kroky(&stav);
+        assert!(v.kroky.is_empty());
+        assert_eq!(
+            v.skontroluj,
+            vec!["hra orámovala 3 bunky, ale ani jedna z nich nie je voľná (zamrznutých ľadom: \
+                  3) — na plátne nie je kam položiť ďalší paint"
+                .to_string()]
+        );
+    }
+
+    /// test_42: zoznamy názvov rozlíšia štetec, ľad a skutočný paint.
+    #[test]
+    fn stav_z_paintu_rozlisi_stetec_lad_a_paint() {
+        use crate::canvas::{stav_z_paintu, StavObsahu};
+        for typ in ["brush", "paint_brush", "brushstroke", "arrow", "white_arrow", "highlight"] {
+            assert_eq!(stav_z_paintu("gameplay", typ, 1), StavObsahu::Prazdna, "{typ}");
+        }
+        for typ in ["ice", "ice_block", "ice-block", "ice_cube", "cube", "blue_cube"] {
+            assert_eq!(stav_z_paintu("gameplay", typ, 1), StavObsahu::Zamrznuta, "{typ}");
+            assert_eq!(stav_z_paintu("gameplay", typ, 3), StavObsahu::Zamrznuta, "{typ}");
+        }
+        assert_eq!(stav_z_paintu("gameplay", "blue_crystal", 1), StavObsahu::Zamrznuta);
+        assert_eq!(stav_z_paintu("gameplay", "blue_crystal", 3), StavObsahu::Paint);
+        for typ in ["horizontal_paint", "vertical_paint", "ice_brush", "red_crystal", "chest"] {
+            assert_ne!(stav_z_paintu("gameplay", typ, 1), StavObsahu::Prazdna, "{typ}");
+        }
+        assert_eq!(stav_z_paintu("monster", "ratlin", 3), StavObsahu::Paint);
     }
 
     /// Server posiela `prinos_na_max` a `skore_pred` v JSON; stará odpoveď

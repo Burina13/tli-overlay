@@ -2,6 +2,42 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.33.0 — 20.10.2026 (TLI 73 — biela bunka so štetcom je VOĽNÁ)
+
+**Čo Richard zadal 20.10.2026 ~16:40** nad vlastnou snímkou z 16:39: cieľ „Fill a
+Adjacent Cell with a Monster Paint (0/3)", zdroj Lv3 v r2c5, hra žlto orámovala
+r2c4, r2c6 a r3c5 — a appka napísala *„hra síce bunky orámovala, ale ani jedna
+z nich nie je voľná — na plátne nie je kam položiť ďalší paint"*. Všetky tri
+pritom boli **biele dlaždice so štetcom**, teda prázdne plátno.
+
+Príčina bola v rozpoznávaní: biely štetec sa hlásil ako položený paint
+(`g:paint_brush`), takže voľná bunka vyzerala obsadená. To isté sa dialo s modrou
+ľadovou kockou (`g:ice_block`), ktorá sa tým počítala do skóre plátna ako paint.
+Na doterajších uložených snímkach to bolo **226 buniek na 32 plátnach** (štetec)
+a **278 buniek** (ľad).
+
+**Čo sa zmenilo**
+
+- Bunka má **štyri stavy**, nie tri: *voľná* (biela dlaždica so štetcom —
+  **sem sa dá maľovať**), *nedostupná* (čierny vír), *zamrznutá* (modrá ľadová
+  kocka — odomyká ju ťah `[Spread]`) a *obsadená* (kruh alebo kosoštvorec so
+  štítkom „LvN"). Rozlišovacie pravidlo: **položený paint má vždy viditeľný
+  štítok „LvN"**.
+- Rada na Richardovej snímke teraz vracia to, čo očakával — tri najvyššie
+  Lv2 painty zo slotov 1–5 do r2c4, r2c6 a r3c5.
+- Zamrznutá bunka sa už nepočíta do skóre plátna ako položený paint. Skóre
+  (a teda aj rada Complete / Start Over z 0.32.0) tým prestalo byť nafúknuté —
+  na reálnej snímke z 14:10 klesol súčet levelov z 59 na skutočných 54.
+- Keď naozaj nie je kam položiť, hláška povie **dôvod**: „hra orámovala 3 bunky,
+  ale ani jedna z nich nie je voľná (obsadených: 3)". Bez toho sa chybné
+  rozpoznanie nedalo odlíšiť od skutočne plného plátna.
+- Oprava je na dvoch miestach: v prompte rozpoznávača (hlavná) a ako poistka
+  priamo v appke aj na serveri, takže správne sa vyhodnotia aj **staré uložené
+  snímky** bez toho, aby sa čokoľvek prepisovalo.
+
+Pribudol aj záznam mechaniky **Forced Color Mixing** (tlačidlo za 5 Colored Snow)
+do katalógu pravidiel — appka sa podľa nej zatiaľ nerozhoduje, účinok overený nie je.
+
 ## 0.32.0 — 20.10.2026 (TLI 72 — čo Frozen Canvas vlastne OPTIMALIZUJE)
 
 **Čo Richard zadal 20.10.2026 ~16:36** po svojom behu z ~14:1x: „20/20 paintov,

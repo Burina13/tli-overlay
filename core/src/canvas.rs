@@ -106,6 +106,74 @@ pub fn kategoria_z_popisu(popis: &str) -> &'static str {
     }
 }
 
+// ── TLI 73 (20.10.2026): ŠTYRI VIZUÁLNE STAVY BUNKY, NIE TRI ────────────────
+//
+// Richard nad snímkou `2026-10-20-163919`: hra orámovala r2c4, r2c6 a r3c5,
+// všetky tri sú BIELE dlaždice so štetcom (prázdne plátno) a appka napísala
+// „ani jedna z nich nie je voľná". Vision model hlásil štetec ako gameplay
+// paint (`g:paint_brush1`), takže bunka vyzerala obsadená.
+//
+// Hlavná oprava je v PROMPTE na serveri (`VISION_PROMPT_CANVAS`), ktorý
+// odteraz pýta „-" pre štetec a „z" pre ľad. Toto je POISTKA — model môže
+// starú chybu zopakovať a uložené analýzy ju majú v sebe natrvalo.
+// Zrkadlí `canvas_model.TYPY_STETCA` / `TYPY_LADU` / `stav_z_paintu()`;
+// pravidlá a dôvod úzkosti zoznamov: `canvas.yml` → `stavy_buniek`.
+
+/// Názvy, pod ktorými model hlásil biely ŠTETEC (= prázdna bunka).
+/// Zoznam je ÚZKY zámerne: falošná zhoda tu vedie na radu „polož sem" na
+/// bunku, kam sa položiť nedá.
+pub const TYPY_STETCA: [&str; 26] = [
+    "brush", "paint_brush", "paintbrush", "brushstroke", "brush_left",
+    "brush_right", "brush_up", "brush_down", "brush_up_right",
+    "brush_up_left", "brush_down_right", "brush_down_left", "white_brush",
+    "arrow", "white_arrow", "arrow_left", "arrow_right", "arrow_up",
+    "arrow_down", "arrow_up_right", "arrow_up_left", "arrow_down_right",
+    "arrow_down_left", "no_paint", "highlight", "empty",
+];
+
+/// Názvy, pod ktorými model hlásil modrú ĽADOVÚ KOCKU (= zamrznutá bunka).
+pub const TYPY_LADU: [&str; 10] = [
+    "ice", "ice_block", "ice-block", "iceblock", "ice_cube", "ice-cube",
+    "ice_rock", "frozen", "cube", "blue_cube",
+];
+
+/// Názvy, ktoré model dáva ľadu aj skutočným paintom — rozhoduje level.
+pub const TYPY_LADU_PRI_LV1: [&str; 4] =
+    ["blue_crystal", "blue_ice", "ice_crystal", "ice_shard"];
+
+/// Level, do ktorého sa `TYPY_LADU_PRI_LV1` berú ako ľad.
+pub const MAX_LEVEL_AMBIVALENTNEHO_LADU: i64 = 1;
+
+/// Čím v skutočnosti je bunka, ktorú model ohlásil ako paint `typ`.
+/// Zrkadlí `canvas_model.stav_z_paintu()`.
+pub fn stav_z_paintu(kategoria: &str, typ: &str, level: i64) -> StavObsahu {
+    if !kategoria.eq_ignore_ascii_case("gameplay") {
+        return StavObsahu::Paint;
+    }
+    let t = typ.trim().to_ascii_lowercase();
+    if TYPY_STETCA.contains(&t.as_str()) {
+        return StavObsahu::Prazdna;
+    }
+    if TYPY_LADU.contains(&t.as_str()) {
+        return StavObsahu::Zamrznuta;
+    }
+    if TYPY_LADU_PRI_LV1.contains(&t.as_str()) && level <= MAX_LEVEL_AMBIVALENTNEHO_LADU {
+        return StavObsahu::Zamrznuta;
+    }
+    StavObsahu::Paint
+}
+
+/// Čo na bunke podľa nálepky od vision modelu v skutočnosti je.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StavObsahu {
+    /// Biely štetec na svetlej dlaždici — prázdne plátno.
+    Prazdna,
+    /// Modrá ľadová kocka — bunka je blokovaná, maľovať sa na ňu nedá.
+    Zamrznuta,
+    /// Naozaj položený paint (kruh alebo kosoštvorec so štítkom „LvN").
+    Paint,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Paint {
     pub kategoria: String,
@@ -133,6 +201,58 @@ pub struct Bunka {
     /// `oramovana && dostupna && paint.is_none()`.
     #[serde(default)]
     pub oramovana: bool,
+    /// TLI 73: modrá ľadová kocka. Bunka je súčasťou plochy, ale maľovať sa
+    /// na ňu nedá (odomyká ju ťah [Spread]). `serde(default)`, lebo odpovede
+    /// servera spred TLI 73 toto pole nemajú.
+    #[serde(default)]
+    pub zamrznuta: bool,
+}
+
+impl Bunka {
+    /// Čo je na bunke SKUTOČNE — nálepka „paint" sa prečíta cez
+    /// `stav_z_paintu`, takže štetec ani ľad neprejdú ako položený paint.
+    /// Robí sa to pri čítaní, nie prepisom poľa: odpoveď servera sa tým
+    /// nemení a na výsledok to vychádza rovnako, nech bunku poskladá
+    /// ktokoľvek (vision, uložená analýza, test).
+    pub fn obsah(&self) -> StavObsahu {
+        match &self.paint {
+            None => {
+                if self.zamrznuta {
+                    StavObsahu::Zamrznuta
+                } else {
+                    StavObsahu::Prazdna
+                }
+            }
+            Some(p) => {
+                let s = stav_z_paintu(&p.kategoria, &p.typ, p.level);
+                if s == StavObsahu::Prazdna && self.zamrznuta {
+                    StavObsahu::Zamrznuta
+                } else {
+                    s
+                }
+            }
+        }
+    }
+
+    /// Naozaj položený paint; `None`, keď je nálepka v skutočnosti štetec
+    /// alebo ľad. Zrkadlí invariant `Bunka.__post_init__` v `canvas_model.py`.
+    pub fn paint_na_bunke(&self) -> Option<&Paint> {
+        match self.obsah() {
+            StavObsahu::Paint => self.paint.as_ref(),
+            _ => None,
+        }
+    }
+
+    /// Bunka je blokovaná ľadom (pole `zamrznuta` alebo nálepka typu „ice").
+    pub fn je_zamrznuta(&self) -> bool {
+        self.obsah() == StavObsahu::Zamrznuta
+    }
+
+    /// Dá sa na túto bunku TERAZ položiť paint?
+    /// Zrkadlí `Bunka.volna()` v `canvas_model.py`.
+    pub fn volna(&self) -> bool {
+        self.dostupna && self.obsah() == StavObsahu::Prazdna
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -209,7 +329,7 @@ impl CanvasStav {
         SUSEDIA_ORTO
             .iter()
             .filter_map(|(dr, dc)| self.bunka(riadok + dr, stlpec + dc))
-            .filter(|b| b.dostupna && b.paint.is_none())
+            .filter(|b| b.volna())
             .collect()
     }
 
@@ -225,7 +345,7 @@ impl CanvasStav {
         let oramovane = self.oramovane_bunky();
         if !oramovane.is_empty() {
             let mut volne: Vec<&Bunka> =
-                oramovane.into_iter().filter(|b| b.dostupna && b.paint.is_none()).collect();
+                oramovane.into_iter().filter(|b| b.volna()).collect();
             volne.sort_by_key(|b| (b.riadok, b.stlpec));
             return (volne, ZdrojDosahu::Ram);
         }
@@ -236,7 +356,7 @@ impl CanvasStav {
         let mut volne: Vec<&Bunka> = bunky_v_smere(&ciel.smer, kr, ks, self.riadky, self.stlpce)
             .into_iter()
             .filter_map(|(r, c)| self.bunka(r, c))
-            .filter(|b| b.dostupna && b.paint.is_none())
+            .filter(|b| b.volna())
             .collect();
         volne.sort_by_key(|b| (b.riadok, b.stlpec));
         (volne, ZdrojDosahu::Smer)

@@ -107,12 +107,14 @@ impl Skore {
 }
 
 /// Skóre celého plátna. Rátajú sa len DOSTUPNÉ bunky — nedostupné na doske
-/// fyzicky nie sú a hra ich do výsledku nepočíta.
+/// fyzicky nie sú a hra ich do výsledku nepočíta. TLI 73: zamrznuté (ľad) sa
+/// nerátajú tiež — maľovať sa na ne nedá, takže do „koľko plochy je zaplnené"
+/// nepatria, a ich nálepka „paint" do súčtu levelov už vôbec nie.
 pub fn skore_platna(stav: &CanvasStav) -> Skore {
     let mut s = Skore { max_level: stav.max_level, ..Skore::default() };
-    for b in stav.bunky.iter().filter(|b| b.dostupna) {
+    for b in stav.bunky.iter().filter(|b| b.dostupna && !b.je_zamrznuta()) {
         s.dostupnych += 1;
-        if let Some(p) = &b.paint {
+        if let Some(p) = b.paint_na_bunke() {
             s.obsadenych += 1;
             s.sucet += p.level;
             if p.level >= stav.max_level {
@@ -155,7 +157,8 @@ mod testy {
     use crate::canvas::{Bunka, Paint, SlotRuky};
 
     fn bunka(riadok: i64, stlpec: i64, dostupna: bool, paint: Option<Paint>) -> Bunka {
-        Bunka { riadok, stlpec, dostupna, paint, oznacena_vykricnikom: false, oramovana: false }
+        Bunka { riadok, stlpec, dostupna, paint, oznacena_vykricnikom: false, oramovana: false,
+                zamrznuta: false }
     }
 
     fn stav(bunky: Vec<Bunka>, ruka: Vec<Paint>, max_level: i64) -> CanvasStav {
