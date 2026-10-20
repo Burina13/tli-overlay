@@ -1,8 +1,8 @@
 {
-  "version": "0.28.0",
-  "notes": "TLI 70: zber dát na učenie konečne naozaj zbiera. Minimapa: chyba bola na SERVERI (priečinok, do ktorého sa ukladá, mal služba zakázaný na zápis), appka sa správala správne a 1488 nazbieraných snímok držala vo fronte — po oprave odišli samy, nič sa nestratilo. Frozen Canvas: appka sa už nespolieha len na farby obrazovky — keď si nie je istá, oprie sa o to, čo server naposledy naozaj prečítal pri Ctrl+W/F8 (platí 5 minút a len dokým sa obrazovka nezmení). Klik, ktorým zhasínaš radu, sa už nestráca. NOVÉ: na pozadí sa zbiera aj DOSKA TARTARU, nielen Canvas — prepínač v Nastaveniach sa preto volá „Učenie na pozadí (Frozen Canvas + doska Tartaru)“. A v Nastaveniach je nový riadok „Stav zberu na učenie“: koľko snímok odišlo, koľko čaká, aká bola posledná chyba a prečo sa prípadne nefotí. Pozri CHANGELOG.",
-  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.28.0/Tvoj-Tatko-TLI-Overlay_0.28.0_x64_en-US.msi",
-  "msiSha256": "e683eee66ce18fa6ec12c534bf36a9fd2b22c68f4190117655f5e56453554a0d",
-  "installerUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.28.0/Tvoj-Tatko-TLI-Overlay_0.28.0_x64-setup.exe",
-  "installerSha256": "b4d9eb3a05e59a41eb27bec9607723706c9b986fc6321030445bbfd61f687526"
+  "version": "0.29.0",
+  "notes": "TLI 69b: rada pre Frozen Canvas ti konečne povie PREČO práve ten paint. Richard sa pýtal, prečo mu appka ponúka painty Lv1, keď má v ruke Lv2 — výber je opravený už od 0.27.0 (berie sa najvyšší výsledný level), ale rada to nezdôvodňovala, takže sa nedala skontrolovať. Teraz pri každom kroku stojí napríklad „Prečo tento: Lv2 → Lv3 je najvyšší výsledok, aký sa z ruky dá dosiahnuť“ — a keď appka vyberie NIŽŠÍ level, napíše prečo (vyššie painty si vzali predošlé kroky, alebo sa dva stretli na strope Max Paint Level a ide prv nižší, nech ti silnejší ostane v ruke). Prvý krok raz pripomenie, že na TYPE monštra nezáleží, cieľ počíta len kategóriu (Monster vs Gameplay Paint) — overené z tvojich vlastných snímok pred/po. Pozri CHANGELOG.",
+  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.29.0/Tvoj-Tatko-TLI-Overlay_0.29.0_x64_en-US.msi",
+  "msiSha256": "60ef6ffc1930c9ed72f316be7d8b5c231897d0e513b2733271d977a10483b6e3",
+  "installerUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.29.0/Tvoj-Tatko-TLI-Overlay_0.29.0_x64-setup.exe",
+  "installerSha256": "36ab5cfb7a69a61699ffeace6079b192ffcf9d5abb4a97cbade2fd5b9c0eceac"
 }
