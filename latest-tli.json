@@ -1,8 +1,8 @@
 {
-  "version": "0.24.0",
-  "notes": "TLI 62/3c: appka vie zbierať snímky minimapy na stavbu knižnice trás k bossovi / full clear — funkcia je RUČNE zapínaná a PREDVOLENE VYPNUTÁ (Nastavenia → zaškrtnúť „Zber minimapy“ + zvoliť režim). Zbiera sa len to, čo minimapa v hre ukazuje, nič sa neodkrýva. Pozri CHANGELOG.",
-  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.24.0/Tvoj-Tatko-TLI-Overlay_0.24.0_x64_en-US.msi",
-  "msiSha256": "cfc432a2346b5dd29be00782d36c5f031b8daa2dadd4f7d2d9ce3c3d3c779bd5",
-  "installerUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.24.0/Tvoj-Tatko-TLI-Overlay_0.24.0_x64-setup.exe",
-  "installerSha256": "3f6fbf00de547c77386ee22b5034531680831e3fe8d877497489fc6f3351a710"
+  "version": "0.25.2",
+  "notes": "TLI 67: rada nad hrou sa teraz skryje pri PRVOM kliku vo všetkých stavoch (doska, výber nástroja/daru, Objective, poradca, Frozen Canvas aj rámiky na plátne) — predtým sa klik v prvej asi sekunde po zobrazení rady stratil a panel čakal na druhý klik. Pravidlo je jednotné: prvý klik, Esc, alebo 120 sekúnd. Opravená je aj migrácia zo starej verzie z Program Files — pri aktualizácii si raz vypýta UAC a starú verziu odstráni. Obsahuje aj 0.25.0/0.25.1 (zrušené záložky Solvery a Analýza). Pozri CHANGELOG.",
+  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.25.2/Tvoj-Tatko-TLI-Overlay_0.25.2_x64_en-US.msi",
+  "msiSha256": "52cf9f15936eddaed3bb0a0848b49332f266c9572516999e2bd243754de397f8",
+  "installerUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.25.2/Tvoj-Tatko-TLI-Overlay_0.25.2_x64-setup.exe",
+  "installerSha256": "5f2d1e82c49af0839acde019011e55988a5c660023d71a0b4fe8d45329ef858a"
 }
