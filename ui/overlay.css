@@ -517,3 +517,46 @@ body.rezim-upravy #panel-uchyt-velkost {
     --trasa-hrubka: 3px;
     --trasa-farba: rgba(255, 210, 74, 0.85);
 }
+
+/* --- TLI 71: podobrazovka „Select the Brushstroke direction" / „Select
+   Brushstroke Effect" — hra tu ponúka karty a appka má povedať, ktorú vybrať.
+   Zelená ako kroky Frozen Canvasu (je to tá istá mechanika a ten istý panel),
+   ale karta je široký pás cez pol obrazovky, takže pulzovanie by rušilo —
+   odporúčanú odlišuje hrúbka rámika a štítok, nie animácia. --- */
+.karta-box {
+    position: absolute;
+    box-sizing: border-box;
+    border: 2px solid rgba(54, 224, 95, 0.45);
+    border-radius: 10px;
+}
+
+.karta-box.karta-odporucana {
+    border: 4px solid #36e05f;
+    box-shadow: inset 0 0 18px rgba(54, 224, 95, 0.35), 0 0 14px rgba(54, 224, 95, 0.45);
+}
+
+.karta-stitok {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    transform: translate(-100%, -50%);
+    margin-right: 8px;
+    white-space: nowrap;
+    background: rgba(8, 26, 14, 0.85);
+    color: #36e05f;
+    font-size: 13px;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 6px;
+}
+
+/* Tlačidlo „Select" pod kartami — potvrdzuje výber, takže sa zvýrazňuje
+   vždy, keď appka nejakú kartu odporúča. */
+.karta-tlacidlo {
+    position: absolute;
+    box-sizing: border-box;
+    border: 3px solid #36e05f;
+    border-radius: 10px;
+    box-shadow: inset 0 0 12px rgba(54, 224, 95, 0.3);
+    animation: pulzovanie 2s infinite;
+}

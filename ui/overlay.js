@@ -899,9 +899,106 @@ function vypisKartickyDoPanela(karticky) {
 // krokoch naraz by sa šípky prekrývali, číslo v rohu stačí.
 const ZELENA_KROK = "#36e05f";
 
+/* TLI 71 — podobrazovka „Select the Brushstroke direction" / „Select
+   Brushstroke Effect". Odporúčanú kartu orámuje nahrubo, ostatné nenápadne
+   (aby bolo vidieť, že ich appka posúdila a neprehliadla), a vždy orámuje aj
+   tlačidlo „Select" — bez neho sa výber nepotvrdí a hráč by hľadal, kde
+   ďalej kliknúť. */
+function vykresliVyberKarty(data) {
+    const analyza = data.analyza || {};
+    const tah = analyza.tah || {};
+    const karty = data.karty || [];
+    const zberPrefix = (typeof data.zber_pocet === "number")
+        ? `Zber dát #${data.zber_pocet} — `
+        : "";
+
+    karty.forEach((karta) => {
+        if (!karta || karta.w <= 0 || karta.h <= 0) return;
+        const div = document.createElement("div");
+        div.className = "karta-box" + (karta.odporucana ? " karta-odporucana" : "");
+        div.style.left = karta.x + "px";
+        div.style.top = karta.y + "px";
+        div.style.width = karta.w + "px";
+        div.style.height = karta.h + "px";
+
+        const stitok = document.createElement("span");
+        stitok.className = "karta-stitok";
+        // VŽDY textContent — text pochádza zo servera, teda sprostredkovane
+        // z jazykového modelu aj z OCR (rovnaké pravidlo ako pri `elChyba`).
+        stitok.textContent = karta.odporucana
+            ? `✓ vyber túto (${karta.skore}/100)`
+            : `${karta.skore}/100`;
+        div.appendChild(stitok);
+        elVrstva.appendChild(div);
+    });
+
+    const tlacidlo = data.tlacidlo;
+    if (tlacidlo && tlacidlo.w > 0 && tlacidlo.h > 0 && karty.some((k) => k.odporucana)) {
+        const div = document.createElement("div");
+        div.className = "karta-tlacidlo";
+        div.style.left = tlacidlo.x + "px";
+        div.style.top = tlacidlo.y + "px";
+        div.style.width = tlacidlo.w + "px";
+        div.style.height = tlacidlo.h + "px";
+        const popis = document.createElement("span");
+        popis.className = "tlacidlo-popis";
+        popis.textContent = "potvrď výber";
+        div.appendChild(popis);
+        elVrstva.appendChild(div);
+    }
+
+    pNadpis.textContent = zberPrefix + (tah.faza === "vyber_efektu"
+        ? "Frozen Canvas — výber efektu ťahu"
+        : "Frozen Canvas — výber ťahu štetcom");
+
+    const istotaPercenta = Math.round((analyza.istota || 0) * 100);
+    pIstota.textContent = `Istota: ${istotaPercenta} %`;
+    pIstota.classList.toggle("nizka", istotaPercenta < 50);
+    pDovod.textContent = tah.dovod || "";
+    if (pIkony) pIkony.classList.add("skryte");
+
+    // Ostatné karty pod hlavným dôvodom — nech je vidieť, PREČO neuspeli.
+    pAlternativy.innerHTML = "";
+    const ostatne = (tah.hodnotenia || []).filter((h) => h.index !== tah.odporucany_index);
+    ostatne.forEach((h) => {
+        const div = document.createElement("div");
+        div.className = "alternativa";
+        const spanNazov = document.createElement("span");
+        spanNazov.className = "alt-nazov";
+        spanNazov.textContent = `Karta ${h.index + 1} — ${h.oznacenie || ""}`;
+        const spanDovod = document.createElement("span");
+        spanDovod.textContent = " — " + (h.dovod || "");
+        div.appendChild(spanNazov);
+        div.appendChild(spanDovod);
+        pAlternativy.appendChild(div);
+    });
+    pAlternativy.classList.toggle("skryte", ostatne.length === 0);
+
+    const sk = (analyza.skontroluj || []).slice();
+    if (sk.length > 0) {
+        pSkontroluj.textContent = "Neisté: " + sk.join("; ");
+        pSkontroluj.classList.remove("skryte");
+    } else {
+        pSkontroluj.classList.add("skryte");
+    }
+
+    elPanel.classList.remove("skryte");
+    logPanelVykreslene("canvas-vyber-karty");
+}
+
 function vykresliHotovoCanvas(data) {
     const kroky = data.kroky || [];
     const analyza = data.analyza || {};
+    // TLI 71: hra medzi dvoma miešaniami vloží podobrazovku, na ktorej sa
+    // vyberá KARTA (ťah štetcom alebo jeho konkrétny efekt). Na nej nie je
+    // kam klikať paintom — `kroky` je prázdne — a jediná užitočná rada je,
+    // ktorú kartu vybrať. Do 20.10.2026 appka na tejto obrazovke napísala
+    // „žiadny krok — v dosahu nie je voľná bunka": pravdu, ktorá hráčovi
+    // nepomohla ani o kúsok.
+    if ((data.karty || []).length > 0 && analyza.tah) {
+        vykresliVyberKarty(data);
+        return;
+    }
     // TLI 57: Zber dát už radu nezatajuje — keď appka snímku popri rade aj
     // uložila (nastavenie „zber dát" zapnuté), hráč to vidí ako predponu
     // nadpisu namiesto toho, aby rada zmizla celá (predtým `zber_ulozene`).

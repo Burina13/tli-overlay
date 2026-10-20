@@ -2,6 +2,45 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.31.0 — 20.10.2026 (TLI 71 — „Select the Brushstroke direction")
+
+**Čo Richard nahlásil 20.10.2026 ~16:3x** (v0.30.0): „Stále bieda, lebo sa to
+dá, ako vidíš na druhom obrázku. Myslel som, že sme minuli už asi 10 hodín na
+to učenie a sťahovanie z wiki a všetko, a nakoniec nie základnú vec."
+
+Hra medzi dvoma miešaniami vloží podobrazovku **„Select the Brushstroke
+direction"** (a po nej „Select Brushstroke Effect"), na ktorej sa vyberá KARTA
+a potvrdzuje tlačidlom „Select". Appka ju **vôbec nepoznala**: rozpoznávanie ju
+čítalo ako bežné plátno, karty si vyložilo ako painty v ruke a hráčovi napísalo
+„žiadny krok — v dosahu smeru 'adjacent' od bunky r1c4 nie je žiadna voľná
+bunka". Bola to pravda (r1c3 aj r1c5 sú víry, r2c4 je obsadená) — a presne preto
+sa hra pýtala na kartu, ktorou sa to dá odblokovať.
+
+**Čo je nové v 0.31.0:**
+- **Appka obrazovku pozná a radí, ktorú kartu vybrať.** Odporúčanú kartu
+  orámuje nahrubo so štítkom „✓ vyber túto", ostatné nenápadne s ich skóre
+  (nech je vidieť, že ich posúdila a neprehliadla), a orámuje aj tlačidlo
+  **Select** — bez neho sa výber nepotvrdí.
+- **Zdôvodnenie po slovensky.** Panel povie, ČO cieľ brzdí (bunky vs. ruka)
+  a prečo práve tá karta: „Úzke hrdlo sú BUNKY: cieľ chce ešte 3 umiestnenia,
+  ale voľných cieľových buniek máš 0. Priamo v dosahu sú 2 zablokované bunky.
+  Presne na to je [Spread]…". Neodporúčané karty majú pod tým napísané,
+  prečo neuspeli.
+- **Pozná všetky tri druhy ťahu a 59 konkrétnych efektov.** `[Reimagine]`
+  prepíše cieľ aj efekt, `[Spread]` umožní maľovať na Blocked/Void/Discolored
+  bunku (alebo ju premení na prázdnu), `[Layer]` pridá efekt navyše. Katalóg
+  efektov je dataminovaný z torchcodex a overený proti štyrom Richardovým
+  snímkam — dva texty z neho sú na nich doslovne.
+- **Fázu číta appka SAMA, lokálne** (Windows OCR nad pevnými výrezmi, plné
+  rozlíšenie) a posiela ju serveru; keď to nevyjde, rozpozná ju server
+  z obrázka. Rovnaký vzor ako žltý rám hry z TLI 69.
+- Umiestňovanie paintov sa **nemení** — na bežnom plátne beží presne to, čo
+  v 0.27.0/0.29.0 (žlté rámy hry a maximalizácia levelu).
+
+**Čo zatiaľ NIE JE overené:** že vybraná karta je vždy lepšia než počkať na
+ďalšiu ponuku. Nemáme ani jeden pár pred/po, v ktorom by sa dve rôzne voľby
+dali porovnať — rada preto ide s istotou najviac 75 % a appka to píše.
+
 ## 0.30.0 — 20.10.2026 (TLI 67b — „a teraz sa mi to celé seklo")
 
 **Čo Richard nahlásil 20.10.2026 13:48** (v0.24.0): appka prestala reagovať.

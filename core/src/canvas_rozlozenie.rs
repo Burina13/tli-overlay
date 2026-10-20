@@ -170,3 +170,151 @@ mod testy {
         assert!(RUKA_ROW_PITCH >= RUKA_CELL_H - 1e-9);
     }
 }
+
+// ── Podobrazovka s kartami (TLI 71, `2026-10-20-1635-mcp.md`) ───────────────
+//
+// „Select the Brushstroke direction" aj „Select Brushstroke Effect" majú
+// ROVNAKÉ rozloženie: nadpis, pod ním zvislý stĺpec kariet a vpravo dole
+// tlačidlo „Select". Zmerané z Richardových snímok 1920×1080 z 20.10.2026
+// (`2026-10-20-163311`, `-163430`, `-145835`, `-134614`) — na všetkých
+// štyroch sedia tie isté hodnoty na jednotky pixelov.
+//
+//   nadpis            y ≈ 425–445
+//   karta 0           x 1040–1600, y 448–547
+//   karta 1           x 1040–1600, y 560–660   (krok 112 px)
+//   tlačidlo Select   x 1393–1627, y 813–870
+//
+// ⚠️ Rovnaký LIMIT ako pri mriežke vyššie: zmerané na JEDNOM rozlíšení.
+// Zrkadlí `canvas_rozlozenie.py` na serveri — obe strany musia dávať tie isté
+// čísla, inak by appka kreslila rámik inam, než server myslí.
+
+const KARTA_ORIGIN_X: f64 = 0.5417;
+const KARTA_ORIGIN_Y: f64 = 0.4148;
+const KARTA_W: f64 = 0.2917;
+const KARTA_H: f64 = 0.0926;
+const KARTA_ROW_PITCH: f64 = 0.1037;
+
+/// Výrez, ktorý stačí preOCRovať, aby sa prečítal nadpis podobrazovky aj
+/// všetky karty. Appka ho posiela do Windows OCR namiesto celej snímky —
+/// je to rýchlejšie a hlavne sa do textu nenamieša nič z hernej plochy.
+const OCR_KARTY_X: f64 = 0.53;
+const OCR_KARTY_Y: f64 = 0.385;
+const OCR_KARTY_W: f64 = 0.32;
+const OCR_KARTY_H: f64 = 0.245;
+
+/// Nadpis podobrazovky: y ≈ 420–446 px pri 1080 (zmerané na tých istých
+/// štyroch snímkach ako karty).
+const NADPIS_Y: f64 = 0.3889;
+const NADPIS_H: f64 = 0.0241;
+
+const TLACIDLO_SELECT_X: f64 = 0.7255;
+const TLACIDLO_SELECT_Y: f64 = 0.7528;
+const TLACIDLO_SELECT_W: f64 = 0.1219;
+const TLACIDLO_SELECT_H: f64 = 0.0528;
+
+/// Box01 obdĺžnik karty podľa poradia zhora (0-indexované).
+pub fn karta_box01(index: i64) -> Pole {
+    let i = index.max(0);
+    Pole {
+        index: i as u32,
+        x: KARTA_ORIGIN_X,
+        y: KARTA_ORIGIN_Y + (i as f64) * KARTA_ROW_PITCH,
+        w: KARTA_W,
+        h: KARTA_H,
+    }
+}
+
+/// `pocet` kariet zhora nadol.
+pub fn karty_box01(pocet: i64) -> Vec<Pole> {
+    (0..pocet.max(0)).map(karta_box01).collect()
+}
+
+/// Box01 tlačidla „Select", ktorým sa vybraná karta potvrdzuje.
+pub fn tlacidlo_select_box01() -> Pole {
+    Pole { index: 0, x: TLACIDLO_SELECT_X, y: TLACIDLO_SELECT_Y,
+           w: TLACIDLO_SELECT_W, h: TLACIDLO_SELECT_H }
+}
+
+/// Box01 výrezu, v ktorom leží nadpis podobrazovky aj texty kariet.
+pub fn ocr_oblast_kariet_box01() -> Pole {
+    Pole { index: 0, x: OCR_KARTY_X, y: OCR_KARTY_Y, w: OCR_KARTY_W, h: OCR_KARTY_H }
+}
+
+/// Box01 samotného NADPISU podobrazovky („Select the Brushstroke direction"
+/// / „Select Brushstroke Effect"). OCRuje sa zvlášť od kariet, aby sa text
+/// nadpisu nezliepal s textom prvej karty — podľa nadpisu sa rozhoduje, či
+/// vôbec ide o podobrazovku s výberom.
+pub fn nadpis_kariet_box01() -> Pole {
+    Pole { index: 0, x: KARTA_ORIGIN_X, y: NADPIS_Y, w: KARTA_W, h: NADPIS_H }
+}
+
+#[cfg(test)]
+mod testy_karty {
+    use super::*;
+
+    #[test]
+    fn karty_su_pod_sebou_a_neprekryvaju_sa() {
+        let a = karta_box01(0);
+        let b = karta_box01(1);
+        assert!(b.y > a.y + a.h - 1e-9, "{a:?} {b:?}");
+        assert_eq!(a.x, b.x);
+        assert_eq!(a.w, b.w);
+    }
+
+    #[test]
+    fn karty_a_tlacidlo_lezia_v_obrazku() {
+        for p in [karta_box01(0), karta_box01(2), tlacidlo_select_box01(),
+                  ocr_oblast_kariet_box01()] {
+            assert!(p.x >= 0.0 && p.x + p.w <= 1.0, "{p:?}");
+            assert!(p.y >= 0.0 && p.y + p.h <= 1.0, "{p:?}");
+        }
+    }
+
+    #[test]
+    fn ocr_vyrez_obsahuje_obe_karty() {
+        let o = ocr_oblast_kariet_box01();
+        for i in 0..2 {
+            let k = karta_box01(i);
+            assert!(o.x <= k.x && k.x + k.w <= o.x + o.w + 1e-9, "{o:?} {k:?}");
+            assert!(o.y <= k.y && k.y + k.h <= o.y + o.h + 1e-9, "{o:?} {k:?}");
+        }
+    }
+
+    #[test]
+    fn tlacidlo_je_pod_kartami() {
+        let t = tlacidlo_select_box01();
+        let k = karta_box01(1);
+        assert!(t.y > k.y + k.h);
+    }
+
+    /// Hodnoty musia sedieť s `canvas_rozlozenie.py` na serveri — keby sa
+    /// rozišli, appka by orámovala inú kartu, než ktorú server odporučil.
+    #[test]
+    fn hodnoty_zodpovedaju_serveru() {
+        let k = karta_box01(1);
+        assert!((k.x - 0.5417).abs() < 1e-9);
+        assert!((k.y - 0.5185).abs() < 1e-9, "{}", k.y);
+        assert!((k.w - 0.2917).abs() < 1e-9);
+        assert!((k.h - 0.0926).abs() < 1e-9);
+        let t = tlacidlo_select_box01();
+        assert!((t.x - 0.7255).abs() < 1e-9);
+        assert!((t.y - 0.7528).abs() < 1e-9);
+    }
+
+    #[test]
+    fn nadpis_je_nad_prvou_kartou_a_neprekryva_ju() {
+        let n = nadpis_kariet_box01();
+        let k = karta_box01(0);
+        assert!(n.y + n.h <= k.y + 1e-9, "{n:?} {k:?}");
+        assert_eq!(n.x, k.x);
+        let o = ocr_oblast_kariet_box01();
+        assert!(o.y <= n.y && n.y + n.h <= o.y + o.h, "{o:?} {n:?}");
+    }
+
+    #[test]
+    fn karty_box01_vrati_presny_pocet() {
+        assert!(karty_box01(0).is_empty());
+        assert_eq!(karty_box01(3).len(), 3);
+        assert_eq!(karty_box01(3).iter().map(|p| p.index).collect::<Vec<_>>(), vec![0, 1, 2]);
+    }
+}

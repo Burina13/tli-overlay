@@ -223,6 +223,29 @@ fn e2e_doska_s_tlacidlom_spodnej_listy() {
     assert!((css.w - 0.174 * 2560.0 / 1.25).abs() < 1e-9);
 }
 
+/// Odpoveď servera na podobrazovke s výberom karty (TLI 71) — `kroky` je
+/// prázdne, rada je v `tah`.
+const ODPOVED_CANVAS_TAH: &str = r#"{
+  "ok": true, "modul": "canvas", "kroky": [], "istota": 0.75,
+  "istota_rozpoznania": 0.85, "skontroluj": [], "zdroj_dosahu": "smer",
+  "pravidlo_overene": null, "faza": "vyber_tahu",
+  "tah": {
+    "faza": "vyber_tahu", "odporucany_index": 1, "druh": "spread",
+    "dovod": "Vyber kartu 2 — [Spread]. … Potom klikni na tlačidlo Select.",
+    "istota": 0.75, "skontroluj": [],
+    "box": {"x": 0.5417, "y": 0.5185, "w": 0.2917, "h": 0.0926},
+    "box_tlacidlo": {"x": 0.7255, "y": 0.7528, "w": 0.1219, "h": 0.0528},
+    "hodnotenia": [
+      {"index": 0, "druh": "reimagine", "skore": 70, "dovod": "…",
+       "oznacenie": "[Reimagine]",
+       "box": {"x": 0.5417, "y": 0.4148, "w": 0.2917, "h": 0.0926}},
+      {"index": 1, "druh": "spread", "skore": 95, "dovod": "…",
+       "oznacenie": "[Spread]",
+       "box": {"x": 0.5417, "y": 0.5185, "w": 0.2917, "h": 0.0926}}
+    ]
+  }
+}"#;
+
 /// E2E Frozen Canvas (TLI 4b): JPEG → HTTP `?modul=canvas` → JSON → PÁR
 /// zelených rámikov (zdroj v ruke + cieľ na plátne) na krok, prepočítaných
 /// na overlay presne tou istou funkciou ako Tartarus.
@@ -232,7 +255,7 @@ fn e2e_canvas_analyza_az_po_parovane_obdlzniky() {
     let n = nastavenia(port);
 
     let jpeg = vec![0xFF, 0xD8, 0xFF, 0xD9];
-    let v = klient::posli_analyzu_canvas(&n, jpeg.clone(), "1-3.2-3")
+    let v = klient::posli_analyzu_canvas(&n, jpeg.clone(), "1-3.2-3", "", "")
         .expect("mock mal odpovedať 200");
 
     // 1. Klient poslal presne to, čo kontrakt chce — na modul=canvas endpoint.
@@ -268,6 +291,48 @@ fn e2e_canvas_analyza_az_po_parovane_obdlzniky() {
     assert!((ciel_css.x - 0.30 * 2560.0 / 1.25).abs() < 1e-9);
     // Zdroj a cieľ sú na iných súradniciach — dôkaz, že sa nepomiešali.
     assert!((zdroj_css.x - ciel_css.x).abs() > 1.0);
+}
+
+/// E2E podobrazovky „Select the Brushstroke direction" (TLI 71): appka pošle
+/// fázu a texty kariet, ktoré prečítala LOKÁLNE, a z odpovede vie vykresliť
+/// rámik na odporúčanú kartu aj na tlačidlo „Select".
+#[test]
+fn e2e_canvas_vyber_tahu_az_po_obdlznik_karty() {
+    let (port, prijimac) = mock(200, ODPOVED_CANVAS_TAH);
+    let n = nastavenia(port);
+
+    let jpeg = vec![0xFF, 0xD8, 0xFF, 0xD9];
+    let v = klient::posli_analyzu_canvas(
+        &n, jpeg.clone(), "",
+        "vyber_tahu",
+        "[Reimagine] changes the Color Mixing Objective and Effect|[Spread] takes effect on",
+    )
+    .expect("mock mal odpovedať 200");
+
+    // 1. Fáza aj karty idú v query parametroch, percentuálne zakódované.
+    let (hlavicky, telo) = prijimac.recv().expect("mock nič nedostal");
+    assert!(hlavicky.contains("faza=vyber_tahu"), "zlá cesta: {hlavicky}");
+    assert!(hlavicky.contains("karty="), "zlá cesta: {hlavicky}");
+    assert!(hlavicky.contains("Reimagine"), "text karty sa nedostal do URL: {hlavicky}");
+    assert_eq!(telo, jpeg);
+
+    // 2. Odpoveď: žiadne kroky, ale je odporúčaná karta.
+    assert!(v.analyza.kroky.is_empty());
+    assert_eq!(v.analyza.faza, "vyber_tahu");
+    let tah = v.analyza.tah.clone().expect("tah má prísť");
+    assert_eq!(tah.odporucany_index, 1);
+    assert_eq!(tah.druh, "spread");
+    assert_eq!(api::pouzitelne_karty(&tah).len(), 2);
+
+    // 3. Súradnice karty aj tlačidla sa prepočítajú TOU ISTOU funkciou ako
+    // políčka plátna.
+    let okno = OknoFyz { x: 0, y: 0, sirka: 1920, vyska: 1080 };
+    let b = tah.box_.expect("box odporúčanej karty chýba");
+    let css = box01_na_css(b.x, b.y, b.w, b.h, &okno, 1.0);
+    assert!((css.x - 0.5417 * 1920.0).abs() < 1e-6);
+    let t = tah.box_tlacidlo.expect("box tlačidla chýba");
+    let t_css = box01_na_css(t.x, t.y, t.w, t.h, &okno, 1.0);
+    assert!(t_css.y > css.y + css.h, "tlačidlo má byť pod kartou");
 }
 
 // ── Guide a synchronizácia s partiou (TLI 11, kroky 4 a 5) ──────────────────

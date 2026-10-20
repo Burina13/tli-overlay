@@ -328,6 +328,72 @@ pub struct Krok {
     pub dovod: String,
 }
 
+// ── TLI 71: podobrazovka „Select the Brushstroke direction" / „Select
+// Brushstroke Effect". Na nej je `kroky` zámerne prázdne (nie je kam klikať
+// paintom) a jediná užitočná rada je, KTORÚ KARTU vybrať — presne tú appka
+// do 20.10.2026 nevedela dať a hráčovi napísala „žiadny krok".
+
+/// Ohodnotenie jednej ponúknutej karty (server, `canvas_tahy.py`).
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct HodnotenieKarty {
+    /// Poradie karty zhora (0 = horná).
+    pub index: i64,
+    /// `reimagine` | `spread` | `layer` | prázdne.
+    pub druh: String,
+    /// Pri výbere konkrétneho efektu jeho zatriedenie (`odblokovanie`, …).
+    pub ucel: String,
+    /// Text karty tak, ako ho appka/vision prečítali.
+    pub text: String,
+    /// 0–100; vyššie = vhodnejšie pre aktuálny stav plátna.
+    pub skore: i64,
+    pub dovod: String,
+    /// Krátke meno karty do vety — skladá ho server, aby sa tá istá logika
+    /// nepísala druhýkrát v JavaScripte.
+    pub oznacenie: String,
+    #[serde(rename = "box")]
+    pub box_: Option<Box01>,
+}
+
+/// Odporúčanie, ktorú kartu vybrať a kde kliknúť.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct OdporucanyTah {
+    /// `vyber_tahu` | `vyber_efektu`.
+    pub faza: String,
+    /// Index odporúčanej karty, alebo `-1` keď sa neodporúča nič (nerozpoznaná
+    /// ani jedna karta) — panel vtedy ukáže len dôvod, nič neorámuje.
+    pub odporucany_index: i64,
+    pub druh: String,
+    pub dovod: String,
+    pub hodnotenia: Vec<HodnotenieKarty>,
+    pub istota: Option<f64>,
+    pub skontroluj: Vec<String>,
+    /// Súradnice ODPORÚČANEJ karty (`null`, keď `odporucany_index < 0`).
+    #[serde(rename = "box")]
+    pub box_: Option<Box01>,
+    /// Súradnice tlačidla „Select", ktorým sa výber potvrdzuje.
+    pub box_tlacidlo: Option<Box01>,
+}
+
+impl Default for OdporucanyTah {
+    fn default() -> Self {
+        Self {
+            faza: String::new(),
+            // `-1` = „neodporúčam nič". Nula by znamenala prvú kartu, teda
+            // rada by sa vymyslela aj tam, kde server žiadnu neposlal.
+            odporucany_index: -1,
+            druh: String::new(),
+            dovod: String::new(),
+            hodnotenia: vec![],
+            istota: None,
+            skontroluj: vec![],
+            box_: None,
+            box_tlacidlo: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AnalyzaCanvas {
@@ -355,6 +421,14 @@ pub struct AnalyzaCanvas {
     /// o tvare plátna nič nevie a vedieť nepotrebuje; keby server pole
     /// nepriložil, ostane `null` a panel ikonu paintu jednoducho nenakreslí.
     pub platno: Option<serde_json::Value>,
+    /// TLI 71: ktorá podobrazovka Frozen Canvasu je otvorená —
+    /// `kreslenie` (bežné plátno, všetko ako pred TLI 71), `vyber_tahu`
+    /// alebo `vyber_efektu`. Staršia odpoveď bez tohto poľa sa správa ako
+    /// `kreslenie`.
+    pub faza: String,
+    /// TLI 71: rada, ktorú kartu vybrať. Prichádza LEN na podobrazovkách
+    /// s výberom; pri bežnom plátne je `None` a kreslia sa `kroky`.
+    pub tah: Option<OdporucanyTah>,
 }
 
 impl Default for AnalyzaCanvas {
@@ -370,8 +444,19 @@ impl Default for AnalyzaCanvas {
             pravidlo_overene: None,
             zdroj_dosahu: String::new(),
             platno: None,
+            faza: String::new(),
+            tah: None,
         }
     }
+}
+
+/// Karty, ktoré majú použiteľné súradnice — rovnaká konvencia ako
+/// `pouzitelne_kroky` a Tartarus `pouzitelne_polia`.
+pub fn pouzitelne_karty(t: &OdporucanyTah) -> Vec<&HodnotenieKarty> {
+    t.hodnotenia
+        .iter()
+        .filter(|h| h.box_.map(|b| b.w > 0.0 && b.h > 0.0).unwrap_or(false))
+        .collect()
 }
 
 /// Krok, ktorého zdroj aj cieľ majú súradnice (iné odpadli, lebo rozpoznávanie
@@ -1152,5 +1237,81 @@ mod testy {
         assert!(s.zapnute);
         assert!(s.mapy.get("XZ_Foo").unwrap().dost_dat);
         assert!(s.mapy.get("XZ_Ina").is_none());
+    }
+}
+
+#[cfg(test)]
+mod testy_tah {
+    use super::*;
+
+    /// Tvar presne podľa `docs/fakty/hry/torchlight-infinite/canvas-api-kontrakt.md`
+    /// § „Podobrazovka s kartami" (TLI 71).
+    const ODPOVED: &str = r#"{
+      "ok": true, "modul": "canvas", "kroky": [], "istota": 0.75,
+      "skontroluj": [], "faza": "vyber_tahu",
+      "tah": {
+        "faza": "vyber_tahu", "odporucany_index": 1, "druh": "spread",
+        "dovod": "Vyber kartu 2 — [Spread]. …",
+        "istota": 0.75, "skontroluj": [],
+        "box": {"x": 0.5417, "y": 0.5185, "w": 0.2917, "h": 0.0926},
+        "box_tlacidlo": {"x": 0.7255, "y": 0.7528, "w": 0.1219, "h": 0.0528},
+        "polia_karty": [{"index": 0, "x": 0.5417, "y": 0.4148, "w": 0.2917, "h": 0.0926}],
+        "hodnotenia": [
+          {"index": 0, "druh": "reimagine", "ucel": "", "text": "[Reimagine] …",
+           "skore": 70, "dovod": "…", "oznacenie": "[Reimagine]",
+           "box": {"x": 0.5417, "y": 0.4148, "w": 0.2917, "h": 0.0926}},
+          {"index": 1, "druh": "spread", "ucel": "", "text": "[Spread] takes effect on",
+           "skore": 95, "dovod": "…", "oznacenie": "[Spread]",
+           "box": {"x": 0.5417, "y": 0.5185, "w": 0.2917, "h": 0.0926}}
+        ]
+      }
+    }"#;
+
+    #[test]
+    fn parsovanie_odpovede_s_tahom() {
+        let a: AnalyzaCanvas = serde_json::from_str(ODPOVED).unwrap();
+        assert_eq!(a.faza, "vyber_tahu");
+        let t = a.tah.expect("tah má prísť");
+        assert_eq!(t.odporucany_index, 1);
+        assert_eq!(t.druh, "spread");
+        assert_eq!(t.hodnotenia.len(), 2);
+        assert_eq!(t.hodnotenia[1].oznacenie, "[Spread]");
+        assert_eq!(t.box_.unwrap().y, 0.5185);
+        assert_eq!(t.box_tlacidlo.unwrap().w, 0.1219);
+        assert_eq!(pouzitelne_karty(&t).len(), 2);
+    }
+
+    /// Staršia odpoveď (pred TLI 71) nesmie prestať chodiť — `faza` chýba
+    /// a `tah` tiež.
+    #[test]
+    fn stara_odpoved_bez_tahu_sa_parsuje_ako_kreslenie() {
+        let json = r#"{"ok": true, "modul": "canvas", "kroky": [], "istota": 0.9,
+                       "skontroluj": []}"#;
+        let a: AnalyzaCanvas = serde_json::from_str(json).unwrap();
+        assert_eq!(a.faza, "");
+        assert!(a.tah.is_none());
+    }
+
+    /// Keď server kartu neodporučí, index musí ostať `-1`, nie 0 — inak by
+    /// appka orámovala prvú kartu bez toho, že by to server povedal.
+    #[test]
+    fn chybajuci_odporucany_index_je_minus_jedna() {
+        let json = r#"{"ok": true, "modul": "canvas", "kroky": [], "skontroluj": [],
+                       "faza": "vyber_tahu", "tah": {"faza": "vyber_tahu"}}"#;
+        let a: AnalyzaCanvas = serde_json::from_str(json).unwrap();
+        let t = a.tah.unwrap();
+        assert_eq!(t.odporucany_index, -1);
+        assert!(t.box_.is_none());
+        assert!(pouzitelne_karty(&t).is_empty());
+    }
+
+    /// Karta bez súradníc sa nekreslí (rovnaká konvencia ako `pouzitelne_kroky`).
+    #[test]
+    fn karta_bez_suradnic_sa_nekresli() {
+        let json = r#"{"ok": true, "modul": "canvas", "kroky": [], "skontroluj": [],
+                       "faza": "vyber_tahu", "tah": {"odporucany_index": 0,
+                       "hodnotenia": [{"index": 0, "skore": 10, "dovod": "x"}]}}"#;
+        let a: AnalyzaCanvas = serde_json::from_str(json).unwrap();
+        assert!(pouzitelne_karty(&a.tah.unwrap()).is_empty());
     }
 }

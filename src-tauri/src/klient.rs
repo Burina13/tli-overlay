@@ -128,15 +128,27 @@ pub fn posli_analyzu_canvas(
     n: &Nastavenia,
     jpeg: Vec<u8>,
     ramy: &str,
+    faza: &str,
+    karty: &str,
 ) -> Result<VysledokCanvas, String> {
     let zaciatok = std::time::Instant::now();
 
-    let odpoved = ureq::post(&n.adresa_analyza_canvas_s_ramami(ramy))
+    let mut poziadavka = ureq::post(&n.adresa_analyza_canvas_s_ramami(ramy))
         .set("Authorization", &format!("Bearer {}", n.kluc))
         .set("Content-Type", "image/jpeg")
         // TLI 67b, bod 1 — ten istý rozpočet ako pri Tartarus doske vyššie.
-        .timeout(std::time::Duration::from_secs(api::TIMEOUT_ANALYZY_S))
-        .send_bytes(&jpeg);
+        .timeout(std::time::Duration::from_secs(api::TIMEOUT_ANALYZY_S));
+
+    // TLI 71: podobrazovka „Select the Brushstroke direction" / „Select
+    // Brushstroke Effect", ktorú appka prečítala lokálne (Windows OCR nad
+    // pevným výrezom). Posiela sa LEN keď sa naozaj rozpoznala — inak si ju
+    // server skúsi prečítať sám z obrázka (záloha). `query()` hodnoty
+    // percentuálne zakóduje, takže text karty s medzerami a `[]` prejde.
+    if !faza.is_empty() && !karty.is_empty() {
+        poziadavka = poziadavka.query("faza", faza).query("karty", karty);
+    }
+
+    let odpoved = poziadavka.send_bytes(&jpeg);
 
     match odpoved {
         Ok(res) => {

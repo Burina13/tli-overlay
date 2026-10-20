@@ -31,7 +31,7 @@ use tli_overlay_core::rozlozenie::{
     PANEL_OBJECTIVE, PANEL_POKLAD, PANEL_PORADCA, PANEL_PRIPOMIENKA, PANEL_TARTARUS,
 };
 use tli_overlay_core::suradnice::OknoFyz;
-use tli_overlay_core::{api, canvas_ramy, suradnice, zmensenie};
+use tli_overlay_core::{api, canvas_ocr, canvas_ramy, canvas_rozlozenie, canvas_tahy, suradnice, zmensenie};
 
 /// Okno overlayu. Je priehľadné, bez rámu, vždy navrchu a priechodné pre myš —
 /// hráč cezeň klikne do hry, akoby tam nebolo.
@@ -1187,6 +1187,64 @@ pub enum Modul {
 /// spustenie z tray/tlačidla, takže sa z logu nedalo zistiť, ktorou cestou
 /// analýza prišla — presne to bolo treba odlíšiť pri hľadaní, prečo F8 funguje
 /// inak než ručné tlačidlo.
+/// TLI 71: prečíta z PLNEJ snímky, či je otvorená podobrazovka s výberom
+/// karty, a ak áno, aj texty kariet. Vracia dvojicu `(faza, karty)` pre
+/// query parametre servera; pri bežnom plátne (alebo keď OCR nevyjde) sú
+/// oba reťazce prázdne a server si poradí sám.
+///
+/// OCRuje sa NADPIS a potom KAŽDÁ KARTA ZVLÁŠŤ, nie celá oblasť naraz:
+/// hra text karty láme na dva riadky, takže z jedného spoločného OCR by sa
+/// nedalo spoľahlivo určiť, kde končí prvá karta a začína druhá.
+///
+/// Zlyhanie OCR (chýbajúci jazykový balík, iné rozlíšenie) NIE JE chyba
+/// behu — zapíše sa do denníka a pokračuje sa bez parametrov, teda presne
+/// tak, ako sa appka správala pred TLI 71.
+#[cfg(windows)]
+fn precitaj_fazu_kariet(snimok: &snimka::Snimka) -> (String, String) {
+    let nadpis = match ocr::rozpoznaj_text_oblasti(snimok, canvas_rozlozenie::nadpis_kariet_box01()) {
+        Ok(t) => t,
+        Err(e) => {
+            denik::zapis("canvas", &format!("OCR nadpisu podobrazovky zlyhalo: {e}"));
+            return (String::new(), String::new());
+        }
+    };
+    // Lacná zarážka: keď nadpis nie je ani jedna zo známych podobrazoviek,
+    // netreba OCRovať karty vôbec (a to je drvivá väčšina snímok).
+    if canvas_tahy::faza_z_nadpisu(&nadpis).is_none() {
+        return (String::new(), String::new());
+    }
+
+    let mut texty: Vec<String> = Vec::new();
+    for i in 0..canvas_tahy::MAX_KARIET as i64 {
+        match ocr::rozpoznaj_text_oblasti(snimok, canvas_rozlozenie::karta_box01(i)) {
+            Ok(t) => texty.push(t),
+            Err(e) => {
+                denik::zapis("canvas", &format!("OCR karty {i} zlyhalo: {e}"));
+                break;
+            }
+        }
+    }
+
+    match canvas_ocr::parsuj_fazu_kariet(&nadpis, &texty) {
+        Some(v) => {
+            let param = canvas_tahy::karty_do_parametra(&v.karty);
+            denik::zapis(
+                "canvas",
+                &format!("podobrazovka {} — prečítaných {} kariet: {}",
+                         v.faza.nazov(), v.karty.len(), param),
+            );
+            (v.faza.nazov().to_string(), param)
+        }
+        None => {
+            // Nadpis sedel, ale karty sa nedali prečítať — povedz to v denníku,
+            // nech sa to pri hlásení „appka zase nič neporadila" dá dohľadať.
+            denik::zapis("canvas", "nadpis podobrazovky sedí, ale ani jedna karta sa neprečítala \
+— fázu si skúsi rozpoznať server z obrázka");
+            (String::new(), String::new())
+        }
+    }
+}
+
 #[cfg(windows)]
 pub(crate) fn spusti_analyzu(app: AppHandle, modul: Modul, zdroj: &'static str) {
     // Zapísané VŽDY, ako prvé — nezávisle od všetkých early-returnov nižšie.
@@ -1785,10 +1843,18 @@ V hre prepni Nastavenia → Zobrazenie → Režim okna na „Okno bez okrajov“
                         format!("hra orámovala {} buniek: {}", oramovane.len(), ramy)
                     },
                 );
+                // TLI 71: hra medzi dvoma miešaniami vloží podobrazovku
+                // „Select the Brushstroke direction" / „Select Brushstroke
+                // Effect", na ktorej sa vyberá KARTA. Appka si ju prečíta
+                // lokálne (Windows OCR nad pevnými výrezmi, plné rozlíšenie)
+                // a pošle serveru — ten má zmenšený JPEG, v ktorom je text
+                // karty na hrane čitateľnosti. Rovnaký vzor a dôvod ako `ramy`
+                // vyššie. Keď OCR nevyjde, fázu si server skúsi prečítať sám.
+                let (faza_param, karty_param) = precitaj_fazu_kariet(&snimok);
                 let vysledok = snimka::do_jpegu(&snimok, zmensenie::MAX_DLZKA, 80).and_then(|jpeg| {
                     denik::zapis("http", &format!("POST /api/analyza?modul=canvas ({} B JPEG)", jpeg.len()));
                     let _ = app.emit("stav", json!({ "faza": "odosielam" }));
-                    klient::posli_analyzu_canvas(&nastavenia, jpeg, &ramy)
+                    klient::posli_analyzu_canvas(&nastavenia, jpeg, &ramy, &faza_param, &karty_param)
                 });
                 match &vysledok {
                     Ok(v) => denik::zapis("http", &format!("canvas OK, {} ms", v.trvanie_ms)),
@@ -1855,9 +1921,44 @@ V hre prepni Nastavenia → Zobrazenie → Režim okna na „Okno bez okrajov“
                         // istou cestou ako doska a kartičky; rámiky na plátne
                         // sú súčasťou toho istého okna `overlay`, takže ich
                         // skrýva ten istý klik ako panel.
+                        // TLI 71: na podobrazovke s výberom karty je `kroky`
+                        // prázdne a kresliť treba KARTY a tlačidlo „Select".
+                        // Súradnice sa prepočítavajú TOU ISTOU funkciou ako
+                        // políčka plátna — druhá implementácia prepočtu sa
+                        // v tejto appke nezavádza (TLI 4b).
+                        let (karty, tlacidlo) = match &v.analyza.tah {
+                            Some(t) => {
+                                let karty: Vec<_> = api::pouzitelne_karty(t)
+                                    .into_iter()
+                                    .map(|h| {
+                                        let b = h.box_.expect("filtrované pouzitelne_karty");
+                                        let css = suradnice::box01_na_css(
+                                            b.x, b.y, b.w, b.h, &obdlznik, mierka);
+                                        json!({
+                                            "index": h.index,
+                                            "odporucana": h.index == t.odporucany_index,
+                                            "oznacenie": h.oznacenie.clone(),
+                                            "dovod": h.dovod.clone(),
+                                            "skore": h.skore,
+                                            "x": css.x, "y": css.y, "w": css.w, "h": css.h,
+                                        })
+                                    })
+                                    .collect();
+                                let tlacidlo = t.box_tlacidlo
+                                    .filter(|b| b.w > 0.0 && b.h > 0.0)
+                                    .map(|b| {
+                                        let css = suradnice::box01_na_css(
+                                            b.x, b.y, b.w, b.h, &obdlznik, mierka);
+                                        json!({"x": css.x, "y": css.y, "w": css.w, "h": css.h})
+                                    });
+                                (karty, tlacidlo)
+                            }
+                            None => (vec![], None),
+                        };
                         denik::zapis(
                             "zobraz",
-                            &format!("canvas: {} krokov, emitujem stav=hotovo_canvas", kroky.len()),
+                            &format!("canvas: {} krokov, {} kariet, emitujem stav=hotovo_canvas",
+                                     kroky.len(), karty.len()),
                         );
                         zobraz_vysledok(
                             &app,
@@ -1868,6 +1969,8 @@ V hre prepni Nastavenia → Zobrazenie → Režim okna na „Okno bez okrajov“
                                 "faza": "hotovo_canvas",
                                 "analyza": v.analyza,
                                 "kroky": kroky,
+                                "karty": karty,
+                                "tlacidlo": tlacidlo,
                                 "mierka": mierka,
                                 "sirka": sirka_log,
                                 "vyska": vyska_log,

@@ -23,6 +23,7 @@
 //! mohol omylom zhodovať.
 
 use crate::canvas::CielMiesania;
+use crate::canvas_tahy::{faza_z_nadpisu, VyberKariet, MAX_KARIET};
 
 /// Nájde v (možno viacriadkovom) OCR texte riadok s cieľom miešania v tvare
 /// `"<popis> (<aktuálne>/<požadované>)"` a voliteľný riadok s popisom efektu
@@ -304,5 +305,107 @@ mod testy {
     #[test]
     fn level_badge_cislo_prilis_daleko_sa_neberie() {
         assert_eq!(parsuj_level_badge("Lv           3"), None);
+    }
+}
+
+// ── Podobrazovka s kartami (TLI 71) ─────────────────────────────────────────
+
+
+/// Text jednej karty z OCR → jeden riadok.
+///
+/// Hra text karty láme na dva riadky („[Reimagine] changes the Color" /
+/// „Mixing Objective and Effect") a OCR vracia to isté lámanie — serveru
+/// ale musí ísť jedna veta, inak sa nespáruje s katalógom efektov.
+pub fn ocisti_text_karty(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Zloží výsledok lokálneho OCR podobrazovky: text nadpisu + text KAŽDEJ
+/// karty zvlášť (appka ich OCRuje po jednom cez pevné boxy
+/// `canvas_rozlozenie::karta_box01`, nie celú oblasť naraz — inak by sa
+/// dvojriadkové karty nedali od seba odlíšiť).
+///
+/// Vracia `None`, keď nadpis nie je ani jedna zo známych podobrazoviek —
+/// vtedy ide o bežné plátno a všetko ostatné sa správa presne ako pred
+/// TLI 71. `None` vráti aj vtedy, keď sa nadpis rozpoznal, ale ani jedna
+/// karta nemá použiteľný text: poslať serveru fázu bez kariet by znamenalo
+/// nahradiť jednu bezcennú radu druhou.
+///
+/// Karty sa berú ZHORA a prvá prázdna ukončí zoznam — hra ich kreslí
+/// súvisle od vrchu, takže diera v strede by znamenala chybné OCR, nie
+/// vynechanú ponuku.
+pub fn parsuj_fazu_kariet(nadpis_text: &str, texty_kariet: &[String]) -> Option<VyberKariet> {
+    let faza = faza_z_nadpisu(nadpis_text)?;
+    let mut karty: Vec<String> = Vec::new();
+    for t in texty_kariet.iter().take(MAX_KARIET) {
+        let cisty = ocisti_text_karty(t);
+        // Pod 4 znaky to nie je text karty, ale OCR šum z pozadia hry.
+        if cisty.chars().count() < 4 {
+            break;
+        }
+        karty.push(cisty);
+    }
+    if karty.is_empty() {
+        return None;
+    }
+    Some(VyberKariet { faza, karty })
+}
+
+#[cfg(test)]
+mod testy_karty {
+    use super::*;
+    use crate::canvas_tahy::Faza;
+
+    const NADPIS: &str = "Select the Brushstroke direction";
+    const REIMAGINE: &str = "[Reimagine] changes the Color\nMixing Objective and Effect";
+    const SPREAD: &str = "[Spread] takes effect on";
+
+    #[test]
+    fn dvojriadkova_karta_sa_zlepi_do_jednej_vety() {
+        assert_eq!(
+            ocisti_text_karty(REIMAGINE),
+            "[Reimagine] changes the Color Mixing Objective and Effect"
+        );
+    }
+
+    #[test]
+    fn realna_obrazovka_zo_zadania_sa_precita() {
+        let v = parsuj_fazu_kariet(NADPIS, &[REIMAGINE.to_string(), SPREAD.to_string()])
+            .expect("nadpis aj karty sú tam");
+        assert_eq!(v.faza, Faza::VyberTahu);
+        assert_eq!(v.karty.len(), 2);
+        assert_eq!(v.karty[1], "[Spread] takes effect on");
+    }
+
+    #[test]
+    fn bezne_platno_nie_je_podobrazovka_s_kartami() {
+        assert!(parsuj_fazu_kariet("Current Max Paint Level7", &["nieco".to_string()]).is_none());
+        assert!(parsuj_fazu_kariet("", &[]).is_none());
+    }
+
+    #[test]
+    fn rozpoznany_nadpis_bez_kariet_vrati_none() {
+        assert!(parsuj_fazu_kariet(NADPIS, &[]).is_none());
+        assert!(parsuj_fazu_kariet(NADPIS, &["  ".to_string()]).is_none());
+    }
+
+    #[test]
+    fn prazdna_karta_ukonci_zoznam() {
+        let v = parsuj_fazu_kariet(
+            NADPIS,
+            &[REIMAGINE.to_string(), "".to_string(), SPREAD.to_string()],
+        )
+        .unwrap();
+        assert_eq!(v.karty.len(), 1);
+    }
+
+    #[test]
+    fn druha_podobrazovka_sa_rozpozna_tiez() {
+        let v = parsuj_fazu_kariet(
+            "Select Brushstroke Effect",
+            &["Randomly changes its own effect direction".to_string()],
+        )
+        .unwrap();
+        assert_eq!(v.faza, Faza::VyberEfektu);
     }
 }

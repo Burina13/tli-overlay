@@ -15,6 +15,7 @@ pub mod canvas_ramy;
 pub mod canvas_rozlozenie;
 pub mod canvas_sablony;
 pub mod canvas_solver;
+pub mod canvas_tahy;
 pub mod denik;
 pub mod minimapa_fronta;
 pub mod minimapa_vzhlad;
