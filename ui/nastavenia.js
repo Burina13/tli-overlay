@@ -56,6 +56,34 @@ const btnRezimUpravy = document.getElementById("btn-rezim-upravy");
 const btnObnovPredvolene = document.getElementById("btn-obnov-predvolene");
 const inpPriehladnost = document.getElementById("inp-priehladnost");
 
+// TLI 62/2b — vzhľad trasy nad minimapou (doplnok 1 k TLI 62, bod 4).
+const inpTrasaOpacitaVrstvy = document.getElementById("inp-trasa-opacita-vrstvy");
+const inpTrasaOpacitaCiary = document.getElementById("inp-trasa-opacita-ciary");
+const inpTrasaHrubka = document.getElementById("inp-trasa-hrubka");
+const inpTrasaFarba = document.getElementById("inp-trasa-farba");
+const hodTrasaOpacitaVrstvy = document.getElementById("hod-trasa-opacita-vrstvy");
+const hodTrasaOpacitaCiary = document.getElementById("hod-trasa-opacita-ciary");
+const hodTrasaHrubka = document.getElementById("hod-trasa-hrubka");
+
+/// Predvolené hodnoty sú tu ZDUPLIKOVANÉ z `core/src/minimapa_vzhlad.rs`
+/// zámerne: formulár musí vedieť, čo ukázať, aj keď nastavenia ešte pole
+/// `vzhlad_trasy` nemajú (starý `nastavenia.json`). Rust ich pri uložení aj
+/// tak znormalizuje, takže toto nie je druhý zdroj pravdy, len predvoľba
+/// zobrazenia — rovnaký vzor ako `|| "F8"` pri hotkeyoch vyššie.
+const TRASA_PREDVOLENE = { opacita_ciary: 85, opacita_vrstvy: 100, hrubka_px: 3, farba: "#FFD24A" };
+
+/// Popisky vedľa posuvníkov musia ísť s hodnotou, inak hráč nevie, čo si
+/// nastavil — `<input type=range>` svoju hodnotu sám neukazuje.
+function zosuladPopiskyTrasy() {
+    hodTrasaOpacitaVrstvy.textContent = inpTrasaOpacitaVrstvy.value;
+    hodTrasaOpacitaCiary.textContent = inpTrasaOpacitaCiary.value;
+    hodTrasaHrubka.textContent = inpTrasaHrubka.value;
+}
+
+for (const prvok of [inpTrasaOpacitaVrstvy, inpTrasaOpacitaCiary, inpTrasaHrubka]) {
+    prvok.addEventListener("input", zosuladPopiskyTrasy);
+}
+
 function nastavTlacidloRezimu(aktivny) {
     btnRezimUpravy.textContent = aktivny ? "Hotovo (uložiť rozloženie)" : "Upraviť rozloženie (Ctrl+F8)";
     btnObnovPredvolene.classList.toggle("skryte", !aktivny);
@@ -249,6 +277,18 @@ document.addEventListener("DOMContentLoaded", async () => {
         const priehladnost = nastavenia.rozlozenie && nastavenia.rozlozenie.priehladnost;
         inpPriehladnost.value = typeof priehladnost === "number" ? priehladnost : 1;
 
+        // TLI 62/2b. `|| TRASA_PREDVOLENE.x` je tu správne aj pre NULU: nula
+        // je platná hodnota („dočasne to nechcem vidieť"), preto sa testuje
+        // typ, nie pravdivosť — `0 || 85` by hráčovi stíšenú trasu potichu
+        // vrátilo na 85 %.
+        const vzhlad = nastavenia.vzhlad_trasy || {};
+        const cislo = (hodnota, predvolene) => (typeof hodnota === "number" ? hodnota : predvolene);
+        inpTrasaOpacitaVrstvy.value = cislo(vzhlad.opacita_vrstvy, TRASA_PREDVOLENE.opacita_vrstvy);
+        inpTrasaOpacitaCiary.value = cislo(vzhlad.opacita_ciary, TRASA_PREDVOLENE.opacita_ciary);
+        inpTrasaHrubka.value = cislo(vzhlad.hrubka_px, TRASA_PREDVOLENE.hrubka_px);
+        inpTrasaFarba.value = (vzhlad.farba || TRASA_PREDVOLENE.farba).toLowerCase();
+        zosuladPopiskyTrasy();
+
         // Keď hráč zavrie Nastavenia uprostred úpravy rozloženia a znova ich
         // otvorí, tlačidlo musí ukázať aktuálny stav, nie vždy „Upraviť".
         nastavTlacidloRezimu(await invoke("rezim_upravy_je_aktivny"));
@@ -330,7 +370,16 @@ formular.addEventListener("submit", async (e) => {
         skryt_radu_klikom: inpSkrytieRezim.value !== "cas",
         zvuk: inpZvuk.checked,
         zber_dat_zapnute: inpZberDat.checked,
-        ucenie_canvas_zapnute: inpUcenieCanvas.checked
+        ucenie_canvas_zapnute: inpUcenieCanvas.checked,
+        // TLI 62/2b — farbu posiela `<input type=color>` vždy ako malé
+        // písmená (`#ffd24a`); Rust `normalizuj()` ju zdvihne na veľké, aby
+        // sa `nastavenia.json` nemenil len kvôli veľkosti písmen.
+        vzhlad_trasy: {
+            opacita_ciary: parseInt(inpTrasaOpacitaCiary.value, 10),
+            opacita_vrstvy: parseInt(inpTrasaOpacitaVrstvy.value, 10),
+            hrubka_px: parseInt(inpTrasaHrubka.value, 10),
+            farba: inpTrasaFarba.value
+        }
     };
 
     try {

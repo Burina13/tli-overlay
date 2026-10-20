@@ -2842,6 +2842,37 @@ fn uloz_priehladnost(app: AppHandle, hodnota: f64) -> Result<f64, String> {
     Ok(kopia.rozlozenie.priehladnost)
 }
 
+/// TLI 62/2b — rýchla zmena priehľadnosti VRSTVY trasy kolieskom myši nad
+/// úchytom overlayu (doplnok 1 k TLI 62, bod 4: „aj rýchlo cez koliesko myši
+/// nad úchytom overlayu").
+///
+/// Zámerne mení len `opacita_vrstvy`, nie opacitu čiary, hrúbku ani farbu —
+/// koliesko je „stíš mi to celé", doladenie patrí do Nastavení. Z `delta`
+/// sa berie iba ZNAMIENKO (`VzhladTrasy::koliesko`): niektoré myši posielajú
+/// násobky a jedno švihnutie by inak skočilo zo 100 na 0.
+#[tauri::command]
+fn opacita_trasy_kolieskom(app: AppHandle, delta: i32) -> Result<u8, String> {
+    let (kopia, nova) = {
+        let stav = app.state::<Stav>();
+        let mut n = stav.nastavenia.lock().unwrap();
+        let nova = n.vzhlad_trasy.koliesko(delta);
+        (n.clone(), nova)
+    };
+    stav::uloz(&kopia)?;
+    let _ = app.emit_to(
+        OVERLAY,
+        "vzhlad-trasy",
+        json!({
+            "opacita_vrstvy": kopia.vzhlad_trasy.opacita_vrstvy,
+            "opacita_ciary": kopia.vzhlad_trasy.opacita_ciary,
+            "hrubka_px": kopia.vzhlad_trasy.hrubka_px,
+            "farba": kopia.vzhlad_trasy.farba,
+            "farba_rgba": kopia.vzhlad_trasy.farba_rgba(),
+        }),
+    );
+    Ok(nova)
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Príkazy z okna nastavení
 // ─────────────────────────────────────────────────────────────────────────────
@@ -3326,6 +3357,7 @@ fn main() {
             rezim_upravy_ulozit_panel,
             mini_ulozit_polohu,
             uloz_priehladnost,
+            opacita_trasy_kolieskom,
             otvor_priecinok_logov,
             hotkey_upozornenia,
             odfot_tartarus_teraz,

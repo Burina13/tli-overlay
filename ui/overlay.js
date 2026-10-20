@@ -264,6 +264,53 @@ listen("rezim-upravy-nahlas", () => {
         .catch((e) => console.error("Uloženie rozloženia zlyhalo:", e));
 });
 
+// ── TLI 62/2b — koliesko myši nad úchytom overlayu mení priehľadnosť vrstvy
+// trasy nad minimapou (doplnok 1 k TLI 62, bod 4). Rozhodovanie (krok 5 %,
+// medze 0–100, čoho sa to smie dotknúť) je v `core/src/minimapa_vzhlad.rs`,
+// nie tu — tu sa len posiela SMER a ukazuje výsledok.
+//
+// Prečo len v režime úpravy: mimo neho je overlay click-through a myš cezeň
+// prejde rovno do hry, takže `wheel` by sa sem ani nedostal. Úchyt je jediné
+// miesto, ktoré myš v tomto okne vôbec zachytáva.
+//
+// `passive: false` + `preventDefault`: bez toho by koliesko popri zmene
+// priehľadnosti ešte rolovalo obsahom panela.
+let casovacBublinyTrasy = null;
+
+function ukazBublinuTrasy(percent) {
+    elUchytPresun.dataset.bublina = `priehľadnosť trasy ${percent} %`;
+    elUchytPresun.classList.add("ukaz-bublinu");
+    if (casovacBublinyTrasy !== null) clearTimeout(casovacBublinyTrasy);
+    casovacBublinyTrasy = setTimeout(() => {
+        elUchytPresun.classList.remove("ukaz-bublinu");
+        casovacBublinyTrasy = null;
+    }, 1200);
+}
+
+for (const uchyt of [elUchytPresun, elUchytVelkost]) {
+    if (!uchyt) continue;
+    uchyt.addEventListener("wheel", (e) => {
+        if (!rezimUpravy) return;
+        e.preventDefault();
+        // `deltaY > 0` je rolovanie DOLE = stíšiť, preto opačné znamienko.
+        invoke("opacita_trasy_kolieskom", { delta: e.deltaY > 0 ? -1 : 1 })
+            .then((percent) => ukazBublinuTrasy(percent))
+            .catch((chyba) => logUi(`[trasa] koliesko zlyhalo: ${chyba}`));
+    }, { passive: false });
+}
+
+// Vzhľad trasy sa dá zmeniť aj v Nastaveniach — Rust pošle novú hodnotu sem,
+// nech sa kresliaca vrstva (krok 62/8) nemusí pýtať.
+let vzhladTrasy = null;
+listen("vzhlad-trasy", (event) => {
+    vzhladTrasy = event.payload || null;
+    if (!vzhladTrasy) return;
+    const koren = document.documentElement.style;
+    koren.setProperty("--trasa-opacita", String((vzhladTrasy.opacita_vrstvy || 0) / 100));
+    koren.setProperty("--trasa-hrubka", `${vzhladTrasy.hrubka_px || 3}px`);
+    koren.setProperty("--trasa-farba", vzhladTrasy.farba_rgba || "transparent");
+});
+
 let tahaniePresunu = null;
 let tahanieVelkosti = null;
 

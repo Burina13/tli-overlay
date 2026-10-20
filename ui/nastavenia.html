@@ -154,6 +154,30 @@
 
         <hr>
 
+        <!-- TLI 62/2b — vzhľad trasy nad minimapou (doplnok 1 k TLI 62, bod 4). -->
+        <div class="skupina">
+            <label>Trasa nad minimapou</label>
+            <p class="vysvetlivka">
+                Platí pre čiaru, ktorú appka kreslí nad minimapou (cesta k bossovi /
+                full clear). Priehľadnosť vrstvy sa dá meniť aj rýchlo
+                <strong>kolieskom myši nad pásikom úchytu</strong> v režime úpravy
+                rozloženia (<code>Ctrl+F8</code>) — po 5 % na klik.
+            </p>
+            <label for="inp-trasa-opacita-vrstvy">Priehľadnosť vrstvy — <span id="hod-trasa-opacita-vrstvy">100</span> %</label>
+            <input type="range" id="inp-trasa-opacita-vrstvy" min="0" max="100" step="5" value="100">
+
+            <label for="inp-trasa-opacita-ciary" class="mt-8">Priehľadnosť čiary — <span id="hod-trasa-opacita-ciary">85</span> %</label>
+            <input type="range" id="inp-trasa-opacita-ciary" min="0" max="100" step="5" value="85">
+
+            <label for="inp-trasa-hrubka" class="mt-8">Hrúbka čiary — <span id="hod-trasa-hrubka">3</span> px</label>
+            <input type="range" id="inp-trasa-hrubka" min="1" max="12" step="1" value="3">
+
+            <label for="inp-trasa-farba" class="mt-8">Farba čiary</label>
+            <input type="color" id="inp-trasa-farba" value="#FFD24A">
+        </div>
+
+        <hr>
+
         <div class="skupina">
             <label>Diagnostika</label>
             <p class="vysvetlivka">

@@ -2,6 +2,31 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## core 0.14.0 — 20.10.2026 (TLI 62/2b: vzhľad trasy nad minimapou — opacita, hrúbka, farba, koliesko myši; bez appka releasu)
+
+Doplnok 1 k TLI 62 (`inbox/done/2026-10-20-0158-mcp.md`, bod 4). Richard
+20.10.2026: „nech sa tam dá nastaviť opacita."
+
+- Nový modul **`core/src/minimapa_vzhlad.rs`** — `VzhladTrasy`: opacita čiary
+  aj celej vrstvy (0–100 %), hrúbka 1–12 px, farba `#RRGGBB`, `koliesko()`
+  po 5 % a `farba_rgba()` pre kreslenie. **Nula je platná hodnota** („dočasne
+  to nechcem vidieť, ale nevypínam to"), preto nie je v `Rozlozenie`
+  (`priehladnost` tam má dolnú medzu 0,3 a platí pre všetky panely naraz).
+- `Nastavenia.vzhlad_trasy` + normalizácia (`#[serde(default)]`, takže starý
+  `nastavenia.json` dostane viditeľnú predvoľbu, nie nuly).
+- **Nastavenia (UI):** sekcia „Trasa nad minimapou" — štyri ovládacie prvky
+  s popiskami, ktoré idú s hodnotou.
+- **Koliesko myši nad úchytom overlayu** v režime úpravy rozloženia mení
+  priehľadnosť vrstvy po 5 %, s bublinou s percentom. Z udalosti sa berie
+  iba ZNAMIENKO — „rýchle" myši posielajú násobky a jedno švihnutie by inak
+  skočilo cez celý rozsah. Nový príkaz `opacita_trasy_kolieskom`, nová
+  udalosť `vzhlad-trasy` → CSS premenné `--trasa-opacita/-hrubka/-farba`.
+- **Čiaru samotnú kreslí až krok 62/8** — tieto hodnoty vznikajú skôr
+  zámerne, aby sa nemuseli dopĺňať do hotového kresliaceho kódu.
+- Testy: **14 nových** v `core` (522 spolu, zelené) + **8 nových** e2e
+  v `ui` (113 spolu, zelené). `cargo check` zelený v `core` aj `src-tauri`.
+  **Appka sa nevydáva** — release je súčasť 62/8.
+
 ## core 0.13.24 — 20.10.2026 (TLI 59b2c: overenie presnosti CELÉHO plátna — NEGATÍVNY výsledok, bez zmeny správania, bez appka releasu)
 
 Úloha `2026-10-20-0141-agent.md` (HNED, self-queued pokračovanie TLI 59b2b).

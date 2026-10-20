@@ -1,3 +1,4 @@
+use crate::minimapa_vzhlad::VzhladTrasy;
 use crate::rozlozenie::Rozlozenie;
 use serde::{Deserialize, Serialize};
 
@@ -134,6 +135,17 @@ pub struct Nastavenia {
     /// `ConfigBaseId`, ktoré hráč tlačidlom „Hide" schoval zo zoznamu na
     /// predaj (napr. veci, čo si chce nechať, nie predať). Appka nič
     /// NEMAŽE ani neposiela — je to len filter vo vlastnom zobrazení.
+    /// Vzhľad trasy nad minimapou (TLI 62/2b, doplnok 1 k zadaniu
+    /// `2026-10-20-0158-mcp.md` bod 4): opacita čiary aj celej vrstvy
+    /// (0–100 %), hrúbka a farba čiary. Richard 20.10.2026: „nech sa tam dá
+    /// nastaviť opacita."
+    ///
+    /// Je to **samostatné pole, nie súčasť `rozlozenie`** — `Rozlozenie::
+    /// priehladnost` platí pre všetky panely nad hrou naraz a má dolnú medzu
+    /// 0,3, kým tu je nula platná hodnota (dôvod je pri `VzhladTrasy`).
+    /// Čiaru samotnú kreslí až krok 62/8; tieto hodnoty vznikajú skôr, aby
+    /// ich nebolo treba dopĺňať do hotového kresliaceho kódu.
+    pub vzhlad_trasy: VzhladTrasy,
     pub batoh_skryte_polozky: Vec<u32>,
 }
 
@@ -163,6 +175,7 @@ impl Default for Nastavenia {
             okno_hlavne: None,
             ceny_obrazovka_zapnute: true,
             hotkey_trh: "F10".to_string(),
+            vzhlad_trasy: VzhladTrasy::default(),
             batoh_skryte_polozky: Vec::new(),
         }
     }
@@ -198,6 +211,10 @@ impl Nastavenia {
         let t = self.tema.trim().to_lowercase();
         self.tema = if t == "tmava" { t } else { "svetla".to_string() };
         self.cesta_logu = self.cesta_logu.trim().to_string();
+
+        // TLI 62/2b — ručne upravený alebo starý `nastavenia.json` nesmie
+        // nechať trasu neviditeľnú ani s rozbitou farbou.
+        self.vzhlad_trasy.normalizuj();
     }
 
     /// Bezpečné zostrojenie adresy zamedzuje chybám v smerovaní požadaviek
@@ -554,5 +571,60 @@ mod testy {
         let n = Nastavenia::z_jsonu("{\"url_servera\": \"https://tli.tvojtatko.sk\"}");
         assert_eq!(n.okno_hlavne, None);
         assert_eq!(n.url_servera, "https://tli.tvojtatko.sk");
+    }
+}
+
+#[cfg(test)]
+mod testy_vzhlad_trasy {
+    use super::*;
+
+    /// Staré `nastavenia.json` (spred TLI 62) pole `vzhlad_trasy` nemajú —
+    /// `#[serde(default)]` nad štruktúrou musí dosadiť predvolený vzhľad,
+    /// nie `0` zo zeru pre `u8`. Keby dosadil nuly, trasa by bola u každého
+    /// existujúceho hráča po aktualizácii neviditeľná a vyzeralo by to ako
+    /// „overlay nefunguje", nie ako nastavenie.
+    #[test]
+    fn stare_nastavenia_bez_pola_dostanu_viditelny_vzhlad() {
+        let n = Nastavenia::z_jsonu(r#"{"url_servera":"https://tli.tvojtatko.sk","kluc":"abc"}"#);
+        assert_eq!(n.vzhlad_trasy, crate::minimapa_vzhlad::VzhladTrasy::default());
+        assert!(n.vzhlad_trasy.vysledna_opacita() > 0.5);
+    }
+
+    #[test]
+    fn normalizacia_nastaveni_oreze_aj_vzhlad_trasy() {
+        let mut n = Nastavenia::default();
+        n.vzhlad_trasy.opacita_ciary = 250;
+        n.vzhlad_trasy.hrubka_px = 0;
+        n.vzhlad_trasy.farba = "zelena".to_string();
+        n.normalizuj();
+        assert_eq!(n.vzhlad_trasy.opacita_ciary, 100);
+        assert_eq!(n.vzhlad_trasy.hrubka_px, crate::minimapa_vzhlad::HRUBKA_MIN);
+        assert_eq!(n.vzhlad_trasy.farba, crate::minimapa_vzhlad::FARBA_PREDVOLENA);
+    }
+
+    /// Vlastné hodnoty musia prežiť uloženie a načítanie — vrátane nuly,
+    /// ktorú normalizácia nesmie „opraviť" na predvolených 85/100.
+    #[test]
+    fn vlastny_vzhlad_prezije_kolo_cez_json() {
+        let mut n = Nastavenia::default();
+        n.vzhlad_trasy.opacita_ciary = 0;
+        n.vzhlad_trasy.opacita_vrstvy = 40;
+        n.vzhlad_trasy.hrubka_px = 6;
+        n.vzhlad_trasy.farba = "#00FF99".to_string();
+        let znova = Nastavenia::z_jsonu(&n.do_jsonu());
+        assert_eq!(znova.vzhlad_trasy, n.vzhlad_trasy);
+    }
+
+    /// `Rozlozenie::priehladnost` (spoločná pre panely) a vzhľad trasy sú
+    /// dve nezávislé veci — stíšenie trasy nesmie stiahnuť panel s radou
+    /// solvera a naopak. Keby sa raz zliali, tento test spadne.
+    #[test]
+    fn opacita_trasy_a_priehladnost_panelov_su_nezavisle() {
+        let mut n = Nastavenia::default();
+        n.rozlozenie.nastav_priehladnost(0.3);
+        n.vzhlad_trasy.opacita_vrstvy = 100;
+        n.normalizuj();
+        assert_eq!(n.rozlozenie.priehladnost, 0.3);
+        assert_eq!(n.vzhlad_trasy.opacita_vrstvy, 100);
     }
 }

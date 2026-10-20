@@ -484,3 +484,36 @@ body.rezim-upravy #panel-uchyt-velkost {
     color: #11131a;
     font-weight: 600;
 }
+
+/* TLI 62/2b — bublina s percentom priehľadnosti trasy pri točení kolieskom
+   nad úchytom overlayu. Je to `::after` nad existujúcim úchytom, nie nový
+   prvok v DOM: úchyt má vlastný `mousedown` na ťahanie a ďalší prvok v ňom
+   by ťahanie pretrhol. */
+#panel-uchyt-presun {
+    position: relative;
+}
+
+#panel-uchyt-presun.ukaz-bublinu::after {
+    content: attr(data-bublina);
+    position: absolute;
+    left: 50%;
+    top: calc(100% + 6px);
+    transform: translateX(-50%);
+    padding: 4px 10px;
+    border-radius: 8px;
+    background: rgba(20, 20, 24, 0.92);
+    border: 1px solid rgba(255, 150, 44, 0.5);
+    color: #ffd9b3;
+    font-size: 12px;
+    white-space: nowrap;
+    pointer-events: none;
+}
+
+/* Premenné, ktoré napĺňa `vzhlad-trasy` z Rustu. Kresliaca vrstva pribudne
+   v kroku 62/8 — tu sú preto len predvolené hodnoty, aby existovali skôr, než
+   ich niekto použije, a aby sa dali overiť v nahľade. */
+:root {
+    --trasa-opacita: 1;
+    --trasa-hrubka: 3px;
+    --trasa-farba: rgba(255, 210, 74, 0.85);
+}
