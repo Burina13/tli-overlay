@@ -2,6 +2,36 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.29.0 — 20.10.2026 (TLI 69b — rada povie, PREČO práve ten paint)
+
+**Čo Richard nahlásil 20.10.2026 ~13:45** (v0.24.0, snímka Frozen Canvasu):
+cieľ „Fill a Adjacent Cell with a Monster Paint (0/3)", zdroj Lv3 v r2c5, hra
+orámovala tri bunky — a rada mu ponúkla tri painty **Lv1**, hoci mal v ruke tri
+**Lv2**. „PREČO CHCE ZOBRAŤ LEVEL 1 A NIE TIE LVL 2?"
+
+**Príčina:** žiadne pravidlo hry to nevyžadovalo. Solver optimalizoval len
+SPLNENIE cieľa (tri bunky), nie hodnotu výsledku, a painty bral od najnižšieho
+levelu. Poradie výberu opravila ešte TLI 69 (0.27.0) — odvtedy sa berie najvyšší
+výsledný level `min(level + N, max_level)`. Chýbalo to, čo Richardovu otázku
+vlastne vyvolalo: rada **nehovorila prečo**, takže sa nedala skontrolovať.
+
+**Čo je nové v 0.29.0:**
+- Ku každému kroku pribúda veta „Prečo tento: Lv2 → Lv3 je najvyšší výsledok,
+  aký sa z ruky dá dosiahnuť — slabšie Monster Painty v ruke by skončili najviac
+  na Lv2."
+- Keď sa vyberie NIŽŠÍ level, je napísané prečo: buď si vyššie vzali predošlé
+  kroky tej istej sekvencie, alebo sa dva painty stretli na strope Max Paint
+  Level a prednosť má nižší vstup (silnejší tak ostane v ruke).
+- Prvý krok raz povie, že na **type** monštra nezáleží — cieľ aj efekt počítajú
+  len kategóriu (Monster vs Gameplay Paint). Overené z páru pred/po z 19.10.2026:
+  ku kľúčovému `dwarf` Lv3 pribudli `ratlin` a `pest` (iné typy) a počítadlo
+  vyskočilo 0/3 → 2/3.
+- Jadro: `canvas_solver.rs` je ďalej 1:1 port serverového `canvas_solver.py` —
+  text kroku je znak po znaku rovnaký (strojovo porovnané na Richardovej snímke).
+
+Pravidlá a dôkazy: `stacks/games/tli/engine/canvas.yml` → `cielova_funkcia`
+a `typ_paintu` (repo `ops`).
+
 ## 0.28.0 — 20.10.2026 (TLI 70 — zber dát na učenie naozaj zbiera)
 
 **Čo Richard nahlásil 20.10.2026 ~12:4x** (v0.24.0, `tli-overlay.log`): zber na
