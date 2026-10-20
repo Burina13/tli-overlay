@@ -995,7 +995,13 @@ function vykresliHotovoCanvas(data) {
     // ktorú kartu vybrať. Do 20.10.2026 appka na tejto obrazovke napísala
     // „žiadny krok — v dosahu nie je voľná bunka": pravdu, ktorá hráčovi
     // nepomohla ani o kúsok.
-    if ((data.karty || []).length > 0 && analyza.tah) {
+    // Rozhoduje VÝHRADNE prítomnosť `tah` — nie to, či prišli karty so
+    // súradnicami. Keby sa podmienka viazala na `data.karty`, odpoveď, v
+    // ktorej server kartu neodporučil (`odporucany_index: -1`) alebo jej
+    // nedal box, by prepadla do vetvy bežného plátna a hráč by uvidel práve
+    // tú starú hlášku „žiadny krok", ktorú TLI 71 odstraňuje. Nález z review
+    // diffu cez API kredit (20.10.2026).
+    if (analyza.tah) {
         vykresliVyberKarty(data);
         return;
     }

@@ -194,13 +194,19 @@ const KARTA_W: f64 = 0.2917;
 const KARTA_H: f64 = 0.0926;
 const KARTA_ROW_PITCH: f64 = 0.1037;
 
-/// Výrez, ktorý stačí preOCRovať, aby sa prečítal nadpis podobrazovky aj
-/// všetky karty. Appka ho posiela do Windows OCR namiesto celej snímky —
-/// je to rýchlejšie a hlavne sa do textu nenamieša nič z hernej plochy.
+/// Obálka celej podobrazovky s kartami — nadpis aj všetky tri karty.
+///
+/// ⚠️ **Appka toto NEOCRuje.** Číta nadpis a KAŽDÚ KARTU zvlášť
+/// (`nadpis_kariet_box01`, `karta_box01`), lebo hra text karty láme na dva
+/// riadky a zo spoločného OCR by sa nedalo určiť, kde jedna karta končí.
+/// Tento box je spoločná obálka na kontrolu (že všetko leží v okne) a pre
+/// prípadné rýchle odmietnutie oblasti. Výrez MUSÍ obsahovať aj poslednú
+/// kartu — do opravy z 20.10.2026 končil na 0,63 a tretia karta (do 0,7148)
+/// z neho vytŕčala, takže komentár sľuboval viac, než box pokrýval.
 const OCR_KARTY_X: f64 = 0.53;
 const OCR_KARTY_Y: f64 = 0.385;
 const OCR_KARTY_W: f64 = 0.32;
-const OCR_KARTY_H: f64 = 0.245;
+const OCR_KARTY_H: f64 = 0.335;
 
 /// Nadpis podobrazovky: y ≈ 420–446 px pri 1080 (zmerané na tých istých
 /// štyroch snímkach ako karty).
@@ -235,7 +241,8 @@ pub fn tlacidlo_select_box01() -> Pole {
            w: TLACIDLO_SELECT_W, h: TLACIDLO_SELECT_H }
 }
 
-/// Box01 výrezu, v ktorom leží nadpis podobrazovky aj texty kariet.
+/// Box01 obálky celej podobrazovky (nadpis + všetky karty) — pozri komentár
+/// pri `OCR_KARTY_*`, appka ju samu neOCRuje.
 pub fn ocr_oblast_kariet_box01() -> Pole {
     Pole { index: 0, x: OCR_KARTY_X, y: OCR_KARTY_Y, w: OCR_KARTY_W, h: OCR_KARTY_H }
 }
@@ -271,12 +278,29 @@ mod testy_karty {
     }
 
     #[test]
-    fn ocr_vyrez_obsahuje_obe_karty() {
+    fn ocr_vyrez_obsahuje_vsetky_karty_aj_nadpis() {
         let o = ocr_oblast_kariet_box01();
-        for i in 0..2 {
+        let n = nadpis_kariet_box01();
+        assert!(o.y <= n.y && n.y + n.h <= o.y + o.h + 1e-9, "{o:?} {n:?}");
+        for i in 0..crate::canvas_tahy::MAX_KARIET as i64 {
             let k = karta_box01(i);
             assert!(o.x <= k.x && k.x + k.w <= o.x + o.w + 1e-9, "{o:?} {k:?}");
             assert!(o.y <= k.y && k.y + k.h <= o.y + o.h + 1e-9, "{o:?} {k:?}");
+        }
+    }
+
+    /// Nález z review diffu cez API kredit (20.10.2026): štvrtý box karty
+    /// ležal NA tlačidle „Select" a appka by z neho prečítala slovo „Select"
+    /// ako neexistujúcu štvrtú kartu — a pri zhode skóre by ju aj odporučila,
+    /// teda orámovala by tlačidlo s textom „✓ vyber túto".
+    #[test]
+    fn ziadny_box_karty_neprekryva_tlacidlo() {
+        let t = tlacidlo_select_box01();
+        for i in 0..crate::canvas_tahy::MAX_KARIET as i64 {
+            let k = karta_box01(i);
+            let prekryv_x = k.x < t.x + t.w && t.x < k.x + k.w;
+            let prekryv_y = k.y < t.y + t.h && t.y < k.y + k.h;
+            assert!(!(prekryv_x && prekryv_y), "karta {i} prekrýva tlačidlo: {k:?} {t:?}");
         }
     }
 

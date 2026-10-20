@@ -34,7 +34,14 @@ pub const DRUHY: [&str; 3] = ["reimagine", "spread", "layer"];
 /// Najviac kariet, ktoré sa z jednej obrazovky berú. Na všetkých štyroch
 /// reálnych snímkach z 20.10.2026 boli DVE; strop je vyšší, aby tretia ponuka
 /// appku nezhodila. Musí sedieť s `MAX_KARIET` v `canvas_tahy.py`.
-pub const MAX_KARIET: usize = 4;
+///
+/// **Prečo práve 3 a nie viac:** nad tlačidlom „Select" sa viac kariet
+/// nezmestí — `canvas_rozlozenie::karta_box01(3)` by už ležal NA tlačidle
+/// (y 0,726–0,819 vs. tlačidlo 0,753–0,806) a appka by z neho prečítala
+/// slovo „Select" ako štvrtú, neexistujúcu kartu. Stráži to test
+/// `ziadny_box_karty_neprekryva_tlacidlo` v `canvas_rozlozenie.rs`.
+/// Nález z review diffu cez API kredit (20.10.2026).
+pub const MAX_KARIET: usize = 3;
 
 /// Ktorá podobrazovka Frozen Canvasu je otvorená.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

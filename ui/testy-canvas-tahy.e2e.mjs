@@ -130,6 +130,24 @@ test("keď server neodporučí nič, tlačidlo sa nezvýrazní", () => {
     assert.ok(document.getElementById("panel-dovod").textContent.length > 10);
 });
 
+test("rada sa nestratí ani keď karty nemajú súradnice", () => {
+    // Nález z review diffu cez API kredit (20.10.2026): podmienka sa pôvodne
+    // viazala na `data.karty`, takže odpoveď s `tah`, ale bez použiteľných
+    // kariet prepadla do vetvy bežného plátna a hráč uvidel práve tú starú
+    // hlášku „žiadny krok", ktorú TLI 71 odstraňuje.
+    const { window, document } = postavOverlay();
+    const u = udalostVyberTahu();
+    u.karty = [];
+    u.tlacidlo = null;
+    u.analyza.tah.hodnotenia = [];
+    posliUdalost(window, "stav", u);
+    const nadpis = document.getElementById("panel-nadpis").textContent;
+    assert.match(nadpis, /výber ťahu štetcom/);
+    assert.doesNotMatch(nadpis, /žiadny krok/);
+    assert.match(document.getElementById("panel-dovod").textContent, /\[Spread\]/);
+    assert.equal(document.querySelectorAll(".karta-box").length, 0);
+});
+
 test("druhá podobrazovka má vlastný nadpis", () => {
     const { window, document } = postavOverlay();
     const u = udalostVyberTahu();
