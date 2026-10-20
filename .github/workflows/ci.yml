@@ -117,9 +117,29 @@ jobs:
                   chyby.append(f"main.rs:{i+1}: {r.strip()} nejde cez zobraz_vysledok() (fn {funkcia})")
 
           # (b) poradie v chvoste `spusti_analyzu`
-          a = zdroj.find("naplanuj_skrytie_podla_nastavenia(app.clone(), znacka, &nastavenia);\n            over_prezentaciu(")
-          if a < 0:
-              chyby.append("v spusti_analyzu sa sledovanie kliku nearmuje PRED over_prezentaciu()")
+          # (b) poradie v chvoste `spusti_analyzu` — sledovanie kliku sa MUSÍ
+          #     armovať pred `over_prezentaciu()`. Od TLI 67b sú tam armovacie
+          #     volania DVE (timeout zhasína vždy klikom, bez ohľadu na
+          #     nastavené autoskrytie), preto sa porovnávajú pozície, nie
+          #     doslovná susednosť dvoch riadkov.
+          o = zdroj.find("over_prezentaciu(&app, &obdlznik, &snimok.rgb, zdroj, znacka);")
+          if o < 0:
+              chyby.append("v spusti_analyzu sa nenašlo volanie over_prezentaciu()")
+          else:
+              armovanie = [
+                  "naplanuj_skrytie_podla_nastavenia(app.clone(), znacka, &nastavenia);",
+                  "naplanuj_skrytie_po_kliku(app.clone(), znacka);",
+              ]
+              najdene = 0
+              for volanie in armovanie:
+                  i = zdroj.find(volanie)
+                  if i < 0:
+                      continue
+                  najdene += 1
+                  if i > o:
+                      chyby.append(f"{volanie} je AŽ ZA over_prezentaciu() — klik v prvej ~1,6 s sa stratí")
+              if najdene == 0:
+                  chyby.append("v spusti_analyzu sa sledovanie kliku nearmuje vôbec")
 
           if chyby:
               print("::error::TLI 67 — skrývanie rady sa rozišlo medzi stavmi:")
