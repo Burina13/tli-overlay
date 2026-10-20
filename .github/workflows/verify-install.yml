@@ -88,7 +88,7 @@ jobs:
           }
           Write-Host "stará MSI ($($zaznam.DisplayVersion)) nainštalovaná, HKLM Uninstall záznam existuje"
 
-      - name: Vložiť marker do %APPDATA% (nastavenia/logy, ktoré MUSIA prežiť)
+      - name: Vložiť marker do %APPDATA% (nastavenia/logy/DB, ktoré MUSIA prežiť)
         shell: pwsh
         run: |
           $priecinok = Join-Path $env:APPDATA "sk.tvojtatko.tli-overlay"
@@ -98,6 +98,11 @@ jobs:
             Set-Content -Path (Join-Path $priecinok "nastavenia.json") -Encoding utf8 -NoNewline
           'marker log pred migráciou TLI 52' |
             Set-Content -Path (Join-Path $priecinok "logs\tli-overlay.log") -Encoding utf8 -NoNewline
+          # Nie je to skutočná SQLite DB (obsah sa nikdy nečíta appkou, len
+          # sa overuje, že prežije byte-presne) — appka ju otvorí AŽ pri
+          # ďalšom spustení, migrácia sama od seba do nej nesiaha.
+          'marker tracker.sqlite3 pred migráciou TLI 52' |
+            Set-Content -Path (Join-Path $priecinok "tracker.sqlite3") -Encoding utf8 -NoNewline
 
       - name: Spustiť NOVÝ NSIS presne s argumentmi z pokus_o_tichu_aktualizacie (main.rs)
         shell: pwsh
@@ -135,7 +140,7 @@ jobs:
           Write-Host "--- C:\Program Files\Tvoj Tatko TLI Overlay ---"
           Get-ChildItem "C:\Program Files\Tvoj Tatko TLI Overlay" -ErrorAction SilentlyContinue | Format-Table Name, LastWriteTime | Out-String | Write-Host
 
-      - name: Stará MSI zmizla z HKLM Uninstall (vstavaná migrácia NSIS šablóny)
+      - name: Stará MSI zmizla z HKLM Uninstall (installer-hooks.nsh, TLI 52c)
         shell: pwsh
         run: |
           $stara = Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*",
@@ -194,6 +199,69 @@ jobs:
             throw "marker v nastaveniach po migrácii zmizol/bol prepísaný (obsah: $obsah) — /UPDATE nezachovalo pôvodný súbor"
           }
           Write-Host "nastavenia hráča prežili migráciu nedotknuté: $obsah"
+
+      - name: tracker.sqlite3 v %APPDATA% prežil migráciu NEDOTKNUTÝ (/UPDATE)
+        shell: pwsh
+        run: |
+          $subor = Join-Path $env:APPDATA "sk.tvojtatko.tli-overlay\tracker.sqlite3"
+          if (-not (Test-Path $subor)) {
+            throw "$subor po migrácii zmizol — /UPDATE malo lokálnu DB trackera zachovať"
+          }
+          $obsah = Get-Content $subor -Raw
+          if ($obsah -notmatch "marker tracker\.sqlite3 pred migráciou TLI 52") {
+            throw "tracker.sqlite3 bol po migrácii prepísaný/zmazaný (obsah: $obsah)"
+          }
+          Write-Host "tracker.sqlite3 prežil migráciu nedotknutý"
+
+      - name: Start Menu zástupca po migrácii ukazuje na NOVÚ verziu
+        shell: pwsh
+        run: |
+          # Zadanie žiada overiť, že "autostart ukazuje na novú verziu" —
+          # appka žiadny Windows autostart nemá (nikdy nemala), najbližší
+          # zmysluplný náhradný dôkaz je Start Menu zástupca, ktorý NSIS
+          # vytvára pri každej inštalácii/aktualizácii (pozri CHANGELOG.md
+          # k tli-v0.23.1, TLI 52c).
+          $lnk = Get-ChildItem "$env:APPDATA\Microsoft\Windows\Start Menu\Programs" -Filter "*.lnk" -Recurse -ErrorAction SilentlyContinue |
+                 Where-Object { $_.Name -like "*TLI Overlay*" } | Select-Object -First 1
+          if (-not $lnk) { throw "Start Menu zástupca appky sa po migrácii nenašiel pod $env:APPDATA" }
+          $shell = New-Object -ComObject WScript.Shell
+          $cielZastupcu = $shell.CreateShortcut($lnk.FullName).TargetPath
+          Write-Host "zástupca '$($lnk.Name)' ukazuje na: $cielZastupcu"
+          if ($cielZastupcu -like "*Program Files*") {
+            throw "Start Menu zástupca stále ukazuje do starej perMachine inštalácie ($cielZastupcu)"
+          }
+          if ($cielZastupcu -notlike "*$env:LOCALAPPDATA*") {
+            throw "Start Menu zástupca neukazuje do novej perUser inštalácie pod $env:LOCALAPPDATA (ukazuje: $cielZastupcu)"
+          }
+
+      - name: Druhá aktualizácia NSIS→NSIS (opakovaný /S) nerobí žiaden ďalší pokus o msiexec
+        shell: pwsh
+        run: |
+          # TLI 52c, bod 2 zo zadania ("druhý update NSIS→NSIS prebehne úplne
+          # ticho bez UAC"). CI runner beží ako Administrator, takže reálne
+          # UAC okno by sa ani pri chybe nezobrazilo a nedalo by sa to odtiaľto
+          # vidieť — overiteľné je ale, že `installer-hooks.nsh` sa pri DRUHEJ
+          # tichej aktualizácii vôbec nepokúsi o `msiexec` (stará MSI je už
+          # preč A marker existuje), teda nemá šancu vyvolať žiadne ďalšie
+          # UAC na reálnom Windowse. Dôkaz: marker súbor má po druhom behu
+          # IDENTICKÚ časovú značku zápisu ako po prvom.
+          $marker = Join-Path $env:APPDATA "sk.tvojtatko.tli-overlay\migracia-msi-pokusena.flag"
+          if (-not (Test-Path $marker)) { throw "marker $marker po prvej migrácii neexistuje — predpoklad testu neplatí" }
+          $casPredDruhou = (Get-Item $marker).LastWriteTimeUtc
+
+          $p = Start-Process -FilePath (Resolve-Path novy-setup.exe).Path -ArgumentList '/S /UPDATE /R /ARGS ""' -PassThru
+          $p.WaitForExit(120000) | Out-Null
+          if (-not $p.HasExited) { throw "druhá NSIS inštalácia nedobehla do 120 s" }
+          if ($p.ExitCode -ne 0) { throw "druhá NSIS inštalácia skončila s kódom $($p.ExitCode)" }
+          Start-Sleep -Seconds 5
+          Get-Process -Name "Tvoj Tatko TLI Overlay" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+
+          if (-not (Test-Path $marker)) { throw "marker po druhej aktualizácii zmizol" }
+          $casPoDruhej = (Get-Item $marker).LastWriteTimeUtc
+          if ($casPoDruhej -ne $casPredDruhou) {
+            throw "marker migrácie bol pri DRUHEJ tichej aktualizácii znova zapísaný ($casPredDruhou -> $casPoDruhej) — hook by sa pokúsil o msiexec/UAC aj druhýkrát"
+          }
+          Write-Host "marker nezmenený ($casPredDruhou) — druhá aktualizácia sa o migráciu starej MSI vôbec nepokúsila"
 
       - name: Odinštalovať novú perUser appku (upratanie runnera)
         shell: pwsh

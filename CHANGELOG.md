@@ -2,6 +2,69 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.23.1 — 20.10.2026 (TLI 52c — vlastný installer-hooks.nsh, migrácia starej MSI konečne funguje v tichom behu)
+
+Úloha `2026-10-20-0608-mcp.md` (HNED), pokračovanie `ROZPRACOVANE: TLI 52`.
+Žiadna zmena v `core` (ostáva 0.17.0) — len NSIS inštalátor appky.
+
+**Príčina, prečo vstavaná migrácia šablóny (0.20.5) v reálnom tichom behu
+nefungovala, bola nájdená:** `tauri-bundler` 2.12.3 rieši migráciu zo starej
+WiX (MSI) inštalácie na vlastnej wizard STRÁNKE (`Page custom PageReinstall
+PageLeaveReinstall`) — jej `Leave` funkcia (kde je `ExecWait` na starú
+`UninstallString`) sa spustí len cez skutočný UI prechod tej stránky alebo
+keď je nastavený `$PassiveMode` (flag `/P`). Appka pri tichej aktualizácii
+posiela len `/S` (bez `/P`) — presne argumenty, aké posiela oficiálny
+`tauri-plugin-updater` v režime Quiet — a v čisto tichom režime NSIS wizard
+stránky vôbec neprejde, takže `PageLeaveReinstall` sa NIKDY nezavolal. Presne
+to zachytila CI poistka `migracia` (`verify-install.yml`) postavená
+v `ROZPRACOVANE: TLI 52`: nová perUser appka sa nainštalovala správne, stará
+perMachine MSI ostala nainštalovaná vedľa nej.
+
+**Riešenie: vlastný `src-tauri/installer-hooks.nsh`**
+(`bundle.windows.nsis.installerHooks` v `tauri.conf.json`), makro
+`NSIS_HOOK_PREINSTALL` — beží priamo v `Section Install`, PRED kopírovaním
+súborov, VŽDY (aj pri čistom `/S`, nezávisle od wizard stránok). Nájde starú
+MSI v `HKLM\...\Uninstall` (64-bit aj `WOW6432Node`) podľa zhody
+`DisplayName`+`Publisher`, spustí `msiexec.exe /X{ProductCode} /qn /norestart`
+a zapíše marker `migracia-msi-pokusena.flag` do `%APPDATA%\sk.tvojtatko.tli-overlay\`.
+
+**Rozhodnutie o elevácii (zadanie ponúkalo dve cesty, vybraná tretia — čistejšia
+než obe):** `msiexec` z neelevovaného NSIS installera nepotrebuje vlastný
+"runas" krok — Windows Installer sám rozpozná pokus neelevovaného klienta
+odinštalovať perMachine produkt a UAC súhlas si vyžiada SÁM ("Installer
+Detection", rovnaké správanie ako dvojklik na cudzí `.msi`). Netreba teda
+písať vlastný elevovaný migrátor spúšťaný appkou (prvá možnosť zo zadania) —
+tá by pridala kód a riziko navyše za rovnaký výsledok. Druhá možnosť (nechať
+starú MSI nainštalovanú natrvalo, appka len maže zástupcov) bola zamietnutá:
+znamenala by TRVALO dve položky v „Aplikácie a súčasti" a riziko, že hráč
+omylom spustí zastaranú MSI verziu zo starého odkazu. **Marker v `%APPDATA%`
+zaručuje „UAC raz, potom nikdy"** bez ohľadu na to, či hráč prvé UAC okno
+schváli alebo odmietne — appka sa ho nebude pýtať znova pri každej ďalšej
+30-minútovej kontrole aktualizácie.
+
+**Richard pri prvom prechode UVIDÍ presne JEDNO UAC okno** (štandardný
+Windows dialóg Windows Installeru na odinštalovanie starej MSI) — appka nič
+vlastné nekreslí, nič iné sa nepýta. Všetky ďalšie aktualizácie (NSIS→NSIS)
+sú odvtedy úplne ticho, bez akéhokoľvek UAC — marker súbor zariadi, že sa
+o migráciu appka nepokúsi druhýkrát ani keby prvý pokus zlyhal/bol odmietnutý.
+
+**CI `migracia` vo `verify-install.yml` rozšírená** — pribudlo overenie
+`tracker.sqlite3` (predtým sa kontrolovalo len `nastavenia.json`) a nový krok
+„druhý update NSIS→NSIS": zopakuje tichú inštaláciu a overí, že marker súbor
+sa NEPREPÍSAL (časová značka nezmenená) — teda že hook sa pri druhej
+aktualizácii vôbec nepokúša o `msiexec`, čo je jediné, čo CI runner (bežiaci
+ako Administrator, teda bez reálneho UAC dialógu) vie o „žiadny ďalší UAC"
+overiť. Skutočné zobrazenie/počet UAC okien na ľudskom desktope overuje
+samostatne test na `TLI-TEST-VM` (krok 4b release flow), nie CI.
+
+**⚠️ `autostart ukazuje na novú verziu" zo zadania nie je appkou implementovaný
+cieľ** — appka žiadny Windows autostart (spúšťanie pri štarte systému) nemá
+a nikdy nemala; zadanie túto formuláciu prevzalo z vlastného návrhu „druhej
+možnosti" (ponechať starú MSI, appka maže „zástupcov a autostart starej"),
+ktorá napokon nebola zvolená. CI preto namiesto toho overuje Start Menu
+zástupcu (`.lnk`), že po migrácii ukazuje do `%LOCALAPPDATA%` (nová perUser
+inštalácia), nie do starého `C:\Program Files\...`.
+
 ## core 0.17.0 — 20.10.2026 (TLI 62/3a+b: vlákno zberu minimapy, Nastavenia UI; BEZ appka releasu)
 
 Self-queued pokračovanie TLI 62 (`inbox/2026-10-20-0600-agent.md`), nadväzuje
