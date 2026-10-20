@@ -298,14 +298,18 @@ pub fn navrhni_kroky(stav: &CanvasStav) -> VysledokSolvera {
         // Pri prvom kroku raz povedz, že TYP monštra na splnenie cieľa nerozhoduje —
         // presne na tom sa Richard 20.10.2026 zasekol („prečo nie rovnaký typ ako
         // zdroj?"). Hovorí to až vtedy, keď sa typy naozaj líšia, nech to pri
-        // zhodnom type zbytočne nezavadzia.
+        // zhodnom type zbytočne nezavadzia. Konkrétny dôkaz (dwarf → ratlin+pest,
+        // 0/3 → 2/3) sem ZÁMERNE nepatrí: na Richardovej vlastnej snímke je v
+        // kľúčovej bunke agito, takže veta o „kľúčovom dwarfovi" by hovorila
+        // o monštre, ktoré na doske nie je — a zmätočné zdôvodnenie je horšie
+        // než žiadne. Dôkaz je v `canvas.yml` → `typ_paintu.zdroj` (repo `ops`).
         if i == 0 {
             if let Some(kluc_paint) = kluc_bunka.and_then(|b| b.paint.as_ref()) {
                 if kluc_paint.typ != paint.typ {
                     dovod.push_str(&format!(
                         " Na type nezáleží — cieľ aj efekt počítajú len kategóriu \
-                         ({} Paint): v páre pred/po z 19.10.2026 pribudli ku kľúčovému \
-                         dwarfovi ratlin a pest a počítadlo vyskočilo 0/3 → 2/3.",
+                         ({} Paint), nie zhodu typu so zdrojom (overené z páru pred/po \
+                         19.10.2026, smer adjacent).",
                         if kategoria == "gameplay" { "Gameplay" } else { "Monster" }
                     ));
                 }
@@ -937,8 +941,8 @@ mod testy {
              Paint' a umiestnený paint vyskočí na Lv3 (Level up the Adjacent Monster Paint by 1 \
              level(s)). Prečo tento: Lv2 → Lv3 je najvyšší výsledok, aký sa z ruky dá dosiahnuť — \
              slabšie Monster Painty v ruke by skončili najviac na Lv2. Na type nezáleží — cieľ aj \
-             efekt počítajú len kategóriu (Monster Paint): v páre pred/po z 19.10.2026 pribudli ku \
-             kľúčovému dwarfovi ratlin a pest a počítadlo vyskočilo 0/3 → 2/3."
+             efekt počítajú len kategóriu (Monster Paint), nie zhodu typu so zdrojom (overené \
+             z páru pred/po 19.10.2026, smer adjacent)."
         );
     }
 
@@ -980,6 +984,33 @@ mod testy {
     }
 
     /// test_34: pri ruke samých Lv1 nie je z čoho vyberať.
+    #[test]
+    #[test]
+    fn pri_zhodnom_type_sa_veta_o_type_nepise() {
+        // Nález z review 20.10.2026: veta nesmie citovať konkrétne monštrum,
+        // ktoré na doske nie je (pôvodne hovorila o „kľúčovom dwarfovi", hoci
+        // Richardov zdroj je agito), a pri zhodnom type nemá byť vôbec.
+        let mut stav = board_richard_134419();
+        stav.ruka[0] = SlotRuky { index: 0, paint: Some(Paint {
+            kategoria: "monster".to_string(), typ: "agito".to_string(), level: 2 }) };
+        let v = navrhni_kroky(&stav);
+        assert!(!v.kroky[0].dovod.contains("Na type nezáleží"), "{}", v.kroky[0].dovod);
+    }
+
+    #[test]
+    fn veta_o_type_necituje_konkretne_monstrum() {
+        let v = navrhni_kroky(&board_richard_134419());
+        assert!(v.kroky[0].dovod.contains("nie zhodu typu so zdrojom"), "{}", v.kroky[0].dovod);
+        assert!(!v.kroky[0].dovod.contains("dwarf"), "{}", v.kroky[0].dovod);
+    }
+
+    #[test]
+    fn gameplay_ciel_pouziva_gameplay_nazvy() {
+        let v = navrhni_kroky(&board_vertical(true, "gameplay"));
+        assert!(v.kroky[0].dovod.contains("Gameplay Painty"), "{}", v.kroky[0].dovod);
+        assert!(v.kroky[0].dovod.contains("(Gameplay Paint)"), "{}", v.kroky[0].dovod);
+    }
+
     #[test]
     fn rovnaka_ruka_povie_ze_vyssi_vysledok_nejde() {
         let v = navrhni_kroky(&s_rukou(board_vertical(true, "monster"), &[1, 1, 1, 1, 1]));
