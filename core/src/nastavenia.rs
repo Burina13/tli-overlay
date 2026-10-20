@@ -202,6 +202,29 @@ impl Default for Nastavenia {
     }
 }
 
+/// `http://` sa smie použiť LEN na lokálnu slučku (TLI 65, 20.10.2026).
+///
+/// Dôvod: testovacia Windows VM nemá osobný kľúč na `tli.tvojtatko.sk`
+/// (`/api/analyza` chce `Authorization: Bearer` viazaný na Discord účet s
+/// rolou), takže appka tam nad hrou nikdy nič nenakreslila a test to nevedel
+/// overiť. Prehrávací server na `127.0.0.1` to rieši — ale `https` by na ňom
+/// znamenalo vlastný certifikát a tým novú, krehkú závislosť.
+///
+/// Bezpečnostne sa tým nič nestráca: prevádzka na loopback adresu z počítača
+/// NIKDY neodíde, takže ju nemá kto odpočúvať. Výnimka je zámerne úzka —
+/// `127.0.0.1`, `[::1]` a `localhost`, nič iné. `http://192.168.0.5` ani
+/// `http://localhost.utocnik.sk` cez ňu NEPREJDÚ.
+pub fn je_lokalna_slucka(url: &str) -> bool {
+    let Some(zvysok) = url.strip_prefix("http://") else {
+        return false;
+    };
+    let host = zvysok.split(['/', '?', '#']).next().unwrap_or("");
+    let host = host.rsplit_once(':').map_or(host, |(h, port)| {
+        if port.chars().all(|c| c.is_ascii_digit()) && !port.is_empty() { h } else { host }
+    });
+    matches!(host, "127.0.0.1" | "localhost" | "[::1]")
+}
+
 impl Nastavenia {
     /// Normalizácia zabraňuje chybám pri ukladaní a spájaní URL adries, 
     /// a garantuje platné rozsahy pre bezpečnú prevádzku klienta.
@@ -311,7 +334,7 @@ impl Nastavenia {
         if self.kluc.is_empty() {
             return Some("Nemáš vyplnený osobný kľúč. Získaš ho na tli.tvojtatko.sk/kluc alebo príkazom /tli kluc v Discorde.".to_string());
         }
-        if !self.url_servera.starts_with("https://") {
+        if !self.url_servera.starts_with("https://") && !je_lokalna_slucka(&self.url_servera) {
             return Some("Adresa servera musí začínať https://".to_string());
         }
         None
@@ -738,4 +761,25 @@ mod testy_minimapa_zber {
         assert_eq!(n.adresa_minimapa(), "https://tli.tvojtatko.sk/api/minimapa");
         assert_eq!(n.adresa_minimapa_stav(), "https://tli.tvojtatko.sk/api/minimapa/stav");
     }
+    #[test]
+    fn lokalna_slucka_je_povolena_vsetko_ostatne_chce_https() {
+        // TLI 65 — výnimka musí byť ÚZKA. Keby prešlo čokoľvek s "localhost"
+        // v texte, dala by sa appka presmerovať na cudzí server bez TLS.
+        for ok in ["http://127.0.0.1:8099", "http://localhost", "http://localhost:8099",
+                   "http://[::1]:8099", "http://127.0.0.1"] {
+            assert!(je_lokalna_slucka(ok), "malo prejsť: {ok}");
+        }
+        for zle in ["http://192.168.0.5:8099", "http://localhost.utocnik.sk",
+                    "http://tli.tvojtatko.sk", "https://127.0.0.1", "http://127.0.0.1.zlo.sk",
+                    "ftp://127.0.0.1", "http://127.0.0.2"] {
+            assert!(!je_lokalna_slucka(zle), "nemalo prejsť: {zle}");
+        }
+
+        let mut n = Nastavenia { kluc: "k".to_string(), ..Default::default() };
+        n.url_servera = "http://127.0.0.1:8099".to_string();
+        assert!(n.chyba_konfiguracie().is_none());
+        n.url_servera = "http://192.168.0.5:8099".to_string();
+        assert!(n.chyba_konfiguracie().unwrap().contains("musí začínať https://"));
+    }
+
 }

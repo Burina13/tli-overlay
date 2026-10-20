@@ -2,6 +2,24 @@
 
 Projekt využíva sémantické verzovanie (Semantic Versioning). Verzie sú označované v tvare `<major>.<minor>.<patch>` a git tagy na releasy v tvare `tli-v<verzia>`.
 
+## 0.25.1 — 20.10.2026 (TLI 65 — `http://` na lokálnu slučku, core-0.17.1)
+
+`Nastavenia::chyba_konfiguracie()` odteraz prepustí `http://` adresu servera,
+ale **len na lokálnu slučku** — `127.0.0.1`, `[::1]`, `localhost` a nič iné.
+
+Prečo: testovacia Windows VM nemá osobný kľúč na `tli.tvojtatko.sk`
+(`POST /api/analyza` chce `Authorization: Bearer` viazaný na Discord účet
+s rolou), takže appka tam nad hrou **nikdy nič nenakreslila** a test to nevedel
+odhaliť. Prehrávací server na `127.0.0.1:8099` vracia známu odpoveď a test tak
+vie overiť, či overlay sedí na správnej cele — `https` by na ňom znamenalo
+vlastný certifikát a tým novú krehkú závislosť.
+
+Bezpečnostne sa nestráca nič: prevádzka na loopback z počítača nikdy neodíde.
+Výnimka je úzka a má na to vlastný test — `http://192.168.0.5` aj
+`http://localhost.utocnik.sk` cez ňu **neprejdú**.
+
+Obsahuje aj celé `0.25.0` (zrušené záložky Solvery a Analýza).
+
 ## 0.25.0 — 20.10.2026 (TLI 65 — appka bez simulátora, analyzera a trénera)
 
 Richard 20.10.2026: „Ja nepotrebujem analyzer v appke!" Appka má mať **Tracker,
