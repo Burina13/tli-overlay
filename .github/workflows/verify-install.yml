@@ -277,7 +277,7 @@ jobs:
           # preč A marker existuje), teda nemá šancu vyvolať žiadne ďalšie
           # UAC na reálnom Windowse. Dôkaz: marker súbor má po druhom behu
           # IDENTICKÚ časovú značku zápisu ako po prvom.
-          $marker = Join-Path $env:APPDATA "sk.tvojtatko.tli-overlay\migracia-msi-pokusena.flag"
+          $marker = Join-Path $env:APPDATA "sk.tvojtatko.tli-overlay\migracia-msi-pokusena-v2.flag"
           if (-not (Test-Path $marker)) { throw "marker $marker po prvej migrácii neexistuje — predpoklad testu neplatí" }
           $casPredDruhou = (Get-Item $marker).LastWriteTimeUtc
 
@@ -392,11 +392,24 @@ jobs:
           $logPath = Join-Path $env:APPDATA "sk.tvojtatko.tli-overlay\logs\tli-overlay.log"
           if (Test-Path $logPath) { Remove-Item $logPath -Force }
 
+          # TLI 67: namiesto jedného 10 s `Start-Sleep` sa na riadok v denníku
+          # ČAKÁ v slučke až 60 s. Dôvod: 20.10.2026 krok spadol na čistom
+          # runneri, hoci appka bežala a denník mal už dva riadky — len sa
+          # `setup()` ešte nedostal k registrácii, lebo WebView2 si pri PRVOM
+          # spustení zakladá user-data adresár a to na studenom stroji trvá.
+          # Tvrdenie sa nezmäkčuje (stále musí byť „registrácia OK"), mení sa
+          # len trpezlivosť — inak je to test rýchlosti runnera, nie releasu.
           $proc = Start-Process -FilePath $exe.FullName -PassThru
-          Start-Sleep -Seconds 10
-
-          if ($proc.HasExited) {
-            throw "appka po 10 s nebeží (exit code $($proc.ExitCode)) — release sa nespustí u hráča, nesmie prejsť CI"
+          $log = ""
+          foreach ($i in 1..60) {
+            Start-Sleep -Seconds 1
+            if ($proc.HasExited) {
+              throw "appka po $i s nebeží (exit code $($proc.ExitCode)) — release sa nespustí u hráča, nesmie prejsť CI"
+            }
+            if (Test-Path $logPath) {
+              $log = Get-Content $logPath -Raw
+              if ($log -match "registrácia OK") { break }
+            }
           }
 
           if (-not (Test-Path $logPath)) {
@@ -404,15 +417,14 @@ jobs:
             throw "appka beží, ale denník $logPath vôbec nevznikol — setup appky sa nedostal ani k prvému zápisu"
           }
 
-          $log = Get-Content $logPath -Raw
           Write-Host $log
           if ($log -notmatch "registrácia OK") {
             Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
-            throw "denník neobsahuje žiadnu úspešnú registráciu klávesovej skratky (`"registrácia OK`") — appka nedobehla setup"
+            throw "denník ani po 60 s neobsahuje žiadnu úspešnú registráciu klávesovej skratky (`"registrácia OK`") — appka nedobehla setup"
           }
 
           Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
-          Write-Host "appka po 10 s beží a klávesové skratky sú zaregistrované"
+          Write-Host "appka beží a klávesové skratky sú zaregistrované"
 
       - name: V binárke nie je cudzí aktualizačný endpoint
         shell: pwsh
