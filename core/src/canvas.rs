@@ -144,6 +144,13 @@ pub const TYPY_LADU_PRI_LV1: [&str; 4] =
 /// Level, do ktorého sa `TYPY_LADU_PRI_LV1` berú ako ľad.
 pub const MAX_LEVEL_AMBIVALENTNEHO_LADU: i64 = 1;
 
+/// Level, do ktorého sa `TYPY_STETCA` berú ako štetec. Štetec štítok „Lv"
+/// nemá, takže model doň dopisuje 1 — a presne tak to aj v dátach vyzerá
+/// (všetkých 226 nájdených buniek so štetcom má level 1). Nález z review
+/// diffu 20.10.2026: bez stropu by sa `g:arrow_right3` vyhodnotil ako
+/// prázdna bunka a solver by naň poslal paint.
+pub const MAX_LEVEL_STETCA: i64 = 1;
+
 /// Čím v skutočnosti je bunka, ktorú model ohlásil ako paint `typ`.
 /// Zrkadlí `canvas_model.stav_z_paintu()`.
 pub fn stav_z_paintu(kategoria: &str, typ: &str, level: i64) -> StavObsahu {
@@ -151,7 +158,7 @@ pub fn stav_z_paintu(kategoria: &str, typ: &str, level: i64) -> StavObsahu {
         return StavObsahu::Paint;
     }
     let t = typ.trim().to_ascii_lowercase();
-    if TYPY_STETCA.contains(&t.as_str()) {
+    if TYPY_STETCA.contains(&t.as_str()) && level <= MAX_LEVEL_STETCA {
         return StavObsahu::Prazdna;
     }
     if TYPY_LADU.contains(&t.as_str()) {
@@ -215,22 +222,17 @@ impl Bunka {
     /// nemení a na výsledok to vychádza rovnako, nech bunku poskladá
     /// ktokoľvek (vision, uložená analýza, test).
     pub fn obsah(&self) -> StavObsahu {
+        // Pole `zamrznuta` má PREDNOSŤ pred nálepkou paintu — rovnako ako
+        // v Pythone, kde `Bunka.volna()` aj `skore_platna` pozerajú
+        // `zamrznuta` nezávisle od `paint`. Bez toho by sa zamrznutá bunka
+        // s paintom na jednej strane rátala do skóre a na druhej nie
+        // (nález z review diffu 20.10.2026).
+        if self.zamrznuta {
+            return StavObsahu::Zamrznuta;
+        }
         match &self.paint {
-            None => {
-                if self.zamrznuta {
-                    StavObsahu::Zamrznuta
-                } else {
-                    StavObsahu::Prazdna
-                }
-            }
-            Some(p) => {
-                let s = stav_z_paintu(&p.kategoria, &p.typ, p.level);
-                if s == StavObsahu::Prazdna && self.zamrznuta {
-                    StavObsahu::Zamrznuta
-                } else {
-                    s
-                }
-            }
+            None => StavObsahu::Prazdna,
+            Some(p) => stav_z_paintu(&p.kategoria, &p.typ, p.level),
         }
     }
 

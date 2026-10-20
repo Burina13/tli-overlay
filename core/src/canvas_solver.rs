@@ -204,13 +204,16 @@ pub fn navrhni_kroky(stav: &CanvasStav) -> VysledokSolvera {
             // narazil presne na toto — všetky tri orámované bunky boli biele
             // dlaždice so štetcom (teda voľné), appka ich čítala ako obsadené
             // a z hlášky sa to nedalo odlíšiť od naozaj plného plátna.
+            // Kategórie sú VZÁJOMNE VÝLUČNÉ — nedostupná a zároveň zamrznutá
+            // bunka sa inak započíta dvakrát (nález z review diffu 20.10.2026).
             let oramovane = stav.oramovane_bunky();
+            let nedostupne = oramovane.iter().filter(|b| !b.dostupna).count();
+            let zamrznute =
+                oramovane.iter().filter(|b| b.dostupna && b.je_zamrznuta()).count();
             let obsadene = oramovane
                 .iter()
                 .filter(|b| b.dostupna && !b.je_zamrznuta() && b.paint_na_bunke().is_some())
                 .count();
-            let zamrznute = oramovane.iter().filter(|b| b.je_zamrznuta()).count();
-            let nedostupne = oramovane.iter().filter(|b| !b.dostupna).count();
             // Tvar „nálepka: počet" je zámerný — vyhne sa slovenskému
             // skloňovaniu podľa čísla a číta sa ako súpis. Musí sedieť
             // ZNAK PO ZNAKU s `canvas_solver.py`.
@@ -1455,12 +1458,75 @@ mod testy {
         );
     }
 
+    /// test_44b: jedna bunka sa nesmie započítať do dvoch kategórií naraz.
+    #[test]
+    fn hlaska_nepocita_jednu_bunku_dvakrat() {
+        let mut stav = board_richard_163919();
+        for (r, c) in ORAMOVANE_163919 {
+            let b = stav.bunky.iter_mut().find(|b| b.riadok == r && b.stlpec == c).unwrap();
+            b.dostupna = false;
+            b.zamrznuta = true;
+        }
+        let v = navrhni_kroky(&stav);
+        assert_eq!(
+            v.skontroluj,
+            vec!["hra orámovala 3 bunky, ale ani jedna z nich nie je voľná (nedostupných \
+                  (vír): 3) — na plátne nie je kam položiť ďalší paint"
+                .to_string()]
+        );
+    }
+
+    /// Poistka musí zabrať aj na SKUTOČNE deserializovanej odpovedi servera,
+    /// nielen na bunke poskladanej v teste (nález z review diffu 20.10.2026).
+    #[test]
+    fn poistka_zabera_aj_na_deserializovanej_odpovedi() {
+        let json = r#"{
+            "riadky": 6, "stlpce": 6, "max_level": 7,
+            "bunky": [
+              {"riadok": 1, "stlpec": 1, "dostupna": true,
+               "paint": {"kategoria": "gameplay", "typ": "paint_brush", "level": 1}},
+              {"riadok": 1, "stlpec": 2, "dostupna": true,
+               "paint": {"kategoria": "gameplay", "typ": "ice_block", "level": 1}},
+              {"riadok": 1, "stlpec": 3, "dostupna": true, "paint": null, "zamrznuta": true},
+              {"riadok": 1, "stlpec": 4, "dostupna": true,
+               "paint": {"kategoria": "monster", "typ": "ratlin", "level": 3}}
+            ],
+            "ruka": [], "ciel": null
+        }"#;
+        let stav: CanvasStav = serde_json::from_str(json).unwrap();
+        assert!(stav.bunka(1, 1).unwrap().volna(), "štetec má byť voľná bunka");
+        assert!(stav.bunka(1, 2).unwrap().je_zamrznuta(), "ľad má byť zamrznutá bunka");
+        assert!(stav.bunka(1, 3).unwrap().je_zamrznuta(), "pole zamrznuta sa má čítať");
+        assert!(stav.bunka(1, 4).unwrap().paint_na_bunke().is_some());
+        assert!(!stav.bunka(1, 4).unwrap().volna());
+    }
+
+    /// Pole `zamrznuta` má prednosť pred nálepkou paintu — inak by sa skóre
+    /// rozišlo so serverom (nález z review diffu 20.10.2026).
+    #[test]
+    fn zamrznuta_prebije_aj_skutocny_paint() {
+        let b = Bunka {
+            riadok: 1,
+            stlpec: 1,
+            dostupna: true,
+            paint: Some(Paint::monster("ratlin", 3)),
+            oznacena_vykricnikom: false,
+            oramovana: false,
+            zamrznuta: true,
+        };
+        assert!(b.je_zamrznuta());
+        assert!(!b.volna());
+        assert!(b.paint_na_bunke().is_none());
+    }
+
     /// test_42: zoznamy názvov rozlíšia štetec, ľad a skutočný paint.
     #[test]
     fn stav_z_paintu_rozlisi_stetec_lad_a_paint() {
         use crate::canvas::{stav_z_paintu, StavObsahu};
         for typ in ["brush", "paint_brush", "brushstroke", "arrow", "white_arrow", "highlight"] {
             assert_eq!(stav_z_paintu("gameplay", typ, 1), StavObsahu::Prazdna, "{typ}");
+            // nad Lv1 to štetec nie je — paint so štítkom „Lv3" sa nesmie stratiť
+            assert_eq!(stav_z_paintu("gameplay", typ, 3), StavObsahu::Paint, "{typ}");
         }
         for typ in ["ice", "ice_block", "ice-block", "ice_cube", "cube", "blue_cube"] {
             assert_eq!(stav_z_paintu("gameplay", typ, 1), StavObsahu::Zamrznuta, "{typ}");
