@@ -13,6 +13,14 @@ use tli_overlay_core::tracker::chvost::StavChvosta;
 pub struct BehAnalyzy {
     pub generacia: u64,
     pub zacata: Instant,
+    /// Ktorý modul sa analyzuje. Nové stlačenie INÉHO modulu znamená, že si to
+    /// hráč rozmyslel (F8 a hneď Ctrl+W) — to nie je netrpezlivosť a nesmie sa
+    /// ignorovať ani v prvej sekunde.
+    pub modul: crate::Modul,
+    /// Spustil to hráč (hotkey/tlačidlo), alebo automat na pozadí? Stlačenie
+    /// hráča smie zrušiť automatickú analýzu HNEĎ, bez čakania na sekundu —
+    /// inak by sa F8 do sekundy po automatickom scane cien ticho stratilo.
+    pub rucne: bool,
 }
 
 pub struct Stav {

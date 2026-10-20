@@ -17,11 +17,19 @@ neaktuálnou snímkou. Appka aj hra bežali, server bol len pomalý — zrejme p
   60 s). Po uplynutí napíše „Server teraz neodpovedá – skús o chvíľu" a hláška
   zhasne na **prvý klik**, aj keď má hráč nastavené autoskrytie na sekundy.
   Zber na pozadí si ponecháva svoj vlastný, dlhší rozpočet.
+  **Pozor, 10 s je podľa nameraných dát tesné:** doska Tartaru má p95 12,2 s
+  a Frozen Canvas 14,6 s (471 analýz na serveri, merané 20.10.2026), takže asi
+  každá desiata analýza, ktorá dnes dobehne, skončí hláškou. Hodnotu zadal
+  Richard; prípadná oprava je jedno číslo v `core/src/api.rs`.
 - **Fronta zdržaných požiadaviek je PREČ** (bola to TLI 41). Nové stlačenie
   počas bežiacej analýzy ju **zruší** a odfotí odznova — aktuálny stav
   obrazovky je dôležitejší než dobehnutie starej požiadavky. Stlačenie do 1 s
   od štartu sa ignoruje (to je už len netrpezlivosť). Automatický popud na
   pozadí (ceny z trhu) ručnú analýzu nikdy nezhodí.
+- Automatický scan cien z trhu beží na pozadí: stlačenie hráča ho **zruší
+  hneď** (aj v prvej sekunde) a naopak, automat nikdy nezhodí analýzu, na
+  ktorú hráč čaká. Rovnako sa neignoruje F8 a hneď Ctrl+W — iný modul
+  znamená, že si to hráč rozmyslel.
 - **Počas čakania pribúda v overlayi počítadlo sekúnd** — „Odoslané, čakám na
   radu… (7 s)". Ráta sa od stlačenia klávesy, nie až od odoslania na server,
   a je to iba text: nič nespúšťa ani neruší.

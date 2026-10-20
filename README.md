@@ -46,7 +46,13 @@ mizne výhradne snímka, ktorú server práve prijal.
 ## Keď server mešká (TLI 67b)
 
 Appka čaká na odpoveď na ručnú analýzu **najviac 10 sekúnd**
-(`core/src/api.rs` → `TIMEOUT_ANALYZY_S`); bežná analýza sa zmestí do ~3 s.
+(`core/src/api.rs` → `TIMEOUT_ANALYZY_S`).
+
+⚠️ **Je to tesné a je to vedomé.** Z posledných 471 analýz na serveri (merané
+20.10.2026) má doska Tartaru medián 6,6 s a p95 **12,2 s**, Frozen Canvas
+medián 2,9 s a p95 **14,6 s** — teda asi **každá desiata** analýza, ktorá dnes
+dobehne, po tejto zmene skončí hláškou. Hodnotu zadal Richard; keby mu to
+prekážalo, hodnota nad p95 je 20 s a je to jedno číslo v `core/src/api.rs`.
 Po uplynutí napíše **„Server teraz neodpovedá – skús o chvíľu"** a tá hláška
 zhasne na **prvý klik**, bez ohľadu na nastavené autoskrytie — je to prechodná
 správa, nie rada, ktorú si treba prečítať. Zber na pozadí má vlastný, dlhší

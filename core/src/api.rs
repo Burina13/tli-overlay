@@ -538,8 +538,24 @@ pub fn sprava_chyby(stav: u16, telo: &str) -> String {
 /// Do 20.10.2026 to bolo **60 s** a prejavilo sa to presne tak, ako to Richard
 /// o 13:48 opísal („a teraz sa mi to celé seklo"): Canvas požiadavka na
 /// zaneprázdnenom serveri trvala **34 267 ms** (ráno 2,6–3,2 s) a appka na ňu
-/// celý ten čas mlčky čakala. Bežná analýza sa zmestí do ~3 s, takže 10 s je
-/// trojnásobná rezerva a zároveň doba, ktorú hráč ešte vydrží stáť v hre.
+/// celý ten čas mlčky čakala.
+///
+/// **Hodnotu 10 s zadal Richard a je to jeho rozhodnutie — ale podľa
+/// nameraných dát je tesná.** Z posledných 471 analýz na serveri (merané
+/// 20.10.2026 z `analyzy.trvanie_ms` na CT 114):
+///
+/// | obrazovka | medián | p95 | nad 10 s |
+/// |---|---|---|---|
+/// | doska (Tartarus) | 6 639 ms | 12 175 ms | 10 z 92 |
+/// | Frozen Canvas | 2 896 ms | 14 601 ms | 23 z 241 |
+/// | výber nástroja | 4 780 ms | 6 638 ms | 0 z 63 |
+/// | poradca (neznáma obrazovka) | 5 596 ms | 12 282 ms | 3 z 22 |
+///
+/// Teda **asi každá desiata analýza, ktorá dnes dobehne, po tejto zmene
+/// skončí hláškou „server neodpovedá"**. Nie je to prehliadnutie: hráč stlačí
+/// znova (nové stlačenie starú požiadavku zruší) a počítadlo sekúnd mu ukáže,
+/// že appka žije — „zaseknuté" to teda nie je. Keby to prekážalo, hodnota nad
+/// p95 je **20 s** a je to jedno číslo na jednom mieste.
 ///
 /// Zber na pozadí má vlastný, dlhší timeout (`klient.rs`) — tam na nikoho
 /// nečaká hráč a znovuodoslanie stojí ďalšiu snímku.

@@ -553,26 +553,48 @@ enum Opakovanie {
     Spusti,
     /// Bežiaca analýza sa zruší (jej výsledok sa zahodí) a fotí sa odznova.
     ZrusAFot,
-    /// Netrpezlivé ťukanie do klávesy — nerobí sa nič.
+    /// Netrpezlivé ťukanie do TEJ ISTEJ klávesy — nerobí sa nič.
     Ignoruj,
     /// Automatický popud na pozadí (ceny z trhu) nesmie zhodiť analýzu,
     /// na ktorú čaká hráč pri obrazovke. Ten počká na ďalšiu príležitosť.
     NechajBezat,
 }
 
+/// Čo o bežiacej analýze potrebuje vedieť `rozhodni_opakovanie` — vek, modul
+/// a či ju spustil hráč. Vlastný typ (nie trojica) preto, že sa dá
+/// zostrojiť aj v teste bez Tauri a bez `Stav`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Bezi {
+    uplynulo: Duration,
+    modul: Modul,
+    rucne: bool,
+}
+
 /// Čistá logika pre `Opakovanie` — bez Tauri, bez OS, testovateľné aj na Linuxe.
-/// `bezi` je čas od štartu práve bežiacej analýzy (`None` = nebeží žiadna),
-/// `rucne` hovorí, či popud prišiel od hráča (hotkey/tlačidlo), alebo
-/// automaticky z pozadia.
-fn rozhodni_opakovanie(bezi: Option<Duration>, rucne: bool) -> Opakovanie {
-    match bezi {
-        None => Opakovanie::Spusti,
-        Some(_) if !rucne => Opakovanie::NechajBezat,
-        Some(uplynulo) if uplynulo < Duration::from_millis(OPAKOVANIE_IGNOROVANIE_MS) => {
-            Opakovanie::Ignoruj
-        }
-        Some(_) => Opakovanie::ZrusAFot,
+/// `bezi` popisuje práve bežiacu analýzu (`None` = nebeží žiadna), `modul`
+/// a `rucne` patria k NOVÉMU popudu.
+///
+/// Poradie podmienok je podstata — nálezy z review diffu 20.10.2026:
+/// 1. automat nikdy nezhodí analýzu hráča,
+/// 2. hráč naopak zhodí automat HNEĎ (inak by sa F8 stlačené do sekundy po
+///    automatickom scane cien ticho stratilo a hráč by namiesto rady dostal
+///    toast s cenou),
+/// 3. iný modul = hráč si to rozmyslel (F8 a hneď Ctrl+W), nie netrpezlivosť,
+/// 4. až potom platí „do sekundy ignoruj".
+fn rozhodni_opakovanie(bezi: Option<Bezi>, modul: Modul, rucne: bool) -> Opakovanie {
+    let Some(b) = bezi else {
+        return Opakovanie::Spusti;
+    };
+    if !rucne {
+        return Opakovanie::NechajBezat;
     }
+    if !b.rucne || b.modul != modul {
+        return Opakovanie::ZrusAFot;
+    }
+    if b.uplynulo < Duration::from_millis(OPAKOVANIE_IGNOROVANIE_MS) {
+        return Opakovanie::Ignoruj;
+    }
+    Opakovanie::ZrusAFot
 }
 
 /// Čistá logika debounce (TLI 44, bod 3) — žiadne OS volanie, testovateľné aj
@@ -1218,7 +1240,12 @@ pub(crate) fn spusti_analyzu(app: AppHandle, modul: Modul, zdroj: &'static str) 
         let stav = app.state::<Stav>();
         let mut beh = stav.beh.lock().unwrap();
         let rucne = zdroj != "auto";
-        match rozhodni_opakovanie(beh.map(|b| b.zacata.elapsed()), rucne) {
+        let bezi = beh.map(|b| Bezi {
+            uplynulo: b.zacata.elapsed(),
+            modul: b.modul,
+            rucne: b.rucne,
+        });
+        match rozhodni_opakovanie(bezi, modul, rucne) {
             Opakovanie::Ignoruj => {
                 let ms = beh.map(|b| b.zacata.elapsed().as_millis()).unwrap_or(0);
                 denik::zapis(
@@ -1260,7 +1287,7 @@ pub(crate) fn spusti_analyzu(app: AppHandle, modul: Modul, zdroj: &'static str) 
             *g += 1;
             *g
         };
-        *beh = Some(BehAnalyzy { generacia: g, zacata: Instant::now() });
+        *beh = Some(BehAnalyzy { generacia: g, zacata: Instant::now(), modul, rucne });
         g
     };
 
@@ -1907,10 +1934,14 @@ V hre prepni Nastavenia → Zobrazenie → Režim okna na „Okno bez okrajov“
                 .or_else(|| panika.downcast_ref::<String>().cloned())
                 .unwrap_or_else(|| "neznáma panika".to_string());
             denik::zapis("hotkey", &format!("NEOČAKÁVANÁ CHYBA počas analýzy: {text}"));
-            let _ = app.emit(
-                "stav",
-                json!({ "faza": "chyba", "sprava": "Nastala neočakávaná chyba. Skús hotkey znova; ak sa to opakuje, pošli log cez #torchlight." }),
-            );
+            // TLI 67b: ani panika zrušeného vlákna nesmie prepísať obrazovku
+            // analýzy, ktorá medzitým začala (nález z review diffu 20.10.2026).
+            if este_platna(&app, moja_generacia) {
+                let _ = app.emit(
+                    "stav",
+                    json!({ "faza": "chyba", "sprava": "Nastala neočakávaná chyba. Skús hotkey znova; ak sa to opakuje, pošli log cez #torchlight." }),
+                );
+            }
         }
 
         // TLI 67b (bod 2): zámok uvoľní LEN to vlákno, ktoré ho drží. Keď
@@ -4053,20 +4084,24 @@ mod testy {
     // každé stlačenie ZARADILA do fronty (TLI 41). Tieto testy držia nové
     // pravidlo: nič sa nezaraďuje.
 
+    fn bezi(ms: u64, modul: Modul, rucne: bool) -> Option<Bezi> {
+        Some(Bezi { uplynulo: Duration::from_millis(ms), modul, rucne })
+    }
+
     #[test]
     fn ked_nic_nebezi_sa_jednoducho_spusti() {
-        assert_eq!(rozhodni_opakovanie(None, true), Opakovanie::Spusti);
-        assert_eq!(rozhodni_opakovanie(None, false), Opakovanie::Spusti);
+        assert_eq!(rozhodni_opakovanie(None, Modul::Canvas, true), Opakovanie::Spusti);
+        assert_eq!(rozhodni_opakovanie(None, Modul::Ceny, false), Opakovanie::Spusti);
     }
 
     #[test]
     fn stlacenie_do_sekundy_od_startu_sa_ignoruje() {
         assert_eq!(
-            rozhodni_opakovanie(Some(Duration::from_millis(0)), true),
+            rozhodni_opakovanie(bezi(0, Modul::Canvas, true), Modul::Canvas, true),
             Opakovanie::Ignoruj
         );
         assert_eq!(
-            rozhodni_opakovanie(Some(Duration::from_millis(999)), true),
+            rozhodni_opakovanie(bezi(999, Modul::Canvas, true), Modul::Canvas, true),
             Opakovanie::Ignoruj
         );
     }
@@ -4074,29 +4109,114 @@ mod testy {
     #[test]
     fn stlacenie_po_sekunde_zrusi_beziacu_a_foti_odznova() {
         assert_eq!(
-            rozhodni_opakovanie(Some(Duration::from_millis(1000)), true),
+            rozhodni_opakovanie(bezi(1000, Modul::Canvas, true), Modul::Canvas, true),
             Opakovanie::ZrusAFot
         );
         // Presne Richardov prípad: 34-sekundová Canvas požiadavka.
         assert_eq!(
-            rozhodni_opakovanie(Some(Duration::from_millis(34_267)), true),
+            rozhodni_opakovanie(bezi(34_267, Modul::Canvas, true), Modul::Canvas, true),
             Opakovanie::ZrusAFot
         );
     }
 
-    /// Fronta je preč — ŽIADNA kombinácia vstupov nesmie znamenať „zaraď to
-    /// a spusti neskôr". Keby sa niekedy vrátila, tento test padne na tom, že
-    /// `Opakovanie` má nový variant.
     #[test]
     fn automaticky_popud_nikdy_nezhodi_analyzu_hraca() {
         assert_eq!(
-            rozhodni_opakovanie(Some(Duration::from_millis(1)), false),
+            rozhodni_opakovanie(bezi(1, Modul::Canvas, true), Modul::Ceny, false),
             Opakovanie::NechajBezat
         );
         assert_eq!(
-            rozhodni_opakovanie(Some(Duration::from_secs(30)), false),
+            rozhodni_opakovanie(bezi(30_000, Modul::Tartarus, true), Modul::Ceny, false),
             Opakovanie::NechajBezat
         );
+    }
+
+    /// Opak predošlého testu a nález z review diffu 20.10.2026: automatický
+    /// scan cien beží na pozadí bez vedomia hráča. Keby ho pravidlo „do
+    /// sekundy ignoruj" chránilo, F8 stlačené tesne po ňom by sa ticho
+    /// stratilo a hráč by namiesto rady videl toast s cenou.
+    #[test]
+    fn hrac_zrusi_automat_hned_aj_v_prvej_sekunde() {
+        assert_eq!(
+            rozhodni_opakovanie(bezi(10, Modul::Ceny, false), Modul::Tartarus, true),
+            Opakovanie::ZrusAFot
+        );
+    }
+
+    /// Druhý nález z toho istého review: F8 a hneď Ctrl+W nie je netrpezlivosť,
+    /// ale zmena úmyslu — hráč chce inú obrazovku.
+    #[test]
+    fn iny_modul_do_sekundy_nie_je_netrpezlivost() {
+        assert_eq!(
+            rozhodni_opakovanie(bezi(50, Modul::Tartarus, true), Modul::Canvas, true),
+            Opakovanie::ZrusAFot
+        );
+    }
+
+    /// Fronta zdržaných požiadaviek je preč a nesmie sa vrátiť. Keby do
+    /// `Opakovanie` pribudol variant („zaraď na neskôr"), tento vyčerpávajúci
+    /// `match` prestane kompilovať — to je tu to podstatné, nie `assert`.
+    #[test]
+    fn opakovanie_nema_variant_pre_frontu() {
+        let moznosti = [
+            rozhodni_opakovanie(None, Modul::Canvas, true),
+            rozhodni_opakovanie(bezi(10, Modul::Canvas, true), Modul::Canvas, true),
+            rozhodni_opakovanie(bezi(5000, Modul::Canvas, true), Modul::Canvas, true),
+            rozhodni_opakovanie(bezi(10, Modul::Canvas, true), Modul::Ceny, false),
+        ];
+        for m in moznosti {
+            match m {
+                Opakovanie::Spusti
+                | Opakovanie::ZrusAFot
+                | Opakovanie::Ignoruj
+                | Opakovanie::NechajBezat => {}
+            }
+        }
+    }
+
+    // ── generácia: zrušené vlákno nesmie siahnuť na cudziu analýzu ─────────
+    // Nález z review diffu 20.10.2026: podstata zmeny je práve tu, a testom
+    // pokrytá nebola. `uvolni_ak_moj`/`este_platna` potrebujú `AppHandle`,
+    // takže sa testuje tá istá logika nad holým `Option<BehAnalyzy>`.
+
+    fn uvolni_ak_moj_cisty(beh: &mut Option<BehAnalyzy>, moja: u64) -> bool {
+        match *beh {
+            Some(b) if b.generacia == moja => {
+                *beh = None;
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn zapis(generacia: u64) -> Option<BehAnalyzy> {
+        Some(BehAnalyzy {
+            generacia,
+            zacata: Instant::now(),
+            modul: Modul::Canvas,
+            rucne: true,
+        })
+    }
+
+    #[test]
+    fn vlastnu_analyzu_vlakno_uvolni() {
+        let mut beh = zapis(7);
+        assert!(uvolni_ak_moj_cisty(&mut beh, 7));
+        assert!(beh.is_none());
+    }
+
+    #[test]
+    fn zrusene_vlakno_nezhodi_zamok_novej_analyzy() {
+        // Vlákno s generáciou 7 dobehne až potom, čo ho zrušila generácia 8.
+        let mut beh = zapis(8);
+        assert!(!uvolni_ak_moj_cisty(&mut beh, 7));
+        assert_eq!(beh.map(|b| b.generacia), Some(8), "nová analýza musí bežať ďalej");
+    }
+
+    #[test]
+    fn vlakno_bez_beziacej_analyzy_nic_neuvolni() {
+        let mut beh: Option<BehAnalyzy> = None;
+        assert!(!uvolni_ak_moj_cisty(&mut beh, 7));
     }
 
     // ── vyhodnot_prezentaciu (TLI 44, bod 2) ───────────────────────────────
