@@ -637,6 +637,28 @@ impl Sledovac {
                 }
                 None
             }
+            // TLI 68. Hra sa chystá vypísať CELÝ obsah stránky — príde to aj
+            // pre stránku, ktorá je prázdna (vtedy za tým nenasleduje ani
+            // jeden `InitBagData`). Je to teda jediné miesto, kde sa appka
+            // spoľahlivo dozvie „túto stránku teraz poznám celú, aj keď je
+            // v nej nula položiek".
+            //
+            // Staré sloty sa zahadzujú z toho istého dôvodu ako pri novej
+            // dávke `InitBagData` (TLI 51): čo sa do nasledujúceho výpisu
+            // nedostane, v stránke už nie je.
+            //
+            // Zmena sa NEZAPISUJE ako strata — je to výpis stavu, nie pohyb
+            // položiek. Mínus by z každého prihlásenia a každého Sortu spravil
+            // fiktívnu stratu celého batohu.
+            Udalost::BatohResetStranky { stranka } => {
+                self.batoh.retain(|&(s, _), _| s != stranka);
+                self.stranky_so_zakladom.insert(stranka);
+                // Nasledujúce `InitBagData` tej istej stránky sú jedna dávka
+                // s týmto resetom — nech ju vetva `je_init` nezahodí druhýkrát.
+                self.posledny_init_stranka = Some(stranka);
+                self.posledny_init_cas = cas.clone();
+                None
+            }
             Udalost::BatohOdstranenie { stranka, slot } => {
                 if let Some((polozka, num)) = self.batoh.remove(&(stranka, slot)) {
                     let dovod = self.aktualny_dovod;
@@ -1999,6 +2021,88 @@ mod testy {
         assert_eq!((vynechane[0].0, vynechane[0].1, vynechane[0].2, vynechane[0].3), (103, 3, 400033, 49));
         assert!(sledovac.odober_neznamy_zaklad().is_empty(), "odobranie vyprázdni zoznam");
         assert_eq!(sledovac.pocet_dropov_bez_zakladu(), 1, "počítadlo sa odobraním nenuluje");
+    }
+
+    #[test]
+    fn tli68_reset_stranky_oznaci_zaklad_aj_ked_je_stranka_prazdna() {
+        // Nájdené 20.10.2026 pri overovaní proti TITracku na Richardovom logu
+        // zo 17.10. (mapa `YJ_LiuJinJieQu200`, položka 400000): pri prihlásení
+        // hra vypísala `InitBagData` pre stránky 100/101/102, ale pre 103 ANI
+        // JEDEN riadok — tá stránka bola vtedy prázdna. Appka ju preto
+        // nepovažovala za známu a prvý drop do nej zahodila ako „neznámy
+        // základ", hoci o nej vedela všetko. Signál, ktorý príde aj pre prázdnu
+        // stránku, je `ItemChange@ Reset PageId=N`.
+        let mut sledovac = Sledovac::novy();
+        for stranka in [100u32, 101, 102, 103] {
+            sledovac.riadok(&riadok_s_casom(8, 10, 26, &format!(
+                "ItemChange@ Reset PageId={stranka}"
+            )));
+        }
+        // Dump príde len pre stránky, v ktorých niečo je.
+        sledovac.riadok(&riadok_s_casom(8, 10, 26,
+            "BagMgr@:InitBagData PageId = 102 SlotId = 0 ConfigBaseId = 100400 Num = 121"));
+        assert!(
+            sledovac.zaklad_dropov_uplny(),
+            "prázdna stránka je tiež ZNÁMA stránka — vie sa o nej, že je prázdna"
+        );
+
+        sledovac.riadok(&riadok_s_casom(8, 57, 0,
+            "SceneLevelMgr@ OpenMainWorld END! InMainLevelPath = /Game/Maps/YJ_LiuJinJieQu200"));
+        sledovac.riadok(&riadok_s_casom(8, 57, 46, "ItemChange@ ProtoName=PickItem start"));
+        sledovac.riadok(&riadok_s_casom(8, 57, 46,
+            "BagMgr@:Modfy BagItem PageId = 103 SlotId = 0 ConfigBaseId = 400000 Num = 1"));
+        sledovac.riadok(&riadok_s_casom(8, 57, 46, "ItemChange@ ProtoName=PickItem end"));
+
+        let beh = sledovac.aktualny().unwrap();
+        assert_eq!(beh.dropy.get(&400000), Some(&1), "drop do prázdnej stránky sa nesmie stratiť");
+        assert_eq!(sledovac.pocet_dropov_bez_zakladu(), 0);
+    }
+
+    #[test]
+    fn tli68_reset_stranky_nie_je_strata_a_zahodi_stare_sloty() {
+        let mut sledovac = Sledovac::novy();
+        sledovac.riadok(&riadok_s_casom(8, 0, 0,
+            "BagMgr@:InitBagData PageId = 103 SlotId = 3 ConfigBaseId = 400033 Num = 5"));
+        sledovac.riadok(&riadok_s_casom(8, 10, 0,
+            "SceneLevelMgr@ OpenMainWorld END! InMainLevelPath = /Game/Maps/MapaA"));
+        // Relog uprostred: celá stránka sa vypíše odznova a 400033 už v nej nie je.
+        sledovac.riadok(&riadok_s_casom(8, 20, 0, "ItemChange@ Reset PageId=103"));
+
+        let beh = sledovac.aktualny().unwrap();
+        let zmeny: Vec<_> = beh.vsetky_zmeny.iter().filter(|z| z.polozka == 400033).collect();
+        assert!(zmeny.is_empty(), "výpis stavu nie je pohyb položiek — nesmie z neho byť strata");
+        assert!(sledovac.batoh_stranka(103).get(&400033).is_none(), "staré sloty stránky zmiznú");
+    }
+
+    #[test]
+    fn tli68_reset_s_cudzim_pageid_sa_batohu_nedotkne() {
+        // V logu žijú aj `ItemChange@ Reset PageId=-1` / `=1` / `=3` — iné
+        // kontajnery než batoh (stash, truhlice). Nesmú označiť základ
+        // stránok batohu ani zahodiť ich obsah.
+        let mut sledovac = Sledovac::novy();
+        sledovac.riadok(&riadok_s_casom(8, 0, 0,
+            "BagMgr@:InitBagData PageId = 103 SlotId = 3 ConfigBaseId = 400033 Num = 5"));
+        for cudzie in ["-1", "-96", "1", "3"] {
+            sledovac.riadok(&riadok_s_casom(8, 1, 0, &format!("ItemChange@ Reset PageId={cudzie}")));
+        }
+        assert_eq!(sledovac.batoh_stranka(103).get(&400033), Some(&5));
+        assert!(!sledovac.zaklad_dropov_uplny(), "cudzia stránka základ batohu nedoplní");
+    }
+
+    #[test]
+    fn tli68_sort_itemslayout_nie_je_reset_stranky() {
+        // `ItemChange@ ProtoName=ResetItemsLayout start` je Sort a obsahuje
+        // slovo „Reset" — nesmie sa spracovať ako reset stránky a hlavne
+        // nesmie prestať byť kontextom (inak by sa rozpadlo delenie na dôvody).
+        let mut sledovac = Sledovac::novy();
+        sledovac.riadok(&riadok_s_casom(8, 0, 0,
+            "BagMgr@:InitBagData PageId = 103 SlotId = 3 ConfigBaseId = 400033 Num = 5"));
+        sledovac.riadok(&riadok_s_casom(8, 1, 0, "ItemChange@ ProtoName=ResetItemsLayout start"));
+        assert_eq!(
+            sledovac.batoh_stranka(103).get(&400033),
+            Some(&5),
+            "Sort sám o sebe obsah stránky nezahadzuje — to robia až jeho `InitBagData`/`Reset PageId`"
+        );
     }
 
     #[test]

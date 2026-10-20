@@ -131,6 +131,18 @@ pub enum Smer {
 pub enum Udalost {
     Batoh(BatohZmena),
     BatohOdstranenie { stranka: u32, slot: u32 },
+    /// `ItemChange@ Reset PageId=<N>` (TLI 68) — hra sa chystá vypísať CELÝ
+    /// obsah stránky batohu `N`; riadky `BagMgr@:InitBagData` pre ňu
+    /// nasledujú hneď za tým. Dôležité je, že tento riadok príde **aj pre
+    /// stránku, ktorá je PRÁZDNA** — vtedy za ním nenasleduje ani jeden
+    /// `InitBagData`, takže je to jediný spoľahlivý signál „túto stránku
+    /// teraz poznám celú".
+    ///
+    /// Bez neho appka po prihlásení s prázdnou stránkou 103 nevedela, že je
+    /// prázdna, a prvý drop do nej zahodila ako „neznámy základ" (nájdené
+    /// 20.10.2026 pri overovaní TLI 68 proti TITracku na Richardovom logu
+    /// zo 17.10. — mapa `YJ_LiuJinJieQu200`, položka 400000).
+    BatohResetStranky { stranka: u32 },
     Kontext { proto: String, zaciatok: bool },
     Zona { cesta: String },
     Uroven { uid: u64, typ: u32, id: u64 },
@@ -426,6 +438,21 @@ pub fn parsuj_riadok(riadok: &str) -> Option<(Option<Cas>, Udalost)> {
     if riadok.contains("AttributeMgr:Log(") {
         if let Some(udalost) = parsuj_vykon_postavy(riadok) {
             return Some((cas, udalost));
+        }
+    }
+
+    // TLI 68: `ItemChange@ Reset PageId=103`. Hľadá sa CELÁ dvojica slov
+    // `Reset PageId`, nie `Reset` a `PageId` zvlášť — v tom istom logu žije
+    // aj `ItemChange@ ProtoName=ResetItemsLayout start` (to je Sort) a tiež
+    // `ItemChange@ Add … in PageId=100 SlotId=…`; ani jedno resetom stránky
+    // nie je a voľnejšia podmienka by ich zožrala pred ich vlastnými vetvami.
+    //
+    // `PageId` tu býva aj ZÁPORNÉ (`-1`, `-96` — iné kontajnery než batoh);
+    // `parse::<u32>()` na nich zlyhá, vráti sa `None` a riadok ide ďalej,
+    // presne ako predtým.
+    if riadok.contains("ItemChange@") && riadok.contains("Reset PageId") {
+        if let Some(stranka) = extract_val(riadok, "PageId").and_then(|s| s.parse().ok()) {
+            return Some((cas, Udalost::BatohResetStranky { stranka }));
         }
     }
 
