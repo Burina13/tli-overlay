@@ -1,8 +1,8 @@
 {
-  "version": "0.23.2",
-  "notes": "TLI 52c: tichá aktualizácia appky teraz naozaj funguje aj pre hráčov so starou verziou (MSI, do 0.20.4) — appka si pri prvej takej aktualizácii sama odinštaluje starú verziu (jedno Windows okno so žiadosťou o súhlas) a ďalej už aktualizuje úplne potichu, bez akéhokoľvek okna. Nastavenia, história behov aj klávesové skratky zostávajú zachované. Pozri CHANGELOG.",
-  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.23.2/Tvoj-Tatko-TLI-Overlay_0.23.2_x64_en-US.msi",
-  "msiSha256": "70f0f77401bcdf4a4e8dfa75336e30eeebdaa51034c2e73c02547530d004353e",
-  "installerUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.23.2/Tvoj-Tatko-TLI-Overlay_0.23.2_x64-setup.exe",
-  "installerSha256": "bd90ce6b84fe0a62d68cbada1034f646216edf087a1985dbaadd9e4ff01acb7d"
+  "version": "0.24.0",
+  "notes": "TLI 62/3c: appka vie zbierať snímky minimapy na stavbu knižnice trás k bossovi / full clear — funkcia je RUČNE zapínaná a PREDVOLENE VYPNUTÁ (Nastavenia → zaškrtnúť „Zber minimapy“ + zvoliť režim). Zbiera sa len to, čo minimapa v hre ukazuje, nič sa neodkrýva. Pozri CHANGELOG.",
+  "msiUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.24.0/Tvoj-Tatko-TLI-Overlay_0.24.0_x64_en-US.msi",
+  "msiSha256": "cfc432a2346b5dd29be00782d36c5f031b8daa2dadd4f7d2d9ce3c3d3c779bd5",
+  "installerUrl": "https://github.com/Burina13/tli-overlay/releases/download/tli-v0.24.0/Tvoj-Tatko-TLI-Overlay_0.24.0_x64-setup.exe",
+  "installerSha256": "3f6fbf00de547c77386ee22b5034531680831e3fe8d877497489fc6f3351a710"
 }
